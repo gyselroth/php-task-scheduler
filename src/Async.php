@@ -3,16 +3,15 @@
 declare(strict_types=1);
 
 /**
- * Balloon
+ * TaskScheduler
  *
  * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2012-2017 gyselroth GmbH (https://gyselroth.com)
- * @license     GPL-3.0 https://opensource.org/licenses/GPL-3.0
+ * @copyright   Copryright (c) 2017 gyselroth GmbH (https://gyselroth.com)
+ * @license     MIT https://opensource.org/licenses/MIT
  */
 
 namespace TaskScheduler;
 
-use TaskScheduler\JobInterface;
 use IteratorIterator;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
@@ -90,7 +89,7 @@ class Async
      * @param ContainerInterface $container
      * @param iterable           $config
      */
-    public function __construct(Database $db, LoggerInterface $logger, ?ContainerInterface $container=null, ?Iterable $config = null)
+    public function __construct(Database $db, LoggerInterface $logger, ?ContainerInterface $container = null, ?Iterable $config = null)
     {
         $this->db = $db;
         $this->logger = $logger;
@@ -130,9 +129,9 @@ class Async
     /**
      * Add job to queue.
      *
-     * @param string      $class
-     * @param mixed       $data
-     * @param array       $options
+     * @param string $class
+     * @param mixed  $data
+     * @param array  $options
      *
      * @return bool
      */

@@ -1,2 +1,5 @@
 composer.lock
 vendor
+.phpstan.lock
+.phpunit.lock
+.php_cs.cache

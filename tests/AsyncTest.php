@@ -3,21 +3,23 @@
 declare(strict_types=1);
 
 /**
- * Balloon
+ * TaskScheduler
  *
  * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2012-2017 gyselroth GmbH (https://gyselroth.com)
- * @license     GPL-3.0 https://opensource.org/licenses/GPL-3.0
+ * @copyright   Copryright (c) 2017 gyselroth GmbH (https://gyselroth.com)
+ * @license     MIT https://opensource.org/licenses/MIT
  */
 
 namespace TaskScheduler\Testsuite;
 
+use Helmich\MongoMock\MockDatabase;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
-use Helmich\MongoMock\MockDatabase;
 use TaskScheduler\Async;
-use TaskScheduler\JobInterface;
 
+/**
+ * @coversNothing
+ */
 class TaskScheduler extends TestCase
 {
     protected $async;

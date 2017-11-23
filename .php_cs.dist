@@ -1,7 +1,7 @@
 <?php
 
 $header = <<<'EOF'
-Balloon
+TaskScheduler
 
 @author      Raffael Sahli <sahli@gyselroth.net>
 @copyright   Copryright (c) 2017 gyselroth GmbH (https://gyselroth.com)
