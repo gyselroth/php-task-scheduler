@@ -21,14 +21,14 @@ interface JobInterface
      *
      * @return JobInterface
      */
-    public function setData($data): self;
+    public function setData($data): JobInterface;
 
     /**
      * Get job data.
      *
      * @return mixed
      */
-    public function getData(): array;
+    public function getData();
 
     /**
      * Start job.
