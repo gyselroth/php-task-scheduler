@@ -17,16 +17,16 @@ interface JobInterface
     /**
      * Get job data.
      *
-     * @param array $data
+     * @param mixed $data
      *
      * @return JobInterface
      */
-    public function setData(array $data): self;
+    public function setData($data): self;
 
     /**
      * Get job data.
      *
-     * @return array
+     * @return mixed
      */
     public function getData(): array;
 

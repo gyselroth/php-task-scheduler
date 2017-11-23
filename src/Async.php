@@ -34,6 +34,13 @@ class Async
     const STATUS_FAILED = 4;
 
     /**
+     * Job options.
+     */
+    const OPTION_AT = 'at';
+    const OPTION_INTERVAL = 'interval';
+    const OPTION_RETRY = 'retry';
+
+    /**
      * Database.
      *
      * @var Database
@@ -124,17 +131,17 @@ class Async
      * Add job to queue.
      *
      * @param string      $class
-     * @param array       $data
-     * @param UTCDateTime $at
+     * @param mixed       $data
+     * @param array       $options
      *
      * @return bool
      */
-    public function addJob(string $class, array $data, array $options = []): bool
+    public function addJob(string $class, $data, array $options = []): bool
     {
         $defaults = [
-            'at' => null,
-            'interval' => -1,
-            'retry' => 0,
+            self::OPTION_AT => null,
+            self::OPTION_INTERVAL => -1,
+            self::OPTION_RETRY => 0,
         ];
 
         $options = array_merge($defaults, $options);
@@ -162,12 +169,12 @@ class Async
      * Only add job if not in queue yet.
      *
      * @param string $class
-     * @param array  $data
+     * @param mixed  $data
      * @param array  $options
      *
      * @return bool
      */
-    public function addJobOnce(string $class, array $data, array $options = []): bool
+    public function addJobOnce(string $class, $data, array $options = []): bool
     {
         $filter = [
             'class' => $class,
