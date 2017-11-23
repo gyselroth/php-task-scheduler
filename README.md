@@ -134,16 +134,23 @@ echo "* * * * * /usr/bin/php /path/to/cron.php" >> /var/spool/cron/crontabs/$USE
 TaskScheduler\Async::addJob() also accepts a third option (options) which let you append more advanced options for the scheduler:
 
 **at**
-Accepts an instance of MongoDB\BSON\UTCDateTime which let you specify the time at which the job should be executed.
+
+Accepts a specific unix time which let you specify the time at which the job should be executed.
 The default is immediatly or better saying as soon as there is a free slot.
 
-**interval** 
+**interval**
+
 You can also specify a job interval (in secconds) which is usefuly for jobs which need to be executed in a specific interval, for example cleaning a temporary directory.
 The default is `-1` which means no interval at all, `0` would mean execute the job immediatly again (But be careful with `0`, this could lead to huge cpu usage depending what job you're executing).
 Configuring `3600` would mean the job will be executed hourly.
 
 **retry**
+
 You can configure a retry interval if the job fails to execute. The default is `0` which means do not retry.
+
+**retry_interval**
+
+This options specifies the time (in secconds) between job retries. The default is `300` which is 5 minutes.
 
 
 Let us add our mail job example with some custom options:
@@ -158,8 +165,9 @@ $mail->setBody('World');
 $mail->setFrom('root@localhost', 'root');
 
 $async->addJob(MailJob::class, $mail->toString(), [
-    TaskScheduler\Async::OPTION_AT => new MongoDB\BSON\UTCDateTime((time()+3600)*1000),
+    TaskScheduler\Async::OPTION_AT => time()+3600,
     TaskScheduler\Async::OPTION_RETRY => 3,
+    TaskScheduler\Async::OPTION_RETRY_INTERVAL => 60,
 ]);
 ```
 
@@ -172,7 +180,7 @@ The scheduler compares the type of job (`MailJob` in this case) and the data sub
 
 ```php
 $async->addJobOnce(MailJob::class, $mail->toString(), [
-    TaskScheduler\Async::OPTION_AT => new MongoDB\BSON\UTCDateTime((time()+3600)*1000),
+    TaskScheduler\Async::OPTION_AT => time()+3600,
     TaskScheduler\Async::OPTION_RETRY => 3,
 ]);
 ```

@@ -38,6 +38,7 @@ class Async
     const OPTION_AT = 'at';
     const OPTION_INTERVAL = 'interval';
     const OPTION_RETRY = 'retry';
+    const OPTION_RETRY_INTERVAL = 'retry_interval';
 
     /**
      * Database.
@@ -82,6 +83,34 @@ class Async
     protected $container;
 
     /**
+     * Default at (Secconds from now).
+     *
+     * @var int
+     */
+    protected $default_at = 0;
+
+    /**
+     * Default interval (secconds).
+     *
+     * @var int
+     */
+    protected $default_interval = -1;
+
+    /**
+     * Default retry.
+     *
+     * @var int
+     */
+    protected $default_retry = 0;
+
+    /**
+     * Default retry interval (secconds).
+     *
+     * @var int
+     */
+    protected $default_retry_interval = 300;
+
+    /**
      * Init queue.
      *
      * @param Database           $db
@@ -117,6 +146,41 @@ class Async
                 case 'collection_name':
                     $this->{$option} = (string) $value;
 
+                    // no break
+                case 'default_retry':
+                case 'default_at':
+                case 'default_retry_interval':
+                case 'default_interval':
+                    $this->{$option} = (int) $value;
+
+                break;
+                default:
+                    throw new Exception('invalid option '.$option.' given');
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * Validate given job options.
+     *
+     * @param array $options
+     *
+     * @return Async
+     */
+    public function validateOptions(array $options): self
+    {
+        foreach ($options as $option => $value) {
+            switch ($option) {
+                case self::OPTION_AT:
+                case self::OPTION_RETRY:
+                case self::OPTION_RETRY_INTERVAL:
+                case self::OPTION_INTERVAL:
+                    if (!is_int($value)) {
+                        throw new Exception('option '.$option.' must be an integer');
+                    }
+
                 break;
                 default:
                     throw new Exception('invalid option '.$option.' given');
@@ -138,27 +202,37 @@ class Async
     public function addJob(string $class, $data, array $options = []): bool
     {
         $defaults = [
-            self::OPTION_AT => null,
-            self::OPTION_INTERVAL => -1,
-            self::OPTION_RETRY => 0,
+            self::OPTION_AT => $this->default_at,
+            self::OPTION_INTERVAL => $this->default_interval,
+            self::OPTION_RETRY => $this->default_retry,
+            self::OPTION_RETRY_INTERVAL => $this->default_retry_interval,
         ];
 
         $options = array_merge($defaults, $options);
+        $this->validateOptions($options);
+
+        if ($options[self::OPTION_AT] > 0) {
+            $at = new UTCDateTime($options[self::OPTION_AT] * 1000);
+        } else {
+            $at = null;
+        }
 
         $result = $this->db->{$this->collection_name}->insertOne([
             'class' => $class,
             'status' => self::STATUS_WAITING,
             'timestamp' => new UTCDateTime(),
-            'at' => $options['at'],
-            'retry' => $options['retry'],
-            'interval' => $options['interval'],
+            'at' => $at,
+            'retry' => $options[self::OPTION_RETRY],
+            'retry_interval' => $options[self::OPTION_RETRY_INTERVAL],
+            'interval' => $options[self::OPTION_INTERVAL],
             'node' => $this->node_name,
             'data' => $data,
         ]);
 
         $this->logger->debug('queue job ['.$result->getInsertedId().'] added to ['.$class.']', [
             'category' => get_class($this),
-            'params' => $data,
+            'params' => $options,
+            'data' => $data,
         ]);
 
         return $result->isAcknowledged();
@@ -191,7 +265,7 @@ class Async
         }
         $this->logger->debug('queue job ['.$result['_id'].'] of type ['.$class.'] already exists', [
                 'category' => get_class($this),
-                'params' => $data,
+                'data' => $data,
             ]);
 
         return true;
@@ -322,12 +396,14 @@ class Async
     {
         $now = new UTCDateTime();
         foreach ($this->queue as $key => $job) {
-            if ($job['at'] >= $now) {
+            if ($job['at'] <= $now) {
                 $this->logger->info('postponed job ['.$job['_id'].'] ['.$job['class'].'] can now be executed', [
                     'category' => get_class($this),
                 ]);
 
                 unset($this->queue[$key]);
+                $job['at'] = null;
+
                 $this->processJob($job);
             }
         }
@@ -363,24 +439,7 @@ class Async
         ]);
 
         try {
-            if (!class_exists($job['class'])) {
-                throw new Exception('job class does not exists');
-            }
-
-            if (null === $this->container) {
-                $instance = new $job['class']();
-            } else {
-                $instance = $this->container->getNew($job['class']);
-            }
-
-            if (!($instance instanceof JobInterface)) {
-                throw new Exception('job must implement JobInterface');
-            }
-
-            $instance->setData($job['data'])
-                ->start();
-
-            $this->updateJob($job['_id'], self::STATUS_DONE);
+            $this->executeJob($job);
         } catch (\Exception $e) {
             $this->logger->error('failed execute job ['.$job['_id'].']', [
                 'category' => get_class($this),
@@ -388,17 +447,59 @@ class Async
             ]);
 
             $this->updateJob($job['_id'], self::STATUS_FAILED);
+
+            if ($job['retry'] > 0) {
+                $this->logger->debug('failed job ['.$job['_id'].'] has a retry interval of ['.$job['retry'].']', [
+                    'category' => get_class($this),
+                ]);
+
+                $this->addJob($job['class'], $job['data'], [
+                    self::OPTION_AT => time() + $job['retry_interval'],
+                    self::OPTION_INTERVAL => $job['interval'],
+                    self::OPTION_RETRY => --$job['retry'],
+                    self::OPTION_RETRY_INTERVAL => $job['retry_interval'],
+                ]);
+            }
         }
 
         if ($job['interval'] >= 0) {
-            $at = new UTCDateTime((time() + $job['interval']) * 1000);
             $this->addJob($job['class'], $job['data'], [
-                'at' => $at,
-                'interval' => $job['interval'],
-                'retry' => $job['retry'],
+                self::OPTION_AT => time() + $job['interval'],
+                self::OPTION_INTERVAL => $job['interval'],
+                self::OPTION_RETRY => $job['retry'],
+                self::OPTION_RETRY_INTERVAL => $job['retry_interval'],
             ]);
         }
 
         return true;
+    }
+
+    /**
+     * Execute job.
+     *
+     * @param array $job
+     *
+     * @return bool
+     */
+    protected function executeJob(array $job): bool
+    {
+        if (!class_exists($job['class'])) {
+            throw new Exception('job class does not exists');
+        }
+
+        if (null === $this->container) {
+            $instance = new $job['class']();
+        } else {
+            $instance = $this->container->getNew($job['class']);
+        }
+
+        if (!($instance instanceof JobInterface)) {
+            throw new Exception('job must implement JobInterface');
+        }
+
+        $instance->setData($job['data'])
+            ->start();
+
+        return $this->updateJob($job['_id'], self::STATUS_DONE);
     }
 }

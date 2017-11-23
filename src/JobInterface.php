@@ -21,7 +21,7 @@ interface JobInterface
      *
      * @return JobInterface
      */
-    public function setData($data): JobInterface;
+    public function setData($data): self;
 
     /**
      * Get job data.
