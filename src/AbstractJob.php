@@ -10,7 +10,7 @@ declare(strict_types=1);
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
-namespace TaskScheduler\Async;
+namespace TaskScheduler;
 
 abstract class AbstractJob implements JobInterface
 {
