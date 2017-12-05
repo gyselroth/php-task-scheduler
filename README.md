@@ -16,7 +16,7 @@ PHP isn't a multithreaded langunage and neither can it handle (most) tasks async
 This library helps you implementing jobs which are later (or as soon as there are free slots) executed by another process.
 
 ## Requirements
-The library is only >= PHP7.1 compatible and requires a MongoDB server.
+The library is only >= PHP7.1 compatible and requires a MongoDB server >= 2.2.
 
 ## Download
 The package is available at [packagist](https://packagist.org/packages/gyselroth/mongodb-php-task-scheduler)
@@ -28,7 +28,18 @@ composer require gyselroth/mongodb-php-task-scheduler
 
 ## Documentation
 
-### Mail example
+### MongoDB
+
+Your need to create a capped collection on your MongoDB database. Otherwise you can not use the daemon functionality of this Api. 
+
+You can create a capped collection via MongoDB shell:
+```javascript
+db.createCollection( "queue", { capped: true, size: 100000 } )
+```
+
+**Note**: The Api uses by default the collection named "queue" for its functionality. If you want to use a different collection your can set the collection name during the api intiialization. See the api documentation bellow.
+
+### API
 
 For a better understanding how this library works, we're going to implement a mail job. Of course you can implement any kind of jobs, multiple jobs, 
 multiple workers, whatever you like!
@@ -130,7 +141,7 @@ Call it cron.php and add it to cron:
 echo "* * * * * /usr/bin/php /path/to/cron.php" >> /var/spool/cron/crontabs/$USER
 ```
 
-### Advanced options
+### Advanced job options
 TaskScheduler\Async::addJob() also accepts a third option (options) which let you append more advanced options for the scheduler:
 
 **at**
@@ -185,4 +196,46 @@ $async->addJobOnce(MailJob::class, $mail->toString(), [
 ]);
 ```
 
-**That is the awesome, now let us build better software together!**
+### Advanced default/initialization options
+
+Custom options and defaults can be set for jobs during initialization or if you call setOptions().
+
+```php
+$mongodb = new MongoDB\Client('mongodb://localhost:27017');
+$logger = new \A\Psr4\Compatible\Logger();
+$async = new TaskScheduler\Async($mongodb->mydb, $logger, null, [
+    'collection_name' => 'jobs',
+    'default_retry' => 3
+]);
+
+$async->setOptions([
+    'default_retry' => 2
+]);
+```
+
+**collection_name**
+
+You can specifiy a different collection for the job queue. The default is `queue`.
+
+**node_name**
+
+By default the internal node name is used. Usually you do not need to overwrite this setting. It can be handy if the node names in a cluster have different long names since the node names must be equal in size (number of characters in node name).
+
+**default_at**
+
+Define a default execution time for **all** jobs. This relates only for newly added jobs.
+The default is immediatly or better saying as soon as there is a free slot.
+
+**default_interval**
+
+Define a default interval for **all** jobs. This relates only for newly added jobs.
+The default is `-1` which means no interval at all.
+
+**default_retry**
+
+Define a default retry interval for **all** jobs. This relates only for newly added jobs.
+There are now retries by default for failed jobs (The default is `0`).
+
+**default_retry_interval**
+This options specifies the time (in secconds) between job retries. This relates only for newly added jobs.
+The default is `300` which is 5 minutes.
