@@ -79,6 +79,16 @@ $logger = new \A\Psr4\Compatible\Logger();
 $async = new TaskScheduler\Async($mongodb->mydb, $logger);
 ```
 
+#### Create job queue
+
+It is required to create a job queue. This needs to be done **only once**!
+This will create a job queue with a maximum of 100000 jobs, older jobs get overwritten by newer ones.
+The size can be encreased through the option `queue_size`, see Advanced default/initialization options.
+
+```php
+$async->createQueue();
+```
+
 #### Create a mail
 
 Now let us create a mail and add it to our task scheduler initialized right before:
@@ -205,6 +215,7 @@ $mongodb = new MongoDB\Client('mongodb://localhost:27017');
 $logger = new \A\Psr4\Compatible\Logger();
 $async = new TaskScheduler\Async($mongodb->mydb, $logger, null, [
     'collection_name' => 'jobs',
+    'queue_size' => 10000000,
     'default_retry' => 3
 ]);
 
@@ -217,9 +228,8 @@ $async->setOptions([
 
 You can specifiy a different collection for the job queue. The default is `queue`.
 
-**node_name**
-
-By default the internal node name is used. Usually you do not need to overwrite this setting. It can be handy if the node names in a cluster have different long names since the node names must be equal in size (number of characters in node name).
+**queu_size**
+The queue size. This is only used during creating the job queue and has no impact later. The default is `100000`.
 
 **default_at**
 
@@ -239,3 +249,15 @@ There are now retries by default for failed jobs (The default is `0`).
 **default_retry_interval**
 This options specifies the time (in secconds) between job retries. This relates only for newly added jobs.
 The default is `300` which is 5 minutes.
+
+### Using a DIC (dependeny injection container)
+Optionally one can pass a Psr\Container\ContainerInterface to the scheduler which gets used to create job instances.
+
+```php
+$mongodb = new MongoDB\Client('mongodb://localhost:27017');
+$logger = new \A\Psr4\Compatible\Logger();
+$dic = new \A\Psr11\Compatible\Container();
+$async = new TaskScheduler\Async($mongodb->mydb, $logger, $container);
+```
+
+If a container is set, the scheduler will request job instances through the dic.

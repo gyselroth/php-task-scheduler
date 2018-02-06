@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2018 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -62,13 +62,6 @@ class Async
     protected $queue = [];
 
     /**
-     * Node name.
-     *
-     * @var string
-     */
-    protected $node_name;
-
-    /**
      * Collection name.
      *
      * @var string
@@ -111,6 +104,13 @@ class Async
     protected $default_retry_interval = 300;
 
     /**
+     * Queue size.
+     *
+     * @var int
+     */
+    protected $queue_size = 100000;
+
+    /**
      * Init queue.
      *
      * @param Database           $db
@@ -123,7 +123,6 @@ class Async
         $this->db = $db;
         $this->logger = $logger;
         $this->container = $container;
-        $this->node_name = gethostname();
         $this->setOptions($config);
     }
 
@@ -142,15 +141,15 @@ class Async
 
         foreach ($config as $option => $value) {
             switch ($option) {
-                case 'node_name':
                 case 'collection_name':
                     $this->{$option} = (string) $value;
 
-                    // no break
+                break;
                 case 'default_retry':
                 case 'default_at':
                 case 'default_retry_interval':
                 case 'default_interval':
+                case 'queue_size':
                     $this->{$option} = (int) $value;
 
                 break;
@@ -158,6 +157,24 @@ class Async
                     throw new Exception('invalid option '.$option.' given');
             }
         }
+
+        return $this;
+    }
+
+    /**
+     * Create queue collection.
+     *
+     * @return Async
+     */
+    public function createQueue(): self
+    {
+        $this->db->createCollection(
+            $this->collection_name,
+            [
+                'capped' => true,
+                'size' => $this->queue_size,
+            ]
+        );
 
         return $this;
     }
@@ -225,7 +242,6 @@ class Async
             'retry' => $options[self::OPTION_RETRY],
             'retry_interval' => $options[self::OPTION_RETRY_INTERVAL],
             'interval' => $options[self::OPTION_INTERVAL],
-            'node' => $this->node_name,
             'data' => $data,
         ]);
 
@@ -352,8 +368,6 @@ class Async
             '$or' => [
                 ['status' => self::STATUS_WAITING],
                 ['status' => self::STATUS_POSTPONED,
-                 'node' => $this->node_name, ],
-                ['status' => self::STATUS_POSTPONED,
                  'at' => ['$gte' => new UTCDateTime()], ],
             ],
         ], $options);
@@ -376,7 +390,6 @@ class Async
     {
         $result = $this->db->{$this->collection_name}->updateMany(['_id' => $id, '$isolated' => true], ['$set' => [
             'status' => $status,
-            'node' => $this->node_name,
             'timestamp' => new UTCDateTime(),
         ]]);
 
@@ -490,7 +503,7 @@ class Async
         if (null === $this->container) {
             $instance = new $job['class']();
         } else {
-            $instance = $this->container->getNew($job['class']);
+            $instance = $this->container->get($job['class']);
         }
 
         if (!($instance instanceof JobInterface)) {
