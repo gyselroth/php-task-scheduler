@@ -20,6 +20,7 @@ use MongoDB\Driver\Cursor;
 use MongoDB\Operation\Find;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
+use Traversable;
 
 class Async
 {
@@ -180,6 +181,58 @@ class Async
     }
 
     /**
+     * Get job by ID.
+     *
+     * @param ObjectId
+     *
+     * @return array
+     */
+    public function getJob(ObjectId $id): array
+    {
+        $result = $this->db->{$this->collection_name}->findOne([
+            '_id' => $id,
+        ], [
+            'typeMap' => [
+                'document' => 'array',
+                'root' => 'array',
+                'array' => 'array',
+            ],
+        ]);
+
+        if (null === $result) {
+            throw new Exception('job '.$id.' was not found');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get jobs (Pass a filter which contains job status, by default all active jobs get returned).
+     *
+     * @param array $filter
+     *
+     * @return Traversable
+     */
+    public function getJobs(array $filter = []): Traversable
+    {
+        if (0 === count($filter)) {
+            $filter = [
+                self::STATUS_WAITING,
+                self::STATUS_PROCESSING,
+                self::STATUS_POSTPONED,
+            ];
+        }
+
+        $result = $this->db->{$this->collection_name}->find([
+            'status' => [
+                '$in' => $filter,
+            ],
+        ]);
+
+        return $result;
+    }
+
+    /**
      * Validate given job options.
      *
      * @param array $options
@@ -214,9 +267,9 @@ class Async
      * @param mixed  $data
      * @param array  $options
      *
-     * @return bool
+     * @return ObjectId
      */
-    public function addJob(string $class, $data, array $options = []): bool
+    public function addJob(string $class, $data, array $options = []): ObjectId
     {
         $defaults = [
             self::OPTION_AT => $this->default_at,
@@ -243,7 +296,7 @@ class Async
             'retry_interval' => $options[self::OPTION_RETRY_INTERVAL],
             'interval' => $options[self::OPTION_INTERVAL],
             'data' => $data,
-        ]);
+        ], ['$isolated' => true]);
 
         $this->logger->debug('queue job ['.$result->getInsertedId().'] added to ['.$class.']', [
             'category' => get_class($this),
@@ -251,7 +304,7 @@ class Async
             'data' => $data,
         ]);
 
-        return $result->isAcknowledged();
+        return $result->getInsertedId();
     }
 
     /**
@@ -261,9 +314,9 @@ class Async
      * @param mixed  $data
      * @param array  $options
      *
-     * @return bool
+     * @return ObjectId
      */
-    public function addJobOnce(string $class, $data, array $options = []): bool
+    public function addJobOnce(string $class, $data, array $options = []): ObjectId
     {
         $filter = [
             'class' => $class,
@@ -284,7 +337,7 @@ class Async
                 'data' => $data,
             ]);
 
-        return true;
+        return $result['_id'];
     }
 
     /**
@@ -315,7 +368,7 @@ class Async
 
             $job = $cursor->current();
             $cursor->next();
-            $this->processJob($job);
+            $this->queueJob($job);
         }
     }
 
@@ -345,8 +398,28 @@ class Async
 
             $job = $cursor->current();
             $cursor->next();
-            $this->processJob($job);
+            $this->queueJob($job);
         }
+    }
+
+    /**
+     * Queue job.
+     *
+     * @param array $job
+     */
+    protected function queueJob(array $job): bool
+    {
+        if (true === $this->collectJob($job['_id'], self::STATUS_PROCESSING)) {
+            $this->processJob($job);
+        } elseif (self::STATUS_POSTPONED === $job['status']) {
+            $this->logger->debug('found postponed job ['.$job['_id'].'] to requeue', [
+                'category' => get_class($this),
+            ]);
+
+            $this->queue[] = $job;
+        }
+
+        return true;
     }
 
     /**
@@ -367,8 +440,7 @@ class Async
         $cursor = $this->db->{$this->collection_name}->find([
             '$or' => [
                 ['status' => self::STATUS_WAITING],
-                ['status' => self::STATUS_POSTPONED,
-                 'at' => ['$gte' => new UTCDateTime()], ],
+                ['status' => self::STATUS_POSTPONED],
             ],
         ], $options);
 
@@ -383,18 +455,56 @@ class Async
      *
      * @param ObjectId $id
      * @param int      $status
+     * @param mixed    $from_status
+     *
+     * @return bool
+     */
+    protected function collectJob(ObjectId $id, int $status, $from_status = self::STATUS_WAITING): bool
+    {
+        $result = $this->db->{$this->collection_name}->updateMany([
+            '_id' => $id,
+            'status' => $from_status,
+            '$isolated' => true,
+        ], [
+            '$set' => [
+                'status' => $status,
+                'timestamp' => new UTCDateTime(),
+            ],
+        ]);
+
+        if (1 === $result->getModifiedCount()) {
+            $this->logger->debug('job ['.$id.'] updated to status ['.$status.']', [
+                'category' => get_class($this),
+            ]);
+
+            return true;
+        }
+
+        $this->logger->debug('job ['.$id.'] is already collected with status ['.$status.']', [
+            'category' => get_class($this),
+        ]);
+
+        return false;
+    }
+
+    /**
+     * Update job status.
+     *
+     * @param ObjectId $id
+     * @param int      $status
      *
      * @return bool
      */
     protected function updateJob(ObjectId $id, int $status): bool
     {
-        $result = $this->db->{$this->collection_name}->updateMany(['_id' => $id, '$isolated' => true], ['$set' => [
-            'status' => $status,
-            'timestamp' => new UTCDateTime(),
-        ]]);
-
-        $this->logger->debug('job ['.$id.'] updated to status ['.$status.']', [
-            'category' => get_class($this),
+        $result = $this->db->{$this->collection_name}->updateMany([
+            '_id' => $id,
+            '$isolated' => true,
+        ], [
+            '$set' => [
+                'status' => $status,
+                'timestamp' => new UTCDateTime(),
+            ],
         ]);
 
         return $result->isAcknowledged();
@@ -405,7 +515,7 @@ class Async
      *
      * @return bool
      */
-    protected function processLocalQueue()
+    protected function processLocalQueue(): bool
     {
         $now = new UTCDateTime();
         foreach ($this->queue as $key => $job) {
@@ -417,7 +527,9 @@ class Async
                 unset($this->queue[$key]);
                 $job['at'] = null;
 
-                $this->processJob($job);
+                if (true === $this->collectJob($job['_id'], self::STATUS_PROCESSING, self::STATUS_POSTPONED)) {
+                    $this->processJob($job);
+                }
             }
         }
 
@@ -437,14 +549,12 @@ class Async
             $this->updateJob($job['_id'], self::STATUS_POSTPONED);
             $this->queue[] = $job;
 
-            $this->logger->debug('execution of job ['.$job['_id'].'] ['.$job['class'].'] is postponed at ['.$job['at'].']', [
+            $this->logger->debug('execution of job ['.$job['_id'].'] ['.$job['class'].'] is postponed at ['.$job['at']->toDateTime()->format('c').']', [
                 'category' => get_class($this),
             ]);
 
             return true;
         }
-
-        $this->updateJob($job['_id'], self::STATUS_PROCESSING);
 
         $this->logger->debug('execute job ['.$job['_id'].'] ['.$job['class'].']', [
             'category' => get_class($this),
