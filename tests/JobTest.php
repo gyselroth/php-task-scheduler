@@ -15,9 +15,6 @@ namespace TaskScheduler\Testsuite;
 use PHPUnit\Framework\TestCase;
 use TaskScheduler\Testsuite\Mock\SuccessJobMock;
 
-/**
- * @coversNothing
- */
 class JobTest extends TestCase
 {
     protected $job;

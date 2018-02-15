@@ -17,6 +17,7 @@ use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use MongoDB\Driver\Cursor;
+use MongoDB\Driver\Exception\RuntimeException;
 use MongoDB\Operation\Find;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -32,6 +33,7 @@ class Async
     const STATUS_PROCESSING = 2;
     const STATUS_DONE = 3;
     const STATUS_FAILED = 4;
+    const STATUS_CANCELED = 5;
 
     /**
      * Job options.
@@ -207,6 +209,16 @@ class Async
     }
 
     /**
+     * Cancel job.
+     *
+     *  @param ObjectId $id
+     */
+    public function cancelJob(ObjectId $id): bool
+    {
+        return $this->updateJob($id, self::STATUS_CANCELED);
+    }
+
+    /**
      * Get jobs (Pass a filter which contains job status, by default all active jobs get returned).
      *
      * @param array $filter
@@ -226,6 +238,12 @@ class Async
         $result = $this->db->{$this->collection_name}->find([
             'status' => [
                 '$in' => $filter,
+            ],
+        ], [
+            'typeMap' => [
+                'document' => 'array',
+                'root' => 'array',
+                'array' => 'array',
             ],
         ]);
 
@@ -342,10 +360,8 @@ class Async
 
     /**
      * Execute job queue as endless loop.
-     *
-     * @return bool
      */
-    public function startDaemon(): bool
+    public function startDaemon()
     {
         $cursor = $this->getCursor();
 
@@ -361,13 +377,13 @@ class Async
                     return $this->startDaemon();
                 }
 
-                $cursor->next();
+                $this->retrieveNextJob($cursor);
 
                 continue;
             }
 
             $job = $cursor->current();
-            $cursor->next();
+            $this->retrieveNextJob($cursor);
             $this->queueJob($job);
         }
     }
@@ -403,6 +419,25 @@ class Async
     }
 
     /**
+     * Retrieve next job.
+     *
+     * @param Cursor $cursor
+     */
+    protected function retrieveNextJob(Cursor $cursor)
+    {
+        try {
+            $cursor->next();
+        } catch (RuntimeException $e) {
+            $this->logger->error('job queue cursor failed to retrieve next job, restart daemon', [
+                'category' => get_class($this),
+                'exception' => $e,
+            ]);
+
+            $this->startDaemon();
+        }
+    }
+
+    /**
      * Queue job.
      *
      * @param array $job
@@ -431,7 +466,14 @@ class Async
      */
     protected function getCursor(bool $tailable = true): IteratorIterator
     {
-        $options = [];
+        $options = [
+            'typeMap' => [
+                'document' => 'array',
+                'root' => 'array',
+                'array' => 'array',
+            ],
+        ];
+
         if (true === $tailable) {
             $options['cursorType'] = Find::TAILABLE;
             $options['noCursorTimeout'] = true;

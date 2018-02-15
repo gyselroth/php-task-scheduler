@@ -16,7 +16,6 @@ PHPCS_FIXER_SCRIPT = $(VENDOR_DIR)/bin/php-cs-fixer
 PHPCS_FIXER_LOCK = $(BASE_DIR)/.php_cs.cache
 # PHPUNIT STUFF
 PHPUNIT_SCRIPT = $(VENDOR_DIR)/bin/phpunit
-PHPUNIT_BOOTSTRAP_SCRIPT = $(TESTS_DIR)/Bootstrap.php
 PHPUNIT_LOCK = $(BASE_DIR)/.phpunit.lock
 # PHPSTAN STUFF
 PHPSTAN_SCRIPT = $(VENDOR_DIR)/bin/phpstan
@@ -85,7 +84,7 @@ test: $(PHPUNIT_TARGET)
 phpunit: $(PHPUNIT_TARGET)
 
 $(PHPUNIT_TARGET): $(PHPUNIT_SCRIPT) $(PHP_FILES) $(PHP_UNITTEST_FILES)
-	$(PHP_BIN) $(PHPUNIT_SCRIPT) --stderr --debug --bootstrap $(PHPUNIT_BOOTSTRAP_SCRIPT) $(TESTS_DIR)
+	$(PHP_BIN) $(PHPUNIT_SCRIPT) -c phpunit.xml --stderr --debug
 	@touch $@
 
 

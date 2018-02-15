@@ -23,9 +23,6 @@ use TaskScheduler\Exception;
 use TaskScheduler\Testsuite\Mock\ErrorJobMock;
 use TaskScheduler\Testsuite\Mock\SuccessJobMock;
 
-/**
- * @coversNothing
- */
 class AsyncTest extends TestCase
 {
     protected $async;
@@ -74,6 +71,14 @@ class AsyncTest extends TestCase
     {
         $this->expectException(Exception::class);
         $job = $this->async->getJob(new ObjectId());
+    }
+
+    public function testCancelJob()
+    {
+        $id = $this->async->addJob('test', ['foo' => 'bar']);
+        $this->async->cancelJob($id);
+        $job = $this->async->getJob($id);
+        $this->assertSame(Async::STATUS_CANCELED, $job['status']);
     }
 
     public function testAddJobAdvanced()
