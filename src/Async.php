@@ -150,7 +150,7 @@ class Async
                 case 'default_at':
                 case 'default_retry_interval':
                 case 'default_interval':
-                /*case 'queue_size':*/
+                case 'queue_size':
                     $this->{$option} = (int) $value;
 
                 break;
@@ -251,34 +251,6 @@ class Async
     }
 
     /**
-     * Validate given job options.
-     *
-     * @param array $options
-     *
-     * @return Async
-     */
-    public function validateOptions(array $options): self
-    {
-        foreach ($options as $option => $value) {
-            switch ($option) {
-                case self::OPTION_AT:
-                case self::OPTION_RETRY:
-                case self::OPTION_RETRY_INTERVAL:
-                case self::OPTION_INTERVAL:
-                    if (!is_int($value)) {
-                        throw new Exception('option '.$option.' must be an integer');
-                    }
-
-                break;
-                default:
-                    throw new Exception('invalid option '.$option.' given');
-            }
-        }
-
-        return $this;
-    }
-
-    /**
      * Add job to queue.
      *
      * @param string $class
@@ -298,11 +270,10 @@ class Async
 
         $options = array_merge($defaults, $options);
         $this->validateOptions($options);
+        $at = null;
 
         if ($options[self::OPTION_AT] > 0) {
             $at = new UTCDateTime($options[self::OPTION_AT] * 1000);
-        } else {
-            $at = null;
         }
 
         $result = $this->db->{$this->collection_name}->insertOne([
@@ -416,6 +387,26 @@ class Async
             $cursor->next();
             $this->queueJob($job);
         }
+    }
+
+    /**
+     * Validate given job options.
+     *
+     * @param array $options
+     *
+     * @return Async
+     */
+    protected function validateOptions(array $options): self
+    {
+        if (count($options) > 4) {
+            throw new Exception('invalid option given');
+        }
+
+        if (4 !== count(array_filter($options, 'is_int'))) {
+            throw new Exception('Only integers are allowed to passed');
+        }
+
+        return $this;
     }
 
     /**

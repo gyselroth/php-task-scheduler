@@ -108,6 +108,14 @@ class AsyncTest extends TestCase
         ]);
     }
 
+    public function testAddJobAdvancedInvalidOption()
+    {
+        $this->expectException(Exception::class);
+        $id = $this->async->addJob('test', ['foo' => 'bar'], [
+            'foobar' => 1,
+        ]);
+    }
+
     public function testAddJobOnlyOnce()
     {
         $data = uniqid();
@@ -367,7 +375,7 @@ class AsyncTest extends TestCase
             'default_at' => 1000000,
             'default_retry_interval' => 1,
             'default_interval' => 300,
-            //'queue_size' => 10,
+            'queue_size' => 10,
         ]);
 
         $id = $this->async->addJob('test', ['foo' => 'bar']);
