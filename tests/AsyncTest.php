@@ -399,7 +399,7 @@ class AsyncTest extends TestCase
 
     public function testCreateQueue()
     {
-        $sync = $this->async->createQueue();
+        $this->async->createQueue();
     }
 
     protected static function getProperty($name): ReflectionProperty
