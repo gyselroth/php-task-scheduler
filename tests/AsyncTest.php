@@ -15,6 +15,7 @@ namespace TaskScheduler\Testsuite;
 use Helmich\MongoMock\MockDatabase;
 use MongoDB\BSON\ObjectId;
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use ReflectionClass;
 use ReflectionMethod;
@@ -355,6 +356,45 @@ class AsyncTest extends TestCase
         $this->async->startOnce();
         $job = $this->async->getJob($id);
         $this->assertSame(Async::STATUS_FAILED, $job['status']);
+    }
+
+    public function testInitDefaultOptions()
+    {
+        $mongodb = new MockDatabase();
+        $this->async = new Async($mongodb, $this->createMock(LoggerInterface::class), null, [
+            'collection_name' => 'jobs',
+            'default_retry' => 1,
+            'default_at' => 1000000,
+            'default_retry_interval' => 1,
+            'default_interval' => 300,
+            'queue_size' => 10,
+        ]);
+
+        $id = $this->async->addJob('test', ['foo' => 'bar']);
+        $job = $this->async->getJob($id);
+        $this->assertSame(1, $job['retry']);
+        $this->assertSame(1000000, (int) $job['at']->toDateTime()->format('U'));
+        $this->assertSame(1, $job['retry_interval']);
+        $this->assertSame(300, $job['interval']);
+    }
+
+    public function testExecuteViaContainer()
+    {
+        $mongodb = new MockDatabase();
+
+        $stub_container = $this->getMockBuilder(ContainerInterface::class)
+            ->getMock();
+        $stub_container->method('get')
+            ->willReturn(new SuccessJobMock());
+
+        $this->async = new Async($mongodb, $this->createMock(LoggerInterface::class), $stub_container);
+
+        $id = $this->async->addJob(SuccessJobMock::class, ['foo' => 'bar']);
+        $job = $this->async->getJob($id);
+        $method = self::getMethod('executeJob');
+        $method->invokeArgs($this->async, [$job]);
+        $job = $this->async->getJob($id);
+        $this->assertSame(Async::STATUS_DONE, $job['status']);
     }
 
     protected static function getProperty($name): ReflectionProperty

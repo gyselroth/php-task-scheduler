@@ -125,7 +125,10 @@ class Async
         $this->db = $db;
         $this->logger = $logger;
         $this->container = $container;
-        //$this->setOptions($config);
+
+        if (null !== $config) {
+            $this->setOptions($config);
+        }
     }
 
     /**
@@ -135,12 +138,8 @@ class Async
      *
      * @return Async
      */
-    /*public function setOptions(? Iterable $config = null): self
+    public function setOptions(Iterable $config = null): self
     {
-        if (null === $config) {
-            return $this;
-        }
-
         foreach ($config as $option => $value) {
             switch ($option) {
                 case 'collection_name':
@@ -161,7 +160,7 @@ class Async
         }
 
         return $this;
-    }*/
+    }
 
     /**
      * Create queue collection.
@@ -210,7 +209,9 @@ class Async
     /**
      * Cancel job.
      *
-     *  @param ObjectId $id
+     * @param ObjectId $id
+     *
+     * @return bool
      */
     public function cancelJob(ObjectId $id): bool
     {

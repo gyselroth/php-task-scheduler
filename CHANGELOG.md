@@ -4,4 +4,6 @@
 
 * [FIX] fixed typeMap from BSONDocument to array for all getter
 * [FIX] fixed "Uncaught MongoDB\Driver\Exception\RuntimeException: The cursor is invalid or has expired" in certain cases
+* [FIX] Job with interval gets not rescheduled before the retry count is down to 0
 * [FEATURE] Added status STATUS_CANCELED and possibility to cancel job via cancelJob(ObjectId $id) (If not yet started)
+* [FEATURE] Added more unit tests
