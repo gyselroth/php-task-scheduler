@@ -138,7 +138,7 @@ class Async
      *
      * @return Async
      */
-    public function setOptions(Iterable $config = null): self
+    public function setOptions(Iterable $config = []): self
     {
         foreach ($config as $option => $value) {
             switch ($option) {
@@ -150,10 +150,10 @@ class Async
                 case 'default_at':
                 case 'default_retry_interval':
                 case 'default_interval':
-                case 'queue_size':
+                /*case 'queue_size':
                     $this->{$option} = (int) $value;
 
-                break;
+                break;*/
                 default:
                     throw new Exception('invalid option '.$option.' given');
             }
