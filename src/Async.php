@@ -420,7 +420,7 @@ class Async
     /**
      * Retrieve next job.
      *
-     * @param Iterable $cursor
+     * @param iterable $cursor
      */
     protected function retrieveNextJob(Iterable $cursor)
     {

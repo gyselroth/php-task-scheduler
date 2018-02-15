@@ -197,7 +197,7 @@ class AsyncTest extends TestCase
     public function testProcessLocalQueueWithPostponedJobInFuture()
     {
         $id = $this->async->addJob('test', ['foo' => 'bar'], [
-            Async::OPTION_AT => time()+10
+            Async::OPTION_AT => time() + 10,
         ]);
 
         $method = self::getMethod('updateJob');
@@ -220,7 +220,7 @@ class AsyncTest extends TestCase
     public function testProcessLocalQueueWithPostponedJobNow()
     {
         $id = $this->async->addJob('test', ['foo' => 'bar'], [
-            Async::OPTION_AT => time()
+            Async::OPTION_AT => time(),
         ]);
 
         $method = self::getMethod('updateJob');
@@ -242,7 +242,7 @@ class AsyncTest extends TestCase
     public function testProcessLocalQueueWithPostponedJobFromPast()
     {
         $id = $this->async->addJob('test', ['foo' => 'bar'], [
-            Async::OPTION_AT => time()-10
+            Async::OPTION_AT => time() - 10,
         ]);
 
         $method = self::getMethod('updateJob');
@@ -264,7 +264,7 @@ class AsyncTest extends TestCase
     public function testProcessErrorJobRetry()
     {
         $id = $this->async->addJob(ErrorJobMock::class, ['foo' => 'bar'], [
-            Async::OPTION_RETRY => 1
+            Async::OPTION_RETRY => 1,
         ]);
 
         $job = $this->async->getJob($id);
@@ -279,7 +279,7 @@ class AsyncTest extends TestCase
     public function testProcessJobInterval()
     {
         $id = $this->async->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
-            Async::OPTION_INTERVAL => 100
+            Async::OPTION_INTERVAL => 100,
         ]);
 
         $job = $this->async->getJob($id);
@@ -291,7 +291,7 @@ class AsyncTest extends TestCase
         $this->assertSame(Async::STATUS_DONE, $job['status']);
         $this->assertSame(Async::STATUS_WAITING, $interval_job['status']);
         $this->assertSame(100, $interval_job['interval']);
-        $this->assertTrue((int)$interval_job['at']->toDateTime()->format('U') > time());
+        $this->assertTrue((int) $interval_job['at']->toDateTime()->format('U') > time());
     }
 
     public function testCollectJob()
