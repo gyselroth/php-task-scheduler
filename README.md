@@ -29,17 +29,6 @@ composer require gyselroth/mongodb-php-task-scheduler
 
 ## Documentation
 
-### MongoDB
-
-Your need to create a capped collection on your MongoDB database. Otherwise you can not use the daemon functionality of this Api. 
-
-You can create a capped collection via MongoDB shell:
-```javascript
-db.createCollection( "queue", { capped: true, size: 100000 } )
-```
-
-**Note**: The Api uses by default the collection named "queue" for its functionality. If you want to use a different collection your can set the collection name during the api intiialization. See the api documentation bellow.
-
 ### API
 
 For a better understanding how this library works, we're going to implement a mail job. Of course you can implement any kind of jobs, multiple jobs, 
@@ -92,7 +81,7 @@ $async->createQueue();
 
 #### Create a mail
 
-Now let us create a mail and add it to our task scheduler initialized right before:
+Now let us create a mail and add it to our task scheduler which we have initialized right before:
 
 ```php
 $mail = new Message();
@@ -103,13 +92,16 @@ $mail->setFrom('root@localhost', 'root');
 $async->addJob(MailJob::class, $mail->toString());
 ```
 
-That is the whole magic, our scheduler now got its first job, awesome!
+This is the whole magic, our scheduler now got its first job, awesome!
 
 
 #### Execute jobs
 
-But now we need to execute those queued jobs. This can usualy be achieved in two ways either add a cron job or the **recommended** way as 
+But now we need to execute those queued jobs. This can usualy be achieved in two ways, either add a cron job or the **recommended** way as 
 a unix daemon.
+The big advantage of this library comes into play if you execute job workers as daemons (The possibility to execute via cron is only to support legacy applications).
+The workers listen in real time for new jobs and they will load balance those jobs. 
+The only thing required to achieve that is to spin up multiple daemons (Of course you can also start just one).
 
 ##### Create daemon
 
@@ -128,7 +120,7 @@ And then start the magic:
 $async->startDaemon();
 ```
 
-Let ul call it daemon.php and start it:
+Let us call it daemon.php and start it:
 ```bash
 php daemon.php &
 ```

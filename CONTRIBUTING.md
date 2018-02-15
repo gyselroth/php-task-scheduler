@@ -50,7 +50,7 @@ Please make sure that you always specify the number of your issue starting with 
 ## Pull Request
 You are absolutely welcome to submit a pull request which references an open issue. Please make sure you're follwing coding standards 
 and be sure all your modifications pass the build.
-[![Build Status](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler.svg)](https://travis-ci.org/gyselroth/micro-mongodb-async-scheduler)
+[![Build Status](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler.svg)](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler)
 
 ## Code of Conduct
 Please note that this project is released with a [Contributor Code of Conduct](https://github.com/gyselroth/mongodb-php-task-scheduler/CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
@@ -63,22 +63,10 @@ and do not contribute software parts which are not compatible with GPL-3.0.
 This repository gets shipped with an .editorconfig configuration. For more information on how to configure your editor please visit [editorconfig](https://github.com/editorconfig).
 
 ## Code policy
-Please make sure that you're following:
-* [PSR-1](http://www.php-fig.org/psr/psr-1/)
-* [PSR-2](http://www.php-fig.org/psr/psr-2/)
+Add the following script to your git pre-commit hook file, otherwise your build will fail if you do not following code style:
 
-Please also follow the following policy in addition to PSR-1 and PSR-2:
+```
+./vendor/bin/php-cs-fixer fix --config=.php_cs.dist -v
+```
 
-* Abstract classes named with an Abstract prefix: AbstractExample.php
-* Interfaces named with an Interface suffix: ExampleInterface.php
-* Traits named with a Trait prefix: TraitExample.php
-* Variables named with underscore (_) and not camelCase
-* All methods must declare return types whenever possible (except testsuite)
-* All method parameters must be declared with strict types (string, int, bool, array) (except testsuite)
-* All files delcare strict_types=1
-* All methods must have a doctype (except testsuite)
-* Every API controller must be documented with apidoc compatible doctags
-* Designed with Dependency Injection pattern, no registries, no singletons, to static clases, no static methods
-* yield whenever possible, do not use return where it makes sense to yield values
-* log as many things as possible, clear understandable messsages (everything in lowercase), wrap variables in []
-* Do not use empty() for array checks, use count() === 0 instead (multi threading compatibilty)
+This automatically converts your code into the code style guidelines of this project otherwise your build will fail!
