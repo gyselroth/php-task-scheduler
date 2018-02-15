@@ -397,6 +397,11 @@ class AsyncTest extends TestCase
         $this->assertSame(Async::STATUS_DONE, $job['status']);
     }
 
+    public function testCreateQueue()
+    {
+        $sync = $this->async->createQueue();
+    }
+
     protected static function getProperty($name): ReflectionProperty
     {
         $class = new ReflectionClass(Async::class);
