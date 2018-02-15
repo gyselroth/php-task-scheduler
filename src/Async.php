@@ -16,7 +16,6 @@ use IteratorIterator;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
-use MongoDB\Driver\Cursor;
 use MongoDB\Driver\Exception\RuntimeException;
 use MongoDB\Operation\Find;
 use Psr\Container\ContainerInterface;
@@ -126,7 +125,7 @@ class Async
         $this->db = $db;
         $this->logger = $logger;
         $this->container = $container;
-        $this->setOptions($config);
+        //$this->setOptions($config);
     }
 
     /**
@@ -136,7 +135,7 @@ class Async
      *
      * @return Async
      */
-    public function setOptions(? Iterable $config = null): self
+    /*public function setOptions(? Iterable $config = null): self
     {
         if (null === $config) {
             return $this;
@@ -162,7 +161,7 @@ class Async
         }
 
         return $this;
-    }
+    }*/
 
     /**
      * Create queue collection.
@@ -421,9 +420,9 @@ class Async
     /**
      * Retrieve next job.
      *
-     * @param Cursor $cursor
+     * @param Iterable $cursor
      */
-    protected function retrieveNextJob(Cursor $cursor)
+    protected function retrieveNextJob(Iterable $cursor)
     {
         try {
             $cursor->next();
@@ -583,9 +582,9 @@ class Async
      *
      * @param array $job
      *
-     * @return bool
+     * @return ObjectId
      */
-    protected function processJob(array $job): bool
+    protected function processJob(array $job): ObjectId
     {
         if ($job['at'] instanceof UTCDateTime) {
             $this->updateJob($job['_id'], self::STATUS_POSTPONED);
@@ -595,7 +594,7 @@ class Async
                 'category' => get_class($this),
             ]);
 
-            return true;
+            return $job['_id'];
         }
 
         $this->logger->debug('execute job ['.$job['_id'].'] ['.$job['class'].']', [
@@ -618,7 +617,7 @@ class Async
                     'category' => get_class($this),
                 ]);
 
-                $this->addJob($job['class'], $job['data'], [
+                return $this->addJob($job['class'], $job['data'], [
                     self::OPTION_AT => time() + $job['retry_interval'],
                     self::OPTION_INTERVAL => $job['interval'],
                     self::OPTION_RETRY => --$job['retry'],
@@ -628,7 +627,11 @@ class Async
         }
 
         if ($job['interval'] >= 0) {
-            $this->addJob($job['class'], $job['data'], [
+            $this->logger->debug('job ['.$job['_id'].'] has an interval of ['.$job['interval'].'s]', [
+                'category' => get_class($this),
+            ]);
+
+            return $this->addJob($job['class'], $job['data'], [
                 self::OPTION_AT => time() + $job['interval'],
                 self::OPTION_INTERVAL => $job['interval'],
                 self::OPTION_RETRY => $job['retry'],
@@ -636,7 +639,7 @@ class Async
             ]);
         }
 
-        return true;
+        return $job['_id'];
     }
 
     /**

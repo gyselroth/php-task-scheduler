@@ -18,6 +18,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use ReflectionClass;
 use ReflectionMethod;
+use ReflectionProperty;
 use TaskScheduler\Async;
 use TaskScheduler\Exception;
 use TaskScheduler\Testsuite\Mock\ErrorJobMock;
@@ -58,6 +59,7 @@ class AsyncTest extends TestCase
         $id = $this->async->addJob('test', ['foo' => 'bar']);
         $jobs = $this->async->getJobs();
         $this->assertSame($jobs->toArray()[0]['_id'], $id);
+        $this->assertTrue(is_array($jobs->toArray()[0]));
     }
 
     public function testGetClosedJobsWhenNoClosedJobsExist()
@@ -179,6 +181,189 @@ class AsyncTest extends TestCase
         $method->invokeArgs($this->async, [$job]);
         $job = $this->async->getJob($id);
         $this->assertSame(Async::STATUS_POSTPONED, $job['status']);
+    }
+
+    public function testUpdateJob()
+    {
+        $id = $this->async->addJob('test', ['foo' => 'bar']);
+        $job = $this->async->getJob($id);
+
+        $method = self::getMethod('updateJob');
+        $method->invokeArgs($this->async, [$id, Async::STATUS_PROCESSING]);
+        $job = $this->async->getJob($id);
+        $this->assertSame(Async::STATUS_PROCESSING, $job['status']);
+    }
+
+    public function testProcessLocalQueueWithPostponedJobInFuture()
+    {
+        $id = $this->async->addJob('test', ['foo' => 'bar'], [
+            Async::OPTION_AT => time()+10
+        ]);
+
+        $method = self::getMethod('updateJob');
+        $method->invokeArgs($this->async, [$id, Async::STATUS_POSTPONED]);
+        $job = $this->async->getJob($id);
+
+        $queue = self::getProperty('queue');
+        $queue->setValue($this->async, [$job]);
+
+        $method = self::getMethod('processLocalQueue');
+        $method->invokeArgs($this->async, []);
+
+        $queue = self::getProperty('queue');
+        $queue = $queue->getValue($this->async);
+
+        $this->assertSame(1, count($queue));
+        $this->assertSame(Async::STATUS_POSTPONED, $queue[0]['status']);
+    }
+
+    public function testProcessLocalQueueWithPostponedJobNow()
+    {
+        $id = $this->async->addJob('test', ['foo' => 'bar'], [
+            Async::OPTION_AT => time()
+        ]);
+
+        $method = self::getMethod('updateJob');
+        $method->invokeArgs($this->async, [$id, Async::STATUS_POSTPONED]);
+        $job = $this->async->getJob($id);
+
+        $queue = self::getProperty('queue');
+        $queue->setValue($this->async, [$job]);
+
+        $method = self::getMethod('processLocalQueue');
+        $method->invokeArgs($this->async, []);
+
+        $queue = self::getProperty('queue');
+        $queue = $queue->getValue($this->async);
+
+        $this->assertSame(0, count($queue));
+    }
+
+    public function testProcessLocalQueueWithPostponedJobFromPast()
+    {
+        $id = $this->async->addJob('test', ['foo' => 'bar'], [
+            Async::OPTION_AT => time()-10
+        ]);
+
+        $method = self::getMethod('updateJob');
+        $method->invokeArgs($this->async, [$id, Async::STATUS_POSTPONED]);
+        $job = $this->async->getJob($id);
+
+        $queue = self::getProperty('queue');
+        $queue->setValue($this->async, [$job]);
+
+        $method = self::getMethod('processLocalQueue');
+        $method->invokeArgs($this->async, []);
+
+        $queue = self::getProperty('queue');
+        $queue = $queue->getValue($this->async);
+
+        $this->assertSame(0, count($queue));
+    }
+
+    public function testProcessErrorJobRetry()
+    {
+        $id = $this->async->addJob(ErrorJobMock::class, ['foo' => 'bar'], [
+            Async::OPTION_RETRY => 1
+        ]);
+
+        $job = $this->async->getJob($id);
+        $method = self::getMethod('processJob');
+        $retry_id = $method->invokeArgs($this->async, [$job]);
+        $retry_job = $this->async->getJob($retry_id);
+
+        $this->assertSame(Async::STATUS_WAITING, $retry_job['status']);
+        $this->assertSame(0, $retry_job['retry']);
+    }
+
+    public function testProcessJobInterval()
+    {
+        $id = $this->async->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Async::OPTION_INTERVAL => 100
+        ]);
+
+        $job = $this->async->getJob($id);
+        $method = self::getMethod('processJob');
+        $interval_id = $method->invokeArgs($this->async, [$job]);
+        $job = $this->async->getJob($id);
+        $interval_job = $this->async->getJob($interval_id);
+
+        $this->assertSame(Async::STATUS_DONE, $job['status']);
+        $this->assertSame(Async::STATUS_WAITING, $interval_job['status']);
+        $this->assertSame(100, $interval_job['interval']);
+        $this->assertTrue((int)$interval_job['at']->toDateTime()->format('U') > time());
+    }
+
+    public function testCollectJob()
+    {
+        $id = $this->async->addJob('test', ['foo' => 'bar']);
+
+        $job = $this->async->getJob($id);
+        $method = self::getMethod('collectJob');
+        $result = $method->invokeArgs($this->async, [$job['_id'], Async::STATUS_PROCESSING, Async::STATUS_WAITING]);
+        $this->assertTrue($result);
+    }
+
+    public function testCollectAlreadyCollectedJob()
+    {
+        $id = $this->async->addJob('test', ['foo' => 'bar']);
+
+        $job = $this->async->getJob($id);
+        $method = self::getMethod('collectJob');
+        $method->invokeArgs($this->async, [$job['_id'], Async::STATUS_PROCESSING, Async::STATUS_WAITING]);
+        $result = $method->invokeArgs($this->async, [$job['_id'], Async::STATUS_PROCESSING, Async::STATUS_WAITING]);
+
+        $this->assertFalse($result);
+    }
+
+    public function testCursor()
+    {
+        $id = $this->async->addJob('test', ['foo' => 'bar']);
+
+        $job = $this->async->getJob($id);
+        $method = self::getMethod('getCursor');
+        $cursor = $method->invokeArgs($this->async, []);
+        $this->assertSame(1, count($cursor->toArray()));
+    }
+
+    public function testCursorEmpty()
+    {
+        $id = $this->async->addJob('test', ['foo' => 'bar']);
+        $method = self::getMethod('updateJob');
+        $method->invokeArgs($this->async, [$id, Async::STATUS_DONE]);
+
+        $method = self::getMethod('getCursor');
+        $cursor = $method->invokeArgs($this->async, []);
+        $this->assertSame(0, count($cursor->toArray()));
+    }
+
+    public function testCursorRetrieveNext()
+    {
+        $this->async->addJob('test', ['foo' => 'bar']);
+        $id = $this->async->addJob('test', ['foo' => 'foobar']);
+        $method = self::getMethod('getCursor');
+        $cursor = $method->invokeArgs($this->async, []);
+
+        $method = self::getMethod('retrieveNextJob');
+        $job = $method->invokeArgs($this->async, [$cursor]);
+        $this->assertSame($id, $cursor->current()['_id']);
+    }
+
+    public function testStartOnce()
+    {
+        $id = $this->async->addJob('test', ['foo' => 'bar']);
+        $this->async->startOnce();
+        $job = $this->async->getJob($id);
+        $this->assertSame(Async::STATUS_FAILED, $job['status']);
+    }
+
+    protected static function getProperty($name): ReflectionProperty
+    {
+        $class = new ReflectionClass(Async::class);
+        $property = $class->getProperty($name);
+        $property->setAccessible(true);
+
+        return $property;
     }
 
     protected static function getMethod($name): ReflectionMethod
