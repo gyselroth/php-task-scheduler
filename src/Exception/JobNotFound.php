@@ -10,8 +10,8 @@ declare(strict_types=1);
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
-namespace TaskScheduler;
+namespace TaskScheduler\Exception;
 
-class Exception extends \Exception
+class JobNotFound extends \Exception
 {
 }

@@ -1,3 +1,10 @@
+## 2.0.0
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Fri Mar 09 15:55:22 CET 2018
+
+* [!Breaker] Split Async::class into Queue::class and Scheduler::class
+
+
 ## 1.0.2
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Thu Feb 15 08:34:01 CET 2018

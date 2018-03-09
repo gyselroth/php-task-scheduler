@@ -20,9 +20,8 @@ use MongoDB\Driver\Exception\RuntimeException;
 use MongoDB\Operation\Find;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
-use Traversable;
 
-class Async
+class Queue
 {
     /**
      * Job status.
@@ -35,12 +34,11 @@ class Async
     const STATUS_CANCELED = 5;
 
     /**
-     * Job options.
+     * Scheduler.
+     *
+     * @param Scheduler
      */
-    const OPTION_AT = 'at';
-    const OPTION_INTERVAL = 'interval';
-    const OPTION_RETRY = 'retry';
-    const OPTION_RETRY_INTERVAL = 'retry_interval';
+    protected $scheduler;
 
     /**
      * Database.
@@ -78,261 +76,27 @@ class Async
     protected $container;
 
     /**
-     * Default at (Secconds from now).
-     *
-     * @var int
-     */
-    protected $default_at = 0;
-
-    /**
-     * Default interval (secconds).
-     *
-     * @var int
-     */
-    protected $default_interval = -1;
-
-    /**
-     * Default retry.
-     *
-     * @var int
-     */
-    protected $default_retry = 0;
-
-    /**
-     * Default retry interval (secconds).
-     *
-     * @var int
-     */
-    protected $default_retry_interval = 300;
-
-    /**
-     * Queue size.
-     *
-     * @var int
-     */
-    protected $queue_size = 100000;
-
-    /**
      * Init queue.
      *
+     * @param Scheduler          $scheduler
      * @param Database           $db
      * @param LoggerInterface    $logger
      * @param ContainerInterface $container
      * @param iterable           $config
      */
-    public function __construct(Database $db, LoggerInterface $logger, ?ContainerInterface $container = null, ?Iterable $config = null)
+    public function __construct(Scheduler $scheduler, Database $db, LoggerInterface $logger, ?ContainerInterface $container = null)
     {
+        $this->scheduler = $scheduler;
         $this->db = $db;
         $this->logger = $logger;
         $this->container = $container;
-
-        if (null !== $config) {
-            $this->setOptions($config);
-        }
-    }
-
-    /**
-     * Set options.
-     *
-     * @param iterable $config
-     *
-     * @return Async
-     */
-    public function setOptions(Iterable $config = []): self
-    {
-        foreach ($config as $option => $value) {
-            switch ($option) {
-                case 'collection_name':
-                    $this->{$option} = (string) $value;
-
-                break;
-                case 'default_retry':
-                case 'default_at':
-                case 'default_retry_interval':
-                case 'default_interval':
-                case 'queue_size':
-                    $this->{$option} = (int) $value;
-
-                break;
-                default:
-                    throw new Exception('invalid option '.$option.' given');
-            }
-        }
-
-        return $this;
-    }
-
-    /**
-     * Create queue collection.
-     *
-     * @return Async
-     */
-    public function createQueue(): self
-    {
-        $this->db->createCollection(
-            $this->collection_name,
-            [
-                'capped' => true,
-                'size' => $this->queue_size,
-            ]
-        );
-
-        return $this;
-    }
-
-    /**
-     * Get job by ID.
-     *
-     * @param ObjectId
-     *
-     * @return array
-     */
-    public function getJob(ObjectId $id): array
-    {
-        $result = $this->db->{$this->collection_name}->findOne([
-            '_id' => $id,
-        ], [
-            'typeMap' => [
-                'document' => 'array',
-                'root' => 'array',
-                'array' => 'array',
-            ],
-        ]);
-
-        if (null === $result) {
-            throw new Exception('job '.$id.' was not found');
-        }
-
-        return $result;
-    }
-
-    /**
-     * Cancel job.
-     *
-     * @param ObjectId $id
-     *
-     * @return bool
-     */
-    public function cancelJob(ObjectId $id): bool
-    {
-        return $this->updateJob($id, self::STATUS_CANCELED);
-    }
-
-    /**
-     * Get jobs (Pass a filter which contains job status, by default all active jobs get returned).
-     *
-     * @param array $filter
-     *
-     * @return Traversable
-     */
-    public function getJobs(array $filter = []): Traversable
-    {
-        if (0 === count($filter)) {
-            $filter = [
-                self::STATUS_WAITING,
-                self::STATUS_PROCESSING,
-                self::STATUS_POSTPONED,
-            ];
-        }
-
-        $result = $this->db->{$this->collection_name}->find([
-            'status' => [
-                '$in' => $filter,
-            ],
-        ], [
-            'typeMap' => [
-                'document' => 'array',
-                'root' => 'array',
-                'array' => 'array',
-            ],
-        ]);
-
-        return $result;
-    }
-
-    /**
-     * Add job to queue.
-     *
-     * @param string $class
-     * @param mixed  $data
-     * @param array  $options
-     *
-     * @return ObjectId
-     */
-    public function addJob(string $class, $data, array $options = []): ObjectId
-    {
-        $defaults = [
-            self::OPTION_AT => $this->default_at,
-            self::OPTION_INTERVAL => $this->default_interval,
-            self::OPTION_RETRY => $this->default_retry,
-            self::OPTION_RETRY_INTERVAL => $this->default_retry_interval,
-        ];
-
-        $options = array_merge($defaults, $options);
-        $this->validateOptions($options);
-        $at = null;
-
-        if ($options[self::OPTION_AT] > 0) {
-            $at = new UTCDateTime($options[self::OPTION_AT] * 1000);
-        }
-
-        $result = $this->db->{$this->collection_name}->insertOne([
-            'class' => $class,
-            'status' => self::STATUS_WAITING,
-            'timestamp' => new UTCDateTime(),
-            'at' => $at,
-            'retry' => $options[self::OPTION_RETRY],
-            'retry_interval' => $options[self::OPTION_RETRY_INTERVAL],
-            'interval' => $options[self::OPTION_INTERVAL],
-            'data' => $data,
-        ], ['$isolated' => true]);
-
-        $this->logger->debug('queue job ['.$result->getInsertedId().'] added to ['.$class.']', [
-            'category' => get_class($this),
-            'params' => $options,
-            'data' => $data,
-        ]);
-
-        return $result->getInsertedId();
-    }
-
-    /**
-     * Only add job if not in queue yet.
-     *
-     * @param string $class
-     * @param mixed  $data
-     * @param array  $options
-     *
-     * @return ObjectId
-     */
-    public function addJobOnce(string $class, $data, array $options = []): ObjectId
-    {
-        $filter = [
-            'class' => $class,
-            'data' => $data,
-            '$or' => [
-                ['status' => self::STATUS_WAITING],
-                ['status' => self::STATUS_POSTPONED],
-            ],
-        ];
-
-        $result = $this->db->queue->findOne($filter);
-
-        if (null === $result) {
-            return $this->addJob($class, $data, $options);
-        }
-        $this->logger->debug('queue job ['.$result['_id'].'] of type ['.$class.'] already exists', [
-                'category' => get_class($this),
-                'data' => $data,
-            ]);
-
-        return $result['_id'];
+        $this->collection_name = $scheduler->getCollection();
     }
 
     /**
      * Execute job queue as endless loop.
      */
-    public function startDaemon()
+    public function process()
     {
         $cursor = $this->getCursor();
 
@@ -345,7 +109,7 @@ class Async
                         'category' => get_class($this),
                     ]);
 
-                    return $this->startDaemon();
+                    return $this->process();
                 }
 
                 $this->retrieveNextJob($cursor);
@@ -364,7 +128,7 @@ class Async
      *
      * @return bool
      */
-    public function startOnce(): bool
+    public function processOnce(): bool
     {
         $cursor = $this->getCursor(false);
 
@@ -390,26 +154,6 @@ class Async
     }
 
     /**
-     * Validate given job options.
-     *
-     * @param array $options
-     *
-     * @return Async
-     */
-    protected function validateOptions(array $options): self
-    {
-        if (count($options) > 4) {
-            throw new Exception('invalid option given');
-        }
-
-        if (4 !== count(array_filter($options, 'is_int'))) {
-            throw new Exception('Only integers are allowed to passed');
-        }
-
-        return $this;
-    }
-
-    /**
      * Retrieve next job.
      *
      * @param iterable $cursor
@@ -424,7 +168,7 @@ class Async
                 'exception' => $e,
             ]);
 
-            $this->startDaemon();
+            $this->process();
         }
     }
 
@@ -609,11 +353,11 @@ class Async
                     'category' => get_class($this),
                 ]);
 
-                return $this->addJob($job['class'], $job['data'], [
-                    self::OPTION_AT => time() + $job['retry_interval'],
-                    self::OPTION_INTERVAL => $job['interval'],
-                    self::OPTION_RETRY => --$job['retry'],
-                    self::OPTION_RETRY_INTERVAL => $job['retry_interval'],
+                return $this->scheduler->addJob($job['class'], $job['data'], [
+                    Scheduler::OPTION_AT => time() + $job['retry_interval'],
+                    Scheduler::OPTION_INTERVAL => $job['interval'],
+                    Scheduler::OPTION_RETRY => --$job['retry'],
+                    Scheduler::OPTION_RETRY_INTERVAL => $job['retry_interval'],
                 ]);
             }
         }
@@ -623,11 +367,11 @@ class Async
                 'category' => get_class($this),
             ]);
 
-            return $this->addJob($job['class'], $job['data'], [
-                self::OPTION_AT => time() + $job['interval'],
-                self::OPTION_INTERVAL => $job['interval'],
-                self::OPTION_RETRY => $job['retry'],
-                self::OPTION_RETRY_INTERVAL => $job['retry_interval'],
+            return $this->scheduler->addJob($job['class'], $job['data'], [
+                Scheduler::OPTION_AT => time() + $job['interval'],
+                Scheduler::OPTION_INTERVAL => $job['interval'],
+                Scheduler::OPTION_RETRY => $job['retry'],
+                Scheduler::OPTION_RETRY_INTERVAL => $job['retry_interval'],
             ]);
         }
 
@@ -644,7 +388,7 @@ class Async
     protected function executeJob(array $job): bool
     {
         if (!class_exists($job['class'])) {
-            throw new Exception('job class does not exists');
+            throw new Exception\InvalidJob('job class does not exists');
         }
 
         if (null === $this->container) {
@@ -654,7 +398,7 @@ class Async
         }
 
         if (!($instance instanceof JobInterface)) {
-            throw new Exception('job must implement JobInterface');
+            throw new Exception\InvalidJob('job must implement JobInterface');
         }
 
         $instance->setData($job['data'])
