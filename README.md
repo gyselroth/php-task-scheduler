@@ -8,7 +8,7 @@
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/gyselroth/mongodb-php-task-scheduler/master/LICENSE)
 
 ## Description
-Schedulerhronous task scheduler for PHP based on MongoDB. Execute schedulerhronous tasks such as sending mail, syncing stuff, generate documents and much more easily.
+Asynchronous task scheduler for PHP based on MongoDB. Execute asynchronous tasks such as sending mail, syncing stuff, generate documents and much more easily.
 You can implement a daemon which executes jobs and listens in real time for newly added jobs.
 This library has also in-built support for clustered systems. You can start up multiple worker nodes and they will split the available jobs with the principal first comes first serves. It is also possible to schedule jobs at a certain time or with an endless interval as well as rescheduling if a job fails.
 
@@ -47,7 +47,7 @@ This library has also in-built support for clustered systems. You can start up m
 * Easy handling of asynchronous tasks
 
 ## Why?
-PHP isn't a multithreaded language and neither can it handle (most) tasks schedulerhronously. Sure there is pthreads (Which is also planned to be implemented) but it is only usable in cli mode.
+PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronously. Sure there is pthreads (Which is also planned to be implemented) but it is only usable in cli mode.
 This library helps you implementing jobs which are later (or as soon as there are free slots) executed by another process.
 
 ## Requirements
