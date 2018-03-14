@@ -15,6 +15,7 @@ namespace TaskScheduler\Testsuite;
 use Helmich\MongoMock\MockDatabase;
 use InvalidArgumentException;
 use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\UTCDateTime;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception;
@@ -42,6 +43,15 @@ class SchedulerTest extends TestCase
         $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
         $job = $this->scheduler->getJob($id);
         $this->assertSame($job['status'], Queue::STATUS_WAITING);
+    }
+
+    public function testNewJobTimestamps()
+    {
+        $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
+        $job = $this->scheduler->getJob($id);
+        $this->assertTrue($job['created'] >= new UTCDateTime());
+        $this->assertSame((string) $job['started'], '0');
+        $this->assertSame((string) $job['ended'], '0');
     }
 
     public function testGetJob()

@@ -1,9 +1,9 @@
 ## 2.0.0
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
-**Date**: Fri Mar 09 15:55:22 CET 2018
+**Date**: Wed Mar 14 15:55:22 CET 2018
 
 * [!Breaker] Split Async::class into Queue::class and Scheduler::class
-
+* [FEATURE] Abondend timestamp field and added created, started and ended timestamps
 
 ## 1.0.2
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\

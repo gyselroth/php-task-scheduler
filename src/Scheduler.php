@@ -260,7 +260,9 @@ class Scheduler
         $result = $this->db->{$this->collection_name}->insertOne([
             'class' => $class,
             'status' => Queue::STATUS_WAITING,
-            'timestamp' => new UTCDateTime(),
+            'created' => new UTCDateTime(),
+            'started' => new UTCDateTime(0),
+            'ended' => new UTCDateTime(0),
             'at' => $at,
             'retry' => $options[self::OPTION_RETRY],
             'retry_interval' => $options[self::OPTION_RETRY_INTERVAL],
@@ -346,7 +348,6 @@ class Scheduler
         ], [
             '$set' => [
                 'status' => $status,
-                'timestamp' => new UTCDateTime(),
             ],
         ]);
 

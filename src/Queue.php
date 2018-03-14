@@ -245,7 +245,7 @@ class Queue
         ], [
             '$set' => [
                 'status' => $status,
-                'timestamp' => new UTCDateTime(),
+                'started' => self::STATUS_PROCESSING === $status ? new UTCDateTime() : new UTCDateTime(0),
             ],
         ]);
 
@@ -274,14 +274,19 @@ class Queue
      */
     protected function updateJob(ObjectId $id, int $status): bool
     {
+        $set = [
+            'status' => $status,
+        ];
+
+        if (self::STATUS_DONE === $status || self::STATUS_FAILED === $status) {
+            $set['ended'] = new UTCDateTime();
+        }
+
         $result = $this->db->{$this->collection_name}->updateMany([
             '_id' => $id,
             '$isolated' => true,
         ], [
-            '$set' => [
-                'status' => $status,
-                'timestamp' => new UTCDateTime(),
-            ],
+            '$set' => $set,
         ]);
 
         return $result->isAcknowledged();

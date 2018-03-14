@@ -13,6 +13,7 @@ declare(strict_types=1);
 namespace TaskScheduler\Testsuite;
 
 use Helmich\MongoMock\MockDatabase;
+use MongoDB\BSON\UTCDateTime;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -52,10 +53,12 @@ class QueueTest extends TestCase
         $id = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
         $job = $this->scheduler->getJob($id);
 
+        $start = new UTCDateTime();
         $method = self::getMethod('executeJob');
         $method->invokeArgs($this->queue, [$job]);
         $job = $this->scheduler->getJob($id);
         $this->assertSame(Queue::STATUS_DONE, $job['status']);
+        $this->assertTrue($job['ended'] >= $start);
     }
 
     public function testExecuteErrorJob()
@@ -64,8 +67,14 @@ class QueueTest extends TestCase
         $id = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar']);
         $job = $this->scheduler->getJob($id);
 
+        $start = new UTCDateTime();
         $method = self::getMethod('executeJob');
         $method->invokeArgs($this->queue, [$job]);
+
+        $job = $this->scheduler->getJob($id);
+        $this->assertSame(Queue::STATUS_FAILED, $job['status']);
+        $this->assertTrue($job['started'] >= $start);
+        $this->assertTrue($job['ended'] >= $start);
     }
 
     public function testProcessSuccessfulJob()
@@ -218,10 +227,14 @@ class QueueTest extends TestCase
     {
         $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
 
+        $start = new UTCDateTime();
         $job = $this->scheduler->getJob($id);
         $method = self::getMethod('collectJob');
         $result = $method->invokeArgs($this->queue, [$job['_id'], Queue::STATUS_PROCESSING, Queue::STATUS_WAITING]);
         $this->assertTrue($result);
+        $job = $this->scheduler->getJob($id);
+        $this->assertSame(Queue::STATUS_PROCESSING, $job['status']);
+        $this->assertTrue($job['started'] >= $start);
     }
 
     public function testCollectAlreadyCollectedJob()
