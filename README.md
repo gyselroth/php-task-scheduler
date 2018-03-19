@@ -107,16 +107,6 @@ $logger = new \A\Psr4\Compatible\Logger();
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
 ```
 
-### Create job queue
-
-It is required to create a job queue. This needs to be done **only once**!
-This will create a job queue with a maximum of 100000 jobs, older jobs get overwritten by newer ones.
-The size can be encreased through the option `queue_size`, see Advanced default/initialization options.
-
-```php
-$scheduler->createQueue();
-```
-
 ### Create a job (mail example)
 
 Now let us create a mail and add it to our task scheduler which we have initialized right before:

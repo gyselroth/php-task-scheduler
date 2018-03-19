@@ -69,7 +69,7 @@ class Scheduler
      *
      * @var int
      */
-    protected $default_retry = 0;
+    protected $default_retry = -1;
 
     /**
      * Default retry interval (secconds).
@@ -134,6 +134,16 @@ class Scheduler
     }
 
     /**
+     * Get Queue size.
+     *
+     * @return int
+     */
+    public function getQueueSize(): int
+    {
+        return $this->queue_size;
+    }
+
+    /**
      * Get collection name.
      *
      * @return string
@@ -141,24 +151,6 @@ class Scheduler
     public function getCollection(): string
     {
         return $this->collection_name;
-    }
-
-    /**
-     * Create queue collection.
-     *
-     * @return Async
-     */
-    public function createQueue(): self
-    {
-        $this->db->createCollection(
-            $this->collection_name,
-            [
-                'capped' => true,
-                'size' => $this->queue_size,
-            ]
-        );
-
-        return $this;
     }
 
     /**

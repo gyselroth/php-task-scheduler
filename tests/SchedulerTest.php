@@ -150,9 +150,4 @@ class SchedulerTest extends TestCase
         $this->assertSame(1, $job['retry_interval']);
         $this->assertSame(300, $job['interval']);
     }
-
-    public function testCreateQueue()
-    {
-        $this->scheduler->createQueue();
-    }
 }

@@ -16,6 +16,7 @@ use IteratorIterator;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
+use MongoDB\Driver\Exception\ConnectionException;
 use MongoDB\Driver\Exception\RuntimeException;
 use MongoDB\Operation\Find;
 use Psr\Container\ContainerInterface;
@@ -109,6 +110,8 @@ class Queue
                         'category' => get_class($this),
                     ]);
 
+                    $this->createQueue();
+
                     return $this->process();
                 }
 
@@ -151,6 +154,59 @@ class Queue
             $cursor->next();
             $this->queueJob($job);
         }
+    }
+
+    /**
+     * Create queue and insert a dummy object to start cursor
+     * Dummy object is required, otherwise we would get a dead cursor.
+     *
+     * @return Queue
+     */
+    protected function createQueue(): self
+    {
+        $this->logger->info('create new queue ['.$this->scheduler->getCollection().']', [
+            'category' => get_class($this),
+        ]);
+
+        try {
+            $this->db->createCollection(
+                $this->scheduler->getCollection(),
+                [
+                    'capped' => true,
+                    'size' => $this->scheduler->getQueueSize(),
+                ]
+            );
+
+            $this->db->{$this->scheduler->getCollection()}->insertOne(['class' => 'dummy']);
+        } catch (RuntimeException $e) {
+            if (48 !== $e->getCode()) {
+                throw $e;
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * Create queue and insert a dummy object to start cursor
+     * Dummy object is required, otherwise we would get a dead cursor.
+     *
+     * @return Queue
+     */
+    protected function convertQueue(): self
+    {
+        $this->logger->info('convert existing queue collection ['.$this->scheduler->getCollection().'] into a capped collection', [
+            'category' => get_class($this),
+        ]);
+
+        $this->db->command([
+            'convertToCapped' => $this->scheduler->getCollection(),
+            'size' => $this->scheduler->getQueueSize(),
+        ]);
+
+        $this->db->{$this->scheduler->getCollection()}->insertOne(['class' => 'dummy']);
+
+        return $this;
     }
 
     /**
@@ -214,12 +270,22 @@ class Queue
             $options['noCursorTimeout'] = true;
         }
 
-        $cursor = $this->db->{$this->collection_name}->find([
-            '$or' => [
-                ['status' => self::STATUS_WAITING],
-                ['status' => self::STATUS_POSTPONED],
-            ],
-        ], $options);
+        try {
+            $cursor = $this->db->{$this->collection_name}->find([
+                '$or' => [
+                    ['status' => self::STATUS_WAITING],
+                    ['status' => self::STATUS_POSTPONED],
+                ],
+            ], $options);
+        } catch (ConnectionException $e) {
+            if (2 === $e->getCode()) {
+                $this->convertQueue();
+
+                return $this->getCursor($tailable);
+            }
+
+            throw $e;
+        }
 
         $iterator = new IteratorIterator($cursor);
         $iterator->rewind();
@@ -353,7 +419,7 @@ class Queue
 
             $this->updateJob($job['_id'], self::STATUS_FAILED);
 
-            if ($job['retry'] > 0) {
+            if ($job['retry'] >= 0) {
                 $this->logger->debug('failed job ['.$job['_id'].'] has a retry interval of ['.$job['retry'].']', [
                     'category' => get_class($this),
                 ]);
