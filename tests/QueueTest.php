@@ -335,6 +335,23 @@ class QueueTest extends TestCase
         $this->assertNotSame($id, $new);
     }
 
+    public function testCreateQueue()
+    {
+        $mongodb = new MockDatabase();
+        $scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
+        $queue = new Queue($scheduler, $mongodb, $this->createMock(LoggerInterface::class));
+
+        $method = self::getMethod('createQueue');
+        $method->invokeArgs($queue, []);
+        $this->assertSame('dummy', $mongodb->{$scheduler->getCollection()}->findOne([])['class']);
+    }
+
+    public function testConvertQueue()
+    {
+        $method = self::getMethod('convertQueue');
+        $method->invokeArgs($this->queue, []);
+    }
+
     protected static function getProperty($name): ReflectionProperty
     {
         $class = new ReflectionClass(Queue::class);

@@ -101,14 +101,6 @@ class Queue
     }
 
     /**
-     * Cleanup and exit.
-     */
-    public function __destroy()
-    {
-        $this->cleanup(SIGTERM);
-    }
-
-    /**
      * Execute job queue as endless loop.
      */
     public function process()
@@ -188,11 +180,11 @@ class Queue
     /**
      * Cleanup and exit.
      *
-     * @param mixed $sig
+     * @param int $sig
      *
      * @return ObjectId
      */
-    protected function handleSignal($sig): ?ObjectId
+    protected function handleSignal(int $sig): ?ObjectId
     {
         if (null === $this->current_job) {
             $this->logger->debug('received signal ['.$sig.'], no job is currently processing, exit now', [
@@ -218,6 +210,8 @@ class Queue
 
     /**
      * Cleanup and exit.
+     *
+     * @param int $sig
      */
     protected function cleanup(int $sig)
     {
