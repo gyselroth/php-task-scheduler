@@ -1,10 +1,11 @@
 ## 2.0.1
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
-**Date**: 
+**Date**: Tue Mar 20 11:00:22 CET 2018
 
 * [CHANGE] queue collection gets now automatically created, even if the queue gets removed during processing
 * [FEATURE] there is no need anymore to create the queue collection, it is handled automatically by TaskScheduler\Queue
 * [FEATURE] retry can now be set to 0 and the job gets rescheduled if failed endlessly according to interval. -1 (Default is reserved for no retry)
+* [FEATURE] can now handle process signals (SIGTERM, SIGINT) and reschedule current job before exit
 
 ## 2.0.0
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\

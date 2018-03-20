@@ -310,6 +310,31 @@ class QueueTest extends TestCase
         $this->assertSame(Queue::STATUS_DONE, $job['status']);
     }
 
+    public function testSignalHandlerAttached()
+    {
+        $method = self::getMethod('catchSignal');
+        $method->invokeArgs($this->queue, []);
+        $this->assertSame(pcntl_signal_get_handler(SIGTERM)[1], 'cleanup');
+        $this->assertSame(pcntl_signal_get_handler(SIGINT)[1], 'cleanup');
+    }
+
+    public function testCleanupViaSigtermNoJob()
+    {
+        $method = self::getMethod('handleSignal');
+        $method->invokeArgs($this->queue, [SIGTERM]);
+    }
+
+    public function testCleanupViaSigtermScheduleJob()
+    {
+        $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
+        $property = self::getProperty('current_job');
+        $property->setValue($this->scheduler, $this->scheduler->getJob($id));
+
+        $method = self::getMethod('handleSignal');
+        $new = $method->invokeArgs($this->queue, [SIGTERM]);
+        $this->assertNotSame($id, $new);
+    }
+
     protected static function getProperty($name): ReflectionProperty
     {
         $class = new ReflectionClass(Queue::class);

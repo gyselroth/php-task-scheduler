@@ -77,13 +77,19 @@ class Queue
     protected $container;
 
     /**
+     * Current processing job.
+     *
+     * @var array
+     */
+    protected $current_job;
+
+    /**
      * Init queue.
      *
      * @param Scheduler          $scheduler
      * @param Database           $db
      * @param LoggerInterface    $logger
      * @param ContainerInterface $container
-     * @param iterable           $config
      */
     public function __construct(Scheduler $scheduler, Database $db, LoggerInterface $logger, ?ContainerInterface $container = null)
     {
@@ -95,11 +101,20 @@ class Queue
     }
 
     /**
+     * Cleanup and exit.
+     */
+    public function __destroy()
+    {
+        $this->cleanup(SIGTERM);
+    }
+
+    /**
      * Execute job queue as endless loop.
      */
     public function process()
     {
         $cursor = $this->getCursor();
+        $this->catchSignal();
 
         while (true) {
             $this->processLocalQueue();
@@ -157,6 +172,60 @@ class Queue
     }
 
     /**
+     * Catch signals and cleanup.
+     *
+     * @return Queue
+     */
+    protected function catchSignal(): self
+    {
+        pcntl_async_signals(true);
+        pcntl_signal(SIGTERM, [$this, 'cleanup']);
+        pcntl_signal(SIGINT, [$this, 'cleanup']);
+
+        return $this;
+    }
+
+    /**
+     * Cleanup and exit.
+     *
+     * @param mixed $sig
+     *
+     * @return ObjectId
+     */
+    protected function handleSignal($sig): ?ObjectId
+    {
+        if (null === $this->current_job) {
+            $this->logger->debug('received signal ['.$sig.'], no job is currently processing, exit now', [
+                'category' => get_class($this),
+            ]);
+
+            return null;
+        }
+
+        $this->logger->debug('received signal ['.$sig.'], reschedule current processing job ['.$this->current_job['_id'].']', [
+            'category' => get_class($this),
+        ]);
+
+        $this->updateJob($this->current_job['_id'], self::STATUS_CANCELED);
+
+        return $this->scheduler->addJob($this->current_job['class'], $this->current_job['data'], [
+            Scheduler::OPTION_AT => $this->current_job['retry_interval'],
+            Scheduler::OPTION_INTERVAL => $this->current_job['interval'],
+            Scheduler::OPTION_RETRY => --$this->current_job['retry'],
+            Scheduler::OPTION_RETRY_INTERVAL => $this->current_job['retry_interval'],
+        ]);
+    }
+
+    /**
+     * Cleanup and exit.
+     */
+    protected function cleanup(int $sig)
+    {
+        $this->handleSignal($sig);
+        exit();
+    }
+
+    /**
      * Create queue and insert a dummy object to start cursor
      * Dummy object is required, otherwise we would get a dead cursor.
      *
@@ -164,20 +233,20 @@ class Queue
      */
     protected function createQueue(): self
     {
-        $this->logger->info('create new queue ['.$this->scheduler->getCollection().']', [
+        $this->logger->info('create new queue ['.$this->collection_name.']', [
             'category' => get_class($this),
         ]);
 
         try {
             $this->db->createCollection(
-                $this->scheduler->getCollection(),
+                $this->collection_name,
                 [
                     'capped' => true,
                     'size' => $this->scheduler->getQueueSize(),
                 ]
             );
 
-            $this->db->{$this->scheduler->getCollection()}->insertOne(['class' => 'dummy']);
+            $this->db->{$this->collection_name}->insertOne(['class' => 'dummy']);
         } catch (RuntimeException $e) {
             if (48 !== $e->getCode()) {
                 throw $e;
@@ -195,16 +264,16 @@ class Queue
      */
     protected function convertQueue(): self
     {
-        $this->logger->info('convert existing queue collection ['.$this->scheduler->getCollection().'] into a capped collection', [
+        $this->logger->info('convert existing queue collection ['.$this->collection_name.'] into a capped collection', [
             'category' => get_class($this),
         ]);
 
         $this->db->command([
-            'convertToCapped' => $this->scheduler->getCollection(),
+            'convertToCapped' => $this->collection_name,
             'size' => $this->scheduler->getQueueSize(),
         ]);
 
-        $this->db->{$this->scheduler->getCollection()}->insertOne(['class' => 'dummy']);
+        $this->db->{$this->collection_name}->insertOne(['class' => 'dummy']);
 
         return $this;
     }
@@ -409,8 +478,11 @@ class Queue
             'params' => $job['data'],
         ]);
 
+        $this->current_job = $job;
+
         try {
             $this->executeJob($job);
+            $this->current_job = null;
         } catch (\Exception $e) {
             $this->logger->error('failed execute job ['.$job['_id'].']', [
                 'category' => get_class($this),
@@ -418,6 +490,7 @@ class Queue
             ]);
 
             $this->updateJob($job['_id'], self::STATUS_FAILED);
+            $this->current_job = null;
 
             if ($job['retry'] >= 0) {
                 $this->logger->debug('failed job ['.$job['_id'].'] has a retry interval of ['.$job['retry'].']', [
