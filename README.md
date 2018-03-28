@@ -12,6 +12,17 @@ Asynchronous task scheduler for PHP based on MongoDB. Execute asynchronous tasks
 You can implement a daemon which executes jobs and listens in real time for newly added jobs.
 This library has also in-built support for clustered systems. You can start up multiple worker nodes and they will split the available jobs with the principal first comes first serves. It is also possible to schedule jobs at a certain time or with an endless interval as well as rescheduling if a job fails.
 
+## Features
+
+* Schedule tasks at specific times
+* Cluster support
+* Load balancing & Failover
+* Scalable
+* Easy deployable on kubernets and other container orchestration platforms
+* Retry and intervals
+* Job management
+* Easy handling of asynchronous tasks
+
 # Table of Contents
   * [Description](#description)
   * [Features](#features)
@@ -36,15 +47,6 @@ This library has also in-built support for clustered systems. You can start up m
     * [Get jobs](#get-jobs)
     * [Cancel job](#cancel-job)
     * [Modify job](#modify-job)
-
-## Features
-
-* TaskScheduler with queue support
-* Schedule tasks at specific times
-* Cluster support
-* Retry and intervals
-* Job management
-* Easy handling of asynchronous tasks
 
 ## Why?
 PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronously. Sure there is pthreads (Which is also planned to be implemented) but it is only usable in cli mode.
