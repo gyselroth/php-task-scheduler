@@ -1,3 +1,10 @@
+## 2.0.2
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Wed Mar 28 09:28:23 CET 2018
+
+* [FIX] fixed TaskScheduler\Queue::cleanup, cannot access protected method TaskScheduler\Queue::cleanup()
+* [CHANGE] code improvements, added new tests 
+
 ## 2.0.1
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Tue Mar 20 11:00:22 CET 2018

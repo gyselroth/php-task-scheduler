@@ -12,8 +12,12 @@ declare(strict_types=1);
 
 namespace TaskScheduler\Testsuite;
 
+use Helmich\MongoMock\MockCollection;
+use Helmich\MongoMock\MockCursor;
 use Helmich\MongoMock\MockDatabase;
 use MongoDB\BSON\UTCDateTime;
+use MongoDB\Driver\Exception\ConnectionException;
+use MongoDB\Driver\Exception\RuntimeException;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -344,6 +348,60 @@ class QueueTest extends TestCase
         $method = self::getMethod('createQueue');
         $method->invokeArgs($queue, []);
         $this->assertSame('dummy', $mongodb->{$scheduler->getCollection()}->findOne([])['class']);
+    }
+
+    public function testCreateQueueAlreadyExistsNoException()
+    {
+        $mongodb = new MockDatabase();
+        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(LoggerInterface::class));
+        $method = self::getMethod('createQueue');
+        $method->invokeArgs($queue, []);
+
+        $method = self::getMethod('createQueue');
+        $method->invokeArgs($queue, []);
+    }
+
+    public function testCreateQueueRuntimeException()
+    {
+        $this->expectException(RuntimeException::class);
+        $mongodb = $this->createMock(MockDatabase::class);
+        $mongodb->expects($this->once())->method('createCollection')->will($this->throwException(new RuntimeException('error')));
+        $this->expectException(RuntimeException::class);
+
+        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(LoggerInterface::class));
+        $method = self::getMethod('createQueue');
+        $method->invokeArgs($queue, []);
+    }
+
+    public function testCursorConnectionExceptionNotTailable()
+    {
+        $collection = $this->createMock(MockCollection::class);
+        $exception = true;
+        $collection->expects($this->once())->method('find')->will($this->returnCallback(function () use ($exception) {
+            if (true === $exception) {
+                $exception = false;
+                $this->throwException(new ConnectionException('not tailable', 2));
+            }
+
+            return new MockCursor();
+        }));
+
+        $mongodb = $this->createMock(MockDatabase::class);
+        $mongodb->method('__get')->willReturn($collection);
+        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(LoggerInterface::class));
+        $method = self::getMethod('getCursor');
+        $method->invokeArgs($queue, [true]);
+    }
+
+    public function testCursorConnectionException()
+    {
+        $this->expectException(ConnectionException::class);
+        $collection = $this->createMock(MockCollection::class);
+        $collection->expects($this->once())->method('find')->will($this->throwException(new ConnectionException('error')));
+        $mongodb = $this->createMock(MockDatabase::class);
+        $mongodb->method('__get')->willReturn($collection);
+        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(LoggerInterface::class));
+        $queue->processOnce();
     }
 
     public function testConvertQueue()

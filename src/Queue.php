@@ -164,6 +164,17 @@ class Queue
     }
 
     /**
+     * Cleanup and exit.
+     *
+     * @param int $sig
+     */
+    public function cleanup(int $sig)
+    {
+        $this->handleSignal($sig);
+        exit();
+    }
+
+    /**
      * Catch signals and cleanup.
      *
      * @return Queue
@@ -206,17 +217,6 @@ class Queue
             Scheduler::OPTION_RETRY => --$this->current_job['retry'],
             Scheduler::OPTION_RETRY_INTERVAL => $this->current_job['retry_interval'],
         ]);
-    }
-
-    /**
-     * Cleanup and exit.
-     *
-     * @param int $sig
-     */
-    protected function cleanup(int $sig)
-    {
-        $this->handleSignal($sig);
-        exit();
     }
 
     /**
@@ -367,15 +367,20 @@ class Queue
      */
     protected function collectJob(ObjectId $id, int $status, $from_status = self::STATUS_WAITING): bool
     {
+        $set = [
+             'status' => $status,
+        ];
+
+        if (self::STATUS_PROCESSING === $status) {
+            $set['started'] = new UTCDateTime();
+        }
+
         $result = $this->db->{$this->collection_name}->updateMany([
             '_id' => $id,
             'status' => $from_status,
             '$isolated' => true,
         ], [
-            '$set' => [
-                'status' => $status,
-                'started' => self::STATUS_PROCESSING === $status ? new UTCDateTime() : new UTCDateTime(0),
-            ],
+            '$set' => $set,
         ]);
 
         if (1 === $result->getModifiedCount()) {
@@ -407,7 +412,7 @@ class Queue
             'status' => $status,
         ];
 
-        if (self::STATUS_DONE === $status || self::STATUS_FAILED === $status) {
+        if ($status >= self::STATUS_DONE) {
             $set['ended'] = new UTCDateTime();
         }
 
