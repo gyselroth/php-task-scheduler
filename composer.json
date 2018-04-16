@@ -1,6 +1,6 @@
 {
     "name": "gyselroth/mongodb-php-task-scheduler",
-    "description": " Asynchronous task scheduler for PHP based on MongoDB ",
+    "description": " Asynchronous task scheduler for PHP based on MongoDB",
     "keywords": ["mongodb", "async", "task-scheduler"],
     "homepage": "http://www.github.com/gyselroth/mongodb-php-task-scheduler",
     "license": "MIT",
