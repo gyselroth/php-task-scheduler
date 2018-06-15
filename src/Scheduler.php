@@ -29,16 +29,14 @@ class Scheduler
     const OPTION_RETRY = 'retry';
     const OPTION_RETRY_INTERVAL = 'retry_interval';
 
-
     /**
-     * MongoDB type map
+     * MongoDB type map.
      */
     const TYPE_MAP = [
         'document' => 'array',
         'root' => 'array',
         'array' => 'array',
     ];
-
 
     /**
      * Database.
@@ -176,7 +174,7 @@ class Scheduler
         $result = $this->db->{$this->collection_name}->findOne([
             '_id' => $id,
         ], [
-            'typeMap' => self::TYPE_MAP
+            'typeMap' => self::TYPE_MAP,
         ]);
 
         if (null === $result) {
@@ -220,7 +218,7 @@ class Scheduler
                 '$in' => $filter,
             ],
         ], [
-            'typeMap' => self::TYPE_MAP
+            'typeMap' => self::TYPE_MAP,
         ]);
 
         return $result;
@@ -295,7 +293,7 @@ class Scheduler
         ];
 
         $result = $this->db->queue->findOne($filter, [
-            'typeMap' => self::TYPE_MAP
+            'typeMap' => self::TYPE_MAP,
         ]);
 
         if (null !== $result && array_intersect_key($result, $options) !== $options) {
