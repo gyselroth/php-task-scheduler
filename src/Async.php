@@ -43,6 +43,15 @@ class Async
     const OPTION_RETRY_INTERVAL = 'retry_interval';
 
     /**
+     * MongoDB typemap.
+     */
+    const TYPE_MAP = [
+        'document' => 'array',
+        'root' => 'array',
+        'array' => 'array',
+    ];
+
+    /**
      * Database.
      *
      * @var Database
@@ -192,11 +201,7 @@ class Async
         $result = $this->db->{$this->collection_name}->findOne([
             '_id' => $id,
         ], [
-            'typeMap' => [
-                'document' => 'array',
-                'root' => 'array',
-                'array' => 'array',
-            ],
+            'typeMap' => self::TYPE_MAP,
         ]);
 
         if (null === $result) {
@@ -240,11 +245,7 @@ class Async
                 '$in' => $filter,
             ],
         ], [
-            'typeMap' => [
-                'document' => 'array',
-                'root' => 'array',
-                'array' => 'array',
-            ],
+            'typeMap' => self::TYPE_MAP,
         ]);
 
         return $result;
@@ -316,11 +317,24 @@ class Async
             ],
         ];
 
-        $result = $this->db->queue->findOne($filter);
+        $result = $this->db->queue->findOne($filter, [
+            'typeMap' => self::TYPE_MAP,
+        ]);
+
+        if (null !== $result && array_intersect_key($result, $options) !== $options) {
+            $this->logger->debug('job ['.$result['_id'].'] options changed, reschedule new job', [
+                'category' => get_class($this),
+                'data' => $data,
+            ]);
+
+            $this->cancelJob($result['_id']);
+            $result = null;
+        }
 
         if (null === $result) {
             return $this->addJob($class, $data, $options);
         }
+
         $this->logger->debug('queue job ['.$result['_id'].'] of type ['.$class.'] already exists', [
                 'category' => get_class($this),
                 'data' => $data,
@@ -457,13 +471,7 @@ class Async
      */
     protected function getCursor(bool $tailable = true): IteratorIterator
     {
-        $options = [
-            'typeMap' => [
-                'document' => 'array',
-                'root' => 'array',
-                'array' => 'array',
-            ],
-        ];
+        $options = ['typeMap' => self::TYPE_MAP];
 
         if (true === $tailable) {
             $options['cursorType'] = Find::TAILABLE;

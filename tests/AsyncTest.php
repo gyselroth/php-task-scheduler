@@ -126,6 +126,24 @@ class AsyncTest extends TestCase
         $this->assertSame(1, count($jobs->toArray()));
     }
 
+    public function testAddJobOnlyOnceRescheduleIfOptionsChange()
+    {
+        $data = uniqid();
+        $first = $this->async->addJobOnce('test', $data, [
+            Async::OPTION_INTERVAL => 1,
+        ]);
+
+        $seccond = $this->async->addJobOnce('test', $data, [
+            Async::OPTION_INTERVAL => 2,
+        ]);
+
+        $this->assertNotSame($first, $seccond);
+
+        $this->assertSame(Async::STATUS_CANCELED, $this->async->getJob($first)['status']);
+        $jobs = $this->async->getJobs();
+        $this->assertSame(1, count($jobs->toArray()));
+    }
+
     public function testExecuteJobInvalidJobClass()
     {
         $this->expectException(Exception::class);

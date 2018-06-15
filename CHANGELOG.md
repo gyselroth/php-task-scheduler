@@ -1,3 +1,10 @@
+## 1.0.3
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Thu Jun 15 10:18:02 CEST 2018
+
+* [FIX] fixed addJobOnce if options change the job gets rescheduled
+
+
 ## 1.0.2
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Thu Feb 15 08:34:01 CET 2018
