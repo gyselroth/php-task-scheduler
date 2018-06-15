@@ -320,13 +320,7 @@ class Queue
      */
     protected function getCursor(bool $tailable = true): IteratorIterator
     {
-        $options = [
-            'typeMap' => [
-                'document' => 'array',
-                'root' => 'array',
-                'array' => 'array',
-            ],
-        ];
+        $options = ['typeMap' => Scheduler::TYPE_MAP];
 
         if (true === $tailable) {
             $options['cursorType'] = Find::TAILABLE;
