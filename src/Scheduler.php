@@ -29,6 +29,17 @@ class Scheduler
     const OPTION_RETRY = 'retry';
     const OPTION_RETRY_INTERVAL = 'retry_interval';
 
+
+    /**
+     * MongoDB type map
+     */
+    const TYPE_MAP = [
+        'document' => 'array',
+        'root' => 'array',
+        'array' => 'array',
+    ];
+
+
     /**
      * Database.
      *
@@ -165,11 +176,7 @@ class Scheduler
         $result = $this->db->{$this->collection_name}->findOne([
             '_id' => $id,
         ], [
-            'typeMap' => [
-                'document' => 'array',
-                'root' => 'array',
-                'array' => 'array',
-            ],
+            'typeMap' => self::TYPE_MAP
         ]);
 
         if (null === $result) {
@@ -213,11 +220,7 @@ class Scheduler
                 '$in' => $filter,
             ],
         ], [
-            'typeMap' => [
-                'document' => 'array',
-                'root' => 'array',
-                'array' => 'array',
-            ],
+            'typeMap' => self::TYPE_MAP
         ]);
 
         return $result;
@@ -291,11 +294,24 @@ class Scheduler
             ],
         ];
 
-        $result = $this->db->queue->findOne($filter);
+        $result = $this->db->queue->findOne($filter, [
+            'typeMap' => self::TYPE_MAP
+        ]);
+
+        if (null !== $result && array_intersect_key($result, $options) !== $options) {
+            $this->logger->debug('job ['.$result['_id'].'] options changed, reschedule new job', [
+                'category' => get_class($this),
+                'data' => $data,
+            ]);
+
+            $this->cancelJob($result['_id']);
+            $result = null;
+        }
 
         if (null === $result) {
             return $this->addJob($class, $data, $options);
         }
+
         $this->logger->debug('queue job ['.$result['_id'].'] of type ['.$class.'] already exists', [
                 'category' => get_class($this),
                 'data' => $data,

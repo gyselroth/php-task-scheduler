@@ -131,6 +131,24 @@ class SchedulerTest extends TestCase
         $this->assertSame(1, count($jobs->toArray()));
     }
 
+    public function testAddJobOnlyOnceRescheduleIfOptionsChange()
+    {
+        $data = uniqid();
+        $first = $this->scheduler->addJobOnce('test', $data, [
+            Scheduler::OPTION_INTERVAL => 1,
+        ]);
+
+        $seccond = $this->scheduler->addJobOnce('test', $data, [
+            Scheduler::OPTION_INTERVAL => 2,
+        ]);
+
+        $this->assertNotSame($first, $seccond);
+
+        $this->assertSame(Queue::STATUS_CANCELED, $this->scheduler->getJob($first)['status']);
+        $jobs = $this->scheduler->getJobs();
+        $this->assertSame(1, count($jobs->toArray()));
+    }
+
     public function testInitDefaultOptions()
     {
         $mongodb = new MockDatabase();
