@@ -1,3 +1,10 @@
+## 2.0.4
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Thu Jul 19 11:02:34 CEST 2018
+
+* [FEATURE] Get current job id with getId() in a JobInterface implementation 
+
+
 ## 2.0.3
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Thu Jun 15 10:18:02 CEST 2018
