@@ -18,6 +18,7 @@ use Helmich\MongoMock\MockDatabase;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Driver\Exception\ConnectionException;
 use MongoDB\Driver\Exception\RuntimeException;
+use MongoDB\Driver\Exception\ServerException;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -380,7 +381,12 @@ class QueueTest extends TestCase
         $collection->expects($this->once())->method('find')->will($this->returnCallback(function () use ($exception) {
             if (true === $exception) {
                 $exception = false;
-                $this->throwException(new ConnectionException('not tailable', 2));
+
+                if (class_exists(ServerException::class)) {
+                    $this->throwException(new ServerException('not tailable', 2));
+                } else {
+                    $this->throwException(new ConnectionException('not tailable', 2));
+                }
             }
 
             return new MockCursor();

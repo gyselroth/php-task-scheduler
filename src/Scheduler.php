@@ -16,6 +16,7 @@ use InvalidArgumentException;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
+use MongoDB\UpdateResult;
 use Psr\Log\LoggerInterface;
 use Traversable;
 
@@ -193,7 +194,13 @@ class Scheduler
      */
     public function cancelJob(ObjectId $id): bool
     {
-        return $this->updateJob($id, Queue::STATUS_CANCELED);
+        $result = $this->updateJob($id, Queue::STATUS_CANCELED);
+
+        if (1 !== $result->getModifiedCount()) {
+            throw new Exception\JobNotFound('job '.$id.' was not found');
+        }
+
+        return true;
     }
 
     /**
@@ -344,9 +351,9 @@ class Scheduler
      * @param ObjectId $id
      * @param int      $status
      *
-     * @return bool
+     * @return UpdateResult
      */
-    protected function updateJob(ObjectId $id, int $status): bool
+    protected function updateJob(ObjectId $id, int $status): UpdateResult
     {
         $result = $this->db->{$this->collection_name}->updateMany([
             '_id' => $id,
@@ -357,6 +364,6 @@ class Scheduler
             ],
         ]);
 
-        return $result->isAcknowledged();
+        return $result;
     }
 }
