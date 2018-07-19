@@ -12,6 +12,8 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
+use MongoDB\BSON\ObjectId;
+
 abstract class AbstractJob implements JobInterface
 {
     /**
@@ -22,11 +24,14 @@ abstract class AbstractJob implements JobInterface
     protected $data;
 
     /**
-     * Get data.
+     * Job ID.
      *
-     * @param mixed $data
-     *
-     * @return JobInterface
+     * @var ObjectId
+     */
+    protected $id;
+
+    /**
+     * {@inheritdoc}
      */
     public function setData($data): JobInterface
     {
@@ -36,12 +41,28 @@ abstract class AbstractJob implements JobInterface
     }
 
     /**
-     * Get data.
-     *
-     * @return mixed
+     * {@inheritdoc}
      */
     public function getData()
     {
         return $this->data;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function setId(ObjectId $id): JobInterface
+    {
+        $this->id = $id;
+
+        return $this;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getId(): ObjectId
+    {
+        return $this->id;
     }
 }

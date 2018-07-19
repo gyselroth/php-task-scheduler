@@ -12,6 +12,8 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
+use MongoDB\BSON\ObjectId;
+
 interface JobInterface
 {
     /**
@@ -29,6 +31,20 @@ interface JobInterface
      * @return mixed
      */
     public function getData();
+
+    /**
+     * Set ID.
+     *
+     * @return JobInterface
+     */
+    public function setId(ObjectId $id): self;
+
+    /**
+     * Get ID.
+     *
+     * @return ObjectId
+     */
+    public function getId(): ObjectId;
 
     /**
      * Start job.

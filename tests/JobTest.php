@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace TaskScheduler\Testsuite;
 
+use MongoDB\BSON\ObjectId;
 use PHPUnit\Framework\TestCase;
 use TaskScheduler\Testsuite\Mock\SuccessJobMock;
 
@@ -35,6 +36,20 @@ class JobTest extends TestCase
         $self = $this->job->setData(['foo' => 'bar']);
         $data = $this->job->getData();
         $this->assertSame($data, ['foo' => 'bar']);
+    }
+
+    public function testSetId()
+    {
+        $id = new ObjectId();
+        $self = $this->job->setId($id);
+        $this->assertInstanceOf(SuccessJobMock::class, $self);
+    }
+
+    public function testGetId()
+    {
+        $id = new ObjectId();
+        $self = $this->job->setId($id);
+        $this->assertSame($self->getId(), $id);
     }
 
     public function testStart()

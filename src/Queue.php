@@ -538,7 +538,9 @@ class Queue
             throw new Exception\InvalidJob('job must implement JobInterface');
         }
 
-        $instance->setData($job['data'])
+        $instance
+            ->setData($job['data'])
+            ->setId($job['_id'])
             ->start();
 
         return $this->updateJob($job['_id'], self::STATUS_DONE);
