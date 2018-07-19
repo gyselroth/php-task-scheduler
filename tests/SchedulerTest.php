@@ -89,6 +89,12 @@ class SchedulerTest extends TestCase
         $this->assertSame(Queue::STATUS_CANCELED, $job['status']);
     }
 
+    public function testCancelJobNotFound()
+    {
+        $this->expectException(Exception\JobNotFound::class);
+        $this->scheduler->cancelJob(new ObjectId());
+    }
+
     public function testAddJobAdvanced()
     {
         $id = $this->scheduler->addJob('test', ['foo' => 'bar'], [

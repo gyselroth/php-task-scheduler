@@ -1,3 +1,11 @@
+## 2.0.5
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Thu Jul 19 11:02:34 CEST 2018
+
+* [CHANGE] Scheduler::cancelJob() not throws Exception\JobNotFound if job was not found
+* [FIX] Fixed driver version (mongodb >= 1.5.0) support for ServerException along ConnectionException to create collection if not propperly setup
+
+
 ## 2.0.4
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Thu Jul 19 11:02:34 CEST 2018

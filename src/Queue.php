@@ -18,6 +18,7 @@ use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use MongoDB\Driver\Exception\ConnectionException;
 use MongoDB\Driver\Exception\RuntimeException;
+use MongoDB\Driver\Exception\ServerException;
 use MongoDB\Operation\Find;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -334,7 +335,7 @@ class Queue
                     ['status' => self::STATUS_POSTPONED],
                 ],
             ], $options);
-        } catch (ConnectionException $e) {
+        } catch (ConnectionException | ServerException $e) {
             if (2 === $e->getCode()) {
                 $this->convertQueue();
 
