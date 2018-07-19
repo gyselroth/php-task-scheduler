@@ -80,7 +80,7 @@ class Queue
     /**
      * Current processing job.
      *
-     * @var array
+     * @var null|array
      */
     protected $current_job;
 
@@ -276,9 +276,9 @@ class Queue
     /**
      * Retrieve next job.
      *
-     * @param iterable $cursor
+     * @param IteratorIterator $cursor
      */
-    protected function retrieveNextJob(Iterable $cursor)
+    protected function retrieveNextJob(IteratorIterator $cursor)
     {
         try {
             $cursor->next();
