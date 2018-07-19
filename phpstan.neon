@@ -2,8 +2,6 @@ parameters:
     autoload_directories:
         - %rootDir%/../../../src
         - %rootDir%/../../../tests
-    ignoreErrors:
-        - '#^Class MongoDB\\BSON\\UTCDateTime constructor invoked with 0 parameters, 1 required\.#'
 
 includes:
-    - vendor/phpstan/phpstan/conf/config.level1.neon
+    - vendor/phpstan/phpstan/conf/config.level4.neon

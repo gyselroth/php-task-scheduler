@@ -4,6 +4,8 @@
 
 * [CHANGE] Scheduler::cancelJob() not throws Exception\JobNotFound if job was not found
 * [FIX] Fixed driver version (mongodb >= 1.5.0) support for ServerException along ConnectionException to create collection if not propperly setup
+* [FIX] Use collection_name from options instead static queue in getCursor()
+* [CHANGE] Extended phpstan level to 5
 
 
 ## 2.0.4

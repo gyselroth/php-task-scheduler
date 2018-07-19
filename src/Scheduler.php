@@ -299,7 +299,7 @@ class Scheduler
             ],
         ];
 
-        $result = $this->db->queue->findOne($filter, [
+        $result = $this->db->{$this->collection_name}->findOne($filter, [
             'typeMap' => self::TYPE_MAP,
         ]);
 
