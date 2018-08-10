@@ -12,56 +12,30 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
-use IteratorIterator;
-use MongoDB\BSON\ObjectId;
-use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
-use MongoDB\Driver\Exception\ConnectionException;
-use MongoDB\Driver\Exception\RuntimeException;
-use MongoDB\Driver\Exception\ServerException;
-use MongoDB\Operation\Find;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 
-class Queue
+class Queue extends AbstractQueue
 {
     /**
-     * Job status.
+     * Process identifier.
      */
-    const STATUS_WAITING = 0;
-    const STATUS_POSTPONED = 1;
-    const STATUS_PROCESSING = 2;
-    const STATUS_DONE = 3;
-    const STATUS_FAILED = 4;
-    const STATUS_CANCELED = 5;
+    public const MAIN_PROCESS = 'main';
 
     /**
-     * Scheduler.
-     *
-     * @param Scheduler
+     * Queue options.
      */
-    protected $scheduler;
+    public const OPTION_PM = 'process_handling';
+    public const OPTION_MAX_CHILDREN = 'max_children';
+    public const OPTION_MIN_CHILDREN = 'min_children';
 
     /**
-     * Database.
-     *
-     * @var Database
+     * Process handling.
      */
-    protected $db;
-
-    /**
-     * LoggerInterface.
-     *
-     * @var LoggerInterface
-     */
-    protected $logger;
-
-    /**
-     * Local queue.
-     *
-     * @var array
-     */
-    protected $queue = [];
+    public const PM_DYNAMIC = 'dynamic';
+    public const PM_STATIC = 'static';
+    public const PM_ONDEMAND = 'ondemand';
 
     /**
      * Collection name.
@@ -71,96 +45,108 @@ class Queue
     protected $collection_name = 'queue';
 
     /**
-     * Container.
+     * Process management.
      *
-     * @var ContainerInterface
+     * @var string
      */
-    protected $container;
+    protected $pm = self::PM_DYNAMIC;
 
     /**
-     * Current processing job.
+     * Max children.
      *
-     * @var null|array
+     * @var int
      */
-    protected $current_job;
+    protected $max_children = 2;
+
+    /**
+     * Min children.
+     *
+     * @var int
+     */
+    protected $min_children = 1;
+
+    /**
+     * Forks.
+     *
+     * @var array
+     */
+    protected $forks = [];
+
+    /**
+     * Worker factory.
+     *
+     * @var WorkerFactoryInterface
+     */
+    protected $factory;
 
     /**
      * Init queue.
      *
-     * @param Scheduler          $scheduler
-     * @param Database           $db
-     * @param LoggerInterface    $logger
-     * @param ContainerInterface $container
+     * @param Scheduler              $scheduler
+     * @param Database               $db
+     * @param WorkerFactoryInterface $factory
+     * @param LoggerInterface        $logger
+     * @param ContainerInterface     $container
+     * @param array                  $options
      */
-    public function __construct(Scheduler $scheduler, Database $db, LoggerInterface $logger, ?ContainerInterface $container = null)
+    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?ContainerInterface $container = null, array $config = [])
     {
         $this->scheduler = $scheduler;
         $this->db = $db;
         $this->logger = $logger;
         $this->container = $container;
         $this->collection_name = $scheduler->getCollection();
+        $this->setOptions($config);
+        $this->process = self::MAIN_PROCESS;
+        $this->factory = $factory;
     }
 
     /**
-     * Execute job queue as endless loop.
-     */
-    public function process()
-    {
-        $cursor = $this->getCursor();
-        $this->catchSignal();
-
-        while (true) {
-            $this->processLocalQueue();
-
-            if (null === $cursor->current()) {
-                if ($cursor->getInnerIterator()->isDead()) {
-                    $this->logger->error('job queue cursor is dead, is it a capped collection?', [
-                        'category' => get_class($this),
-                    ]);
-
-                    $this->createQueue();
-
-                    return $this->process();
-                }
-
-                $this->retrieveNextJob($cursor);
-
-                continue;
-            }
-
-            $job = $cursor->current();
-            $this->retrieveNextJob($cursor);
-            $this->queueJob($job);
-        }
-    }
-
-    /**
-     * Execute job queue.
+     * Set options.
      *
-     * @return bool
+     * @param array $config
+     *
+     * @return Queue
      */
-    public function processOnce(): bool
+    public function setOptions(array $config = []): self
     {
-        $cursor = $this->getCursor(false);
+        foreach ($config as $option => $value) {
+            switch ($option) {
+                case 'max_children':
+                case 'min_children':
+                    if (!is_int($value)) {
+                        throw new InvalidArgumentException($option.' needs to be an integer');
+                    }
 
-        while (true) {
-            $this->processLocalQueue();
+                    $this->{$option} = $value;
 
-            if (null === $cursor->current()) {
-                if ($cursor->getInnerIterator()->isDead()) {
-                    $this->logger->debug('all jobs were processed', [
-                        'category' => get_class($this),
-                    ]);
+                break;
+                case 'pm':
+                    if (!defined('PM_'.strtoupper($value))) {
+                        throw new InvalidArgumentException($option.' is not a valid process handling type (static, dynamic, ondemand)');
+                    }
 
-                    return false;
-                }
+                    $this->{$option} = $value;
 
-                return true;
+                break;
+                default:
+                    throw new InvalidArgumentException('invalid option '.$option.' given');
             }
+        }
 
-            $job = $cursor->current();
-            $cursor->next();
-            $this->queueJob($job);
+        return $this;
+    }
+
+    /**
+     * Startup (blocking process).
+     */
+    public function process(): void
+    {
+        try {
+            $this->startInitialWorkers();
+            $this->main();
+        } catch (\Exception $e) {
+            $this->cleanup(SIGTERM);
         }
     }
 
@@ -173,6 +159,106 @@ class Queue
     {
         $this->handleSignal($sig);
         exit();
+    }
+
+    /**
+     * Start initial workers.
+     */
+    protected function startInitialWorkers()
+    {
+        $this->logger->debug('start initial ['.$this->min_children.'] child processes', [
+            'category' => get_class($this),
+            'pm' => $this->process,
+        ]);
+
+        $pids = [];
+
+        if (self::PM_DYNAMIC === $this->pm || self::PM_STATIC === $this->pm) {
+            for ($i = 0; $i < $this->min_children; ++$i) {
+                $this->startWorker();
+            }
+        }
+    }
+
+    /**
+     * Start worker.
+     *
+     * @see https://github.com/mongodb/mongo-php-driver/issues/828
+     * @see https://github.com/mongodb/mongo-php-driver/issues/174
+     *
+     * @param array $job
+     */
+    protected function startWorker(?array $job = null): int
+    {
+        $pid = pcntl_fork();
+        $this->forks[] = $pid;
+
+        if (-1 === $pid) {
+            throw new Exception\Runtime('failed to start new worker');
+        }
+        if (!$pid) {
+            $worker = $this->factory->build()->start();
+            exit();
+        }
+
+        $this->logger->debug('start worker process ['.$pid.']', [
+            'category' => get_class($this),
+            'pm' => $this->process,
+        ]);
+
+        return $pid;
+    }
+
+    /**
+     * Fork handling, blocking process.
+     */
+    protected function main()
+    {
+        $cursor = $this->getCursor();
+        $this->catchSignal();
+
+        while (true) {
+            if (null === $cursor->current()) {
+                if ($cursor->getInnerIterator()->isDead()) {
+                    $this->logger->error('job queue cursor is dead, is it a capped collection?', [
+                        'category' => get_class($this),
+                        'pm' => $this->process,
+                    ]);
+
+                    $this->createQueue();
+
+                    return $this->main();
+                }
+
+                $this->retrieveNextJob($cursor);
+
+                continue;
+            }
+
+            $job = $cursor->current();
+            $this->retrieveNextJob($cursor);
+
+            if (count($this->forks) < $this->max_children && self::PM_STATIC !== $this->pm) {
+                $this->logger->debug('max_children ['.$this->max_children.'] processes not reached ['.count($this->forks).'], start new worker', [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]);
+
+                $this->startWorker();
+            } elseif (isset($job[Scheduler::OPTION_IGNORE_MAX_CHILDREN]) && true === $job[Scheduler::OPTION_IGNORE_MAX_CHILDREN]) {
+                $this->logger->debug('job ['.$job['_id'].'] deployed with ignore_max_children, start new worker', [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]);
+
+                $this->startWorker($job);
+            } else {
+                $this->logger->debug('max children ['.$this->max_children.'] reached for job ['.$job['_id'].'], do not start new worker', [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]);
+            }
+        }
     }
 
     /**
@@ -190,360 +276,24 @@ class Queue
     }
 
     /**
-     * Cleanup and exit.
+     * Cleanup.
      *
      * @param int $sig
-     *
-     * @return ObjectId
      */
-    protected function handleSignal(int $sig): ?ObjectId
+    protected function handleSignal(int $sig): void
     {
-        if (null === $this->current_job) {
-            $this->logger->debug('received signal ['.$sig.'], no job is currently processing, exit now', [
-                'category' => get_class($this),
-            ]);
-
-            return null;
-        }
-
-        $this->logger->debug('received signal ['.$sig.'], reschedule current processing job ['.$this->current_job['_id'].']', [
+        $this->logger->debug('received signal ['.$sig.']', [
             'category' => get_class($this),
+            'pm' => $this->process,
         ]);
 
-        $this->updateJob($this->current_job['_id'], self::STATUS_CANCELED);
-
-        return $this->scheduler->addJob($this->current_job['class'], $this->current_job['data'], [
-            Scheduler::OPTION_AT => $this->current_job['retry_interval'],
-            Scheduler::OPTION_INTERVAL => $this->current_job['interval'],
-            Scheduler::OPTION_RETRY => --$this->current_job['retry'],
-            Scheduler::OPTION_RETRY_INTERVAL => $this->current_job['retry_interval'],
-        ]);
-    }
-
-    /**
-     * Create queue and insert a dummy object to start cursor
-     * Dummy object is required, otherwise we would get a dead cursor.
-     *
-     * @return Queue
-     */
-    protected function createQueue(): self
-    {
-        $this->logger->info('create new queue ['.$this->collection_name.']', [
-            'category' => get_class($this),
-        ]);
-
-        try {
-            $this->db->createCollection(
-                $this->collection_name,
-                [
-                    'capped' => true,
-                    'size' => $this->scheduler->getQueueSize(),
-                ]
-            );
-
-            $this->db->{$this->collection_name}->insertOne(['class' => 'dummy']);
-        } catch (RuntimeException $e) {
-            if (48 !== $e->getCode()) {
-                throw $e;
-            }
-        }
-
-        return $this;
-    }
-
-    /**
-     * Create queue and insert a dummy object to start cursor
-     * Dummy object is required, otherwise we would get a dead cursor.
-     *
-     * @return Queue
-     */
-    protected function convertQueue(): self
-    {
-        $this->logger->info('convert existing queue collection ['.$this->collection_name.'] into a capped collection', [
-            'category' => get_class($this),
-        ]);
-
-        $this->db->command([
-            'convertToCapped' => $this->collection_name,
-            'size' => $this->scheduler->getQueueSize(),
-        ]);
-
-        $this->db->{$this->collection_name}->insertOne(['class' => 'dummy']);
-
-        return $this;
-    }
-
-    /**
-     * Retrieve next job.
-     *
-     * @param IteratorIterator $cursor
-     */
-    protected function retrieveNextJob(IteratorIterator $cursor)
-    {
-        try {
-            $cursor->next();
-        } catch (RuntimeException $e) {
-            $this->logger->error('job queue cursor failed to retrieve next job, restart daemon', [
+        foreach ($this->forks as $pid) {
+            $this->logger->debug('forward signal ['.$sig.'] to child process ['.$pid.']', [
                 'category' => get_class($this),
-                'exception' => $e,
+                'pm' => $this->process,
             ]);
 
-            $this->process();
+            posix_kill($pid, $sig);
         }
-    }
-
-    /**
-     * Queue job.
-     *
-     * @param array $job
-     */
-    protected function queueJob(array $job): bool
-    {
-        if (true === $this->collectJob($job['_id'], self::STATUS_PROCESSING)) {
-            $this->processJob($job);
-        } elseif (self::STATUS_POSTPONED === $job['status']) {
-            $this->logger->debug('found postponed job ['.$job['_id'].'] to requeue', [
-                'category' => get_class($this),
-            ]);
-
-            $this->queue[] = $job;
-        }
-
-        return true;
-    }
-
-    /**
-     * Get cursor.
-     *
-     * @param bool $tailable
-     *
-     * @return IteratorIterator
-     */
-    protected function getCursor(bool $tailable = true): IteratorIterator
-    {
-        $options = ['typeMap' => Scheduler::TYPE_MAP];
-
-        if (true === $tailable) {
-            $options['cursorType'] = Find::TAILABLE;
-            $options['noCursorTimeout'] = true;
-        }
-
-        try {
-            $cursor = $this->db->{$this->collection_name}->find([
-                '$or' => [
-                    ['status' => self::STATUS_WAITING],
-                    ['status' => self::STATUS_POSTPONED],
-                ],
-            ], $options);
-        } catch (ConnectionException | ServerException $e) {
-            if (2 === $e->getCode()) {
-                $this->convertQueue();
-
-                return $this->getCursor($tailable);
-            }
-
-            throw $e;
-        }
-
-        $iterator = new IteratorIterator($cursor);
-        $iterator->rewind();
-
-        return $iterator;
-    }
-
-    /**
-     * Update job status.
-     *
-     * @param ObjectId $id
-     * @param int      $status
-     * @param mixed    $from_status
-     *
-     * @return bool
-     */
-    protected function collectJob(ObjectId $id, int $status, $from_status = self::STATUS_WAITING): bool
-    {
-        $set = [
-             'status' => $status,
-        ];
-
-        if (self::STATUS_PROCESSING === $status) {
-            $set['started'] = new UTCDateTime();
-        }
-
-        $result = $this->db->{$this->collection_name}->updateMany([
-            '_id' => $id,
-            'status' => $from_status,
-            '$isolated' => true,
-        ], [
-            '$set' => $set,
-        ]);
-
-        if (1 === $result->getModifiedCount()) {
-            $this->logger->debug('job ['.$id.'] updated to status ['.$status.']', [
-                'category' => get_class($this),
-            ]);
-
-            return true;
-        }
-
-        $this->logger->debug('job ['.$id.'] is already collected with status ['.$status.']', [
-            'category' => get_class($this),
-        ]);
-
-        return false;
-    }
-
-    /**
-     * Update job status.
-     *
-     * @param ObjectId $id
-     * @param int      $status
-     *
-     * @return bool
-     */
-    protected function updateJob(ObjectId $id, int $status): bool
-    {
-        $set = [
-            'status' => $status,
-        ];
-
-        if ($status >= self::STATUS_DONE) {
-            $set['ended'] = new UTCDateTime();
-        }
-
-        $result = $this->db->{$this->collection_name}->updateMany([
-            '_id' => $id,
-            '$isolated' => true,
-        ], [
-            '$set' => $set,
-        ]);
-
-        return $result->isAcknowledged();
-    }
-
-    /**
-     * Check local queue for postponed jobs.
-     *
-     * @return bool
-     */
-    protected function processLocalQueue(): bool
-    {
-        $now = new UTCDateTime();
-        foreach ($this->queue as $key => $job) {
-            if ($job['at'] <= $now) {
-                $this->logger->info('postponed job ['.$job['_id'].'] ['.$job['class'].'] can now be executed', [
-                    'category' => get_class($this),
-                ]);
-
-                unset($this->queue[$key]);
-                $job['at'] = null;
-
-                if (true === $this->collectJob($job['_id'], self::STATUS_PROCESSING, self::STATUS_POSTPONED)) {
-                    $this->processJob($job);
-                }
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Process job.
-     *
-     * @param array $job
-     *
-     * @return ObjectId
-     */
-    protected function processJob(array $job): ObjectId
-    {
-        if ($job['at'] instanceof UTCDateTime) {
-            $this->updateJob($job['_id'], self::STATUS_POSTPONED);
-            $this->queue[] = $job;
-
-            $this->logger->debug('execution of job ['.$job['_id'].'] ['.$job['class'].'] is postponed at ['.$job['at']->toDateTime()->format('c').']', [
-                'category' => get_class($this),
-            ]);
-
-            return $job['_id'];
-        }
-
-        $this->logger->debug('execute job ['.$job['_id'].'] ['.$job['class'].']', [
-            'category' => get_class($this),
-            'params' => $job['data'],
-        ]);
-
-        $this->current_job = $job;
-
-        try {
-            $this->executeJob($job);
-            $this->current_job = null;
-        } catch (\Exception $e) {
-            $this->logger->error('failed execute job ['.$job['_id'].']', [
-                'category' => get_class($this),
-                'exception' => $e,
-            ]);
-
-            $this->updateJob($job['_id'], self::STATUS_FAILED);
-            $this->current_job = null;
-
-            if ($job['retry'] >= 0) {
-                $this->logger->debug('failed job ['.$job['_id'].'] has a retry interval of ['.$job['retry'].']', [
-                    'category' => get_class($this),
-                ]);
-
-                return $this->scheduler->addJob($job['class'], $job['data'], [
-                    Scheduler::OPTION_AT => time() + $job['retry_interval'],
-                    Scheduler::OPTION_INTERVAL => $job['interval'],
-                    Scheduler::OPTION_RETRY => --$job['retry'],
-                    Scheduler::OPTION_RETRY_INTERVAL => $job['retry_interval'],
-                ]);
-            }
-        }
-
-        if ($job['interval'] >= 0) {
-            $this->logger->debug('job ['.$job['_id'].'] has an interval of ['.$job['interval'].'s]', [
-                'category' => get_class($this),
-            ]);
-
-            return $this->scheduler->addJob($job['class'], $job['data'], [
-                Scheduler::OPTION_AT => time() + $job['interval'],
-                Scheduler::OPTION_INTERVAL => $job['interval'],
-                Scheduler::OPTION_RETRY => $job['retry'],
-                Scheduler::OPTION_RETRY_INTERVAL => $job['retry_interval'],
-            ]);
-        }
-
-        return $job['_id'];
-    }
-
-    /**
-     * Execute job.
-     *
-     * @param array $job
-     *
-     * @return bool
-     */
-    protected function executeJob(array $job): bool
-    {
-        if (!class_exists($job['class'])) {
-            throw new Exception\InvalidJob('job class does not exists');
-        }
-
-        if (null === $this->container) {
-            $instance = new $job['class']();
-        } else {
-            $instance = $this->container->get($job['class']);
-        }
-
-        if (!($instance instanceof JobInterface)) {
-            throw new Exception\InvalidJob('job must implement JobInterface');
-        }
-
-        $instance
-            ->setData($job['data'])
-            ->setId($job['_id'])
-            ->start();
-
-        return $this->updateJob($job['_id'], self::STATUS_DONE);
     }
 }

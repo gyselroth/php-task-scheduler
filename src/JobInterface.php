@@ -17,6 +17,16 @@ use MongoDB\BSON\ObjectId;
 interface JobInterface
 {
     /**
+     * Job status.
+     */
+    public const STATUS_WAITING = 0;
+    public const STATUS_POSTPONED = 1;
+    public const STATUS_PROCESSING = 2;
+    public const STATUS_DONE = 3;
+    public const STATUS_FAILED = 4;
+    public const STATUS_CANCELED = 5;
+
+    /**
      * Get job data.
      *
      * @param mixed $data

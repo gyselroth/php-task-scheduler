@@ -25,15 +25,16 @@ class Scheduler
     /**
      * Job options.
      */
-    const OPTION_AT = 'at';
-    const OPTION_INTERVAL = 'interval';
-    const OPTION_RETRY = 'retry';
-    const OPTION_RETRY_INTERVAL = 'retry_interval';
+    public const OPTION_AT = 'at';
+    public const OPTION_INTERVAL = 'interval';
+    public const OPTION_RETRY = 'retry';
+    public const OPTION_RETRY_INTERVAL = 'retry_interval';
+    public const OPTION_IGNORE_MAX_CHILDREN = 'ignore_max_children';
 
     /**
      * MongoDB type map.
      */
-    const TYPE_MAP = [
+    public const TYPE_MAP = [
         'document' => 'array',
         'root' => 'array',
         'array' => 'array',
@@ -100,26 +101,23 @@ class Scheduler
      *
      * @param Database        $db
      * @param LoggerInterface $logger
-     * @param iterable        $config
+     * @param array           $config
      */
-    public function __construct(Database $db, LoggerInterface $logger, ?Iterable $config = null)
+    public function __construct(Database $db, LoggerInterface $logger, array $config = [])
     {
         $this->db = $db;
         $this->logger = $logger;
-
-        if (null !== $config) {
-            $this->setOptions($config);
-        }
+        $this->setOptions($config);
     }
 
     /**
      * Set options.
      *
-     * @param iterable $config
+     * @param array $config
      *
-     * @return Async
+     * @return Scheduler
      */
-    public function setOptions(Iterable $config = []): self
+    public function setOptions(array $config = []): self
     {
         foreach ($config as $option => $value) {
             switch ($option) {
@@ -194,7 +192,7 @@ class Scheduler
      */
     public function cancelJob(ObjectId $id): bool
     {
-        $result = $this->updateJob($id, Queue::STATUS_CANCELED);
+        $result = $this->updateJob($id, JobInterface::STATUS_CANCELED);
 
         if (1 !== $result->getModifiedCount()) {
             throw new Exception\JobNotFound('job '.$id.' was not found');
@@ -214,9 +212,9 @@ class Scheduler
     {
         if (0 === count($filter)) {
             $filter = [
-                Queue::STATUS_WAITING,
-                Queue::STATUS_PROCESSING,
-                Queue::STATUS_POSTPONED,
+                JobInterface::STATUS_WAITING,
+                JobInterface::STATUS_PROCESSING,
+                JobInterface::STATUS_POSTPONED,
             ];
         }
 
@@ -247,6 +245,7 @@ class Scheduler
             self::OPTION_INTERVAL => $this->default_interval,
             self::OPTION_RETRY => $this->default_retry,
             self::OPTION_RETRY_INTERVAL => $this->default_retry_interval,
+            self::OPTION_IGNORE_MAX_CHILDREN => false,
         ];
 
         $options = array_merge($defaults, $options);
@@ -259,7 +258,7 @@ class Scheduler
 
         $result = $this->db->{$this->collection_name}->insertOne([
             'class' => $class,
-            'status' => Queue::STATUS_WAITING,
+            'status' => JobInterface::STATUS_WAITING,
             'created' => new UTCDateTime(),
             'started' => new UTCDateTime(0),
             'ended' => new UTCDateTime(0),
@@ -267,6 +266,7 @@ class Scheduler
             'retry' => $options[self::OPTION_RETRY],
             'retry_interval' => $options[self::OPTION_RETRY_INTERVAL],
             'interval' => $options[self::OPTION_INTERVAL],
+            'ignore_max_children' => $options[self::OPTION_IGNORE_MAX_CHILDREN],
             'data' => $data,
         ], ['$isolated' => true]);
 
@@ -294,8 +294,8 @@ class Scheduler
             'class' => $class,
             'data' => $data,
             '$or' => [
-                ['status' => Queue::STATUS_WAITING],
-                ['status' => Queue::STATUS_POSTPONED],
+                ['status' => JobInterface::STATUS_WAITING],
+                ['status' => JobInterface::STATUS_POSTPONED],
             ],
         ];
 
@@ -330,16 +330,30 @@ class Scheduler
      *
      * @param array $options
      *
-     * @return Async
+     * @return Scheduler
      */
     protected function validateOptions(array $options): self
     {
-        if (count($options) > 4) {
-            throw new InvalidArgumentException('invalid option given');
-        }
+        foreach ($options as $option => $value) {
+            switch ($option) {
+                case self::OPTION_AT:
+                case self::OPTION_INTERVAL:
+                case self::OPTION_RETRY:
+                case self::OPTION_RETRY_INTERVAL:
+                    if (!is_int($value)) {
+                        throw new InvalidArgumentException('option '.$option.' must be an integer');
+                    }
 
-        if (4 !== count(array_filter($options, 'is_int'))) {
-            throw new InvalidArgumentException('Only integers are allowed to passed');
+                break;
+                case self::OPTION_IGNORE_MAX_CHILDREN:
+                    if (!is_bool($value)) {
+                        throw new InvalidArgumentException('option '.$option.' must be a boolean');
+                    }
+
+                break;
+                default:
+                    throw new InvalidArgumentException('invalid option '.$option.' given');
+            }
         }
 
         return $this;

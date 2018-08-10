@@ -1,3 +1,12 @@
+## 3.0.0
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: 
+
+* [FIX] Added pnctl requirement to composer.json
+* [FEATURE] Implemented forks, meaning a the main process (Queue::class) is the fork handler and will bootstrap new child processes (@see README.md to see how to use v3.0.0)
+* [CHANGE] Queue::processOnce() is not available anymore, Queue::process() is the only entrypoint and blocking process
+
+
 ## 2.0.5
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Thu Jul 19 11:02:34 CEST 2018

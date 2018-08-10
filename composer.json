@@ -21,6 +21,7 @@
         "psr/log": "1.*",
         "psr/container": "*",
         "ext-mongodb": "*",
+        "ext-pnctl": "*",
         "mongodb/mongodb": "*"
     },
     "repositories": [
