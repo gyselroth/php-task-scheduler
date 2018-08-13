@@ -37,11 +37,10 @@ This library has built-in support for clustered systems and multi core cpu. You 
     * [Create job queue](#create-job-queue)
     * [Create a job (mail example)](#Create-a-job-mail-example)
     * [Execute jobs](#execute-jobs)
-    * [Create daemon](#create-daemon)
-    * [Alternative way via cron](#alternative-way-via-cron)
     * [Advanced job options](#advanced-job-options)
-    * [Add job only once](#add-job-only-once)
-    * [Advanced default/initialization options](#advanced-defaultinitialization-options)
+    * [Add job if not exists](#add-job-if-not-exists)
+    * [Advanced scheduler options](#advanced-scheduler-options)
+    * [Advanced queue node options](#advanced-queue-node-options)
     * [Using a DIC (dependeny injection container)](#using-a-dic-dependeny-injection-container)
     * [Manage jobs](#manage-jobs)
     * [Get jobs](#get-jobs)
@@ -240,7 +239,7 @@ $scheduler->addJob(MailJob::class, $mail->toString(), [
 
 This will queue our mail to be executed in one hour from now and it will re-schedule the job up to three times if it fails.
 
-### Add job only once
+### Add job if not exists
 What you also can do is adding the job only if it has not been queued yet.
 Instead using `addJob()` you can use `addJobOnce()` the scheduler then checks if got the same job already queued, it not the job gets added.
 The scheduler compares the type of job (`MailJob` in this case) and the data submitted (`$mail->toString()` in this case).
@@ -252,7 +251,7 @@ $scheduler->addJobOnce(MailJob::class, $mail->toString(), [
 ]);
 ```
 
-### Advanced default/initialization options
+### Advanced scheduler options
 
 Custom options and defaults can be set for jobs during initialization or if you call Scheduler::setOptions().
 
