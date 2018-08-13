@@ -30,6 +30,12 @@ class Scheduler
     public const OPTION_RETRY = 'retry';
     public const OPTION_RETRY_INTERVAL = 'retry_interval';
     public const OPTION_IGNORE_MAX_CHILDREN = 'ignore_max_children';
+    public const OPTION_DEFAULT_AT = 'default_at';
+    public const OPTION_DEFAULT_INTERVAL = 'default_interval';
+    public const OPTION_DEFAULT_RETRY = 'default_retry';
+    public const OPTION_DEFAULT_RETRY_INTERVAL = 'default_retry_interval';
+    public const OPTION_COLLECTION_NAME = 'collection_name';
+    public const OPTION_QUEUE_SIZE = 'queue_size';
 
     /**
      * MongoDB type map.
@@ -121,15 +127,15 @@ class Scheduler
     {
         foreach ($config as $option => $value) {
             switch ($option) {
-                case 'collection_name':
+                case self::OPTION_COLLECTION_NAME:
                     $this->{$option} = (string) $value;
 
                 break;
-                case 'default_retry':
-                case 'default_at':
-                case 'default_retry_interval':
-                case 'default_interval':
-                case 'queue_size':
+                case self::OPTION_DEFAULT_AT:
+                case self::OPTION_DEFAULT_RETRY_INTERVAL:
+                case self::OPTION_DEFAULT_INTERVAL:
+                case self::OPTION_DEFAULT_RETRY:
+                case self::OPTION_QUEUE_SIZE:
                     $this->{$option} = (int) $value;
 
                 break;

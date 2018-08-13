@@ -1,6 +1,6 @@
-## 3.0.0
+## 3.0.0-alpha1
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
-**Date**: 
+**Date**: Mon Aug 13 16:50:34 CEST 2018
 
 * [FIX] Added pnctl requirement to composer.json
 * [FEATURE] Implemented forks, meaning a the main process (Queue::class) is the fork handler and will bootstrap new child processes (@see README.md to see how to use v3.0.0)

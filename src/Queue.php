@@ -166,10 +166,23 @@ class Queue extends AbstractQueue
         exit();
     }
 
-    public function exitChild($sig, $pid)
+    /**
+     * Wait for child and terminate.
+     *
+     * @param int   $sig
+     * @param array $pid
+     *
+     * @return Queue
+     */
+    public function exitChild(int $sig, array $pid): self
     {
-        var_dump('exit child');
-        var_dump($sig, $pid);
+        pcntl_waitpid($pid['pid'], $status, WNOHANG | WUNTRACED);
+
+        if (isset($this->forks[$pid['pid']])) {
+            unset($this->forks[$pid['pid']]);
+        }
+
+        return $this;
     }
 
     /**
@@ -199,7 +212,7 @@ class Queue extends AbstractQueue
      *
      * @return int
      */
-    protected function startWorker(?array $job = null): int
+    protected function startWorker(?array $job = null)
     {
         $pid = pcntl_fork();
         $this->forks[] = $pid;
@@ -208,9 +221,7 @@ class Queue extends AbstractQueue
             throw new Exception\Runtime('failed to start new worker');
         }
         if (!$pid) {
-            var_dump('start worker');
-            //$worker = $this->factory->build()->start();
-            var_dump('exit');
+            $worker = $this->factory->build()->start();
             exit();
         }
 
@@ -218,8 +229,6 @@ class Queue extends AbstractQueue
             'category' => get_class($this),
             'pm' => $this->process,
         ]);
-
-        pcntl_waitpid($pid, $status, WNOHANG | WUNTRACED);
 
         return $pid;
     }
@@ -263,8 +272,8 @@ class Queue extends AbstractQueue
             $job = $cursor->current();
             $this->retrieveNextJob($cursor);
 
-            if (count($this->forks) < $this->max_children && self::PM_STATIC !== $this->pm) {
-                $this->logger->debug('max_children ['.$this->max_children.'] processes not reached ['.count($this->forks).'], start new worker', [
+            if ($this->manager->getProcessCount() < $this->max_children && self::PM_STATIC !== $this->pm) {
+                $this->logger->debug('max_children ['.$this->max_children.'] processes not reached ['.$this->manager->getProcessCount().'], start new worker', [
                     'category' => get_class($this),
                     'pm' => $this->process,
                 ]);
@@ -320,8 +329,6 @@ class Queue extends AbstractQueue
             ]);
 
             posix_kill($pid, $sig);
-            //pcntl_waitpid($pid, $status, WNOHANG | WUNTRACED);
-            //unset($this->forks[$key]);
         }
     }
 }

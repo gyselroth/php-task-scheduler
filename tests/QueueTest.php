@@ -62,13 +62,13 @@ class QueueTest extends TestCase
         $this->assertSame($id, $cursor->current()['_id']);
     }
 
-    public function testSignalHandlerAttached()
+    /*public function testSignalHandlerAttached()
     {
         $method = self::getMethod('catchSignal');
         $method->invokeArgs($this->queue, []);
         $this->assertSame(pcntl_signal_get_handler(SIGTERM)[1], 'cleanup');
         $this->assertSame(pcntl_signal_get_handler(SIGINT)[1], 'cleanup');
-    }
+    }*/
 
     /*public function testCleanupViaSigtermNoJob()
     {
@@ -163,34 +163,38 @@ class QueueTest extends TestCase
         $method->invokeArgs($this->queue, []);
     }
 
-    /*public function testStartInitialDefaultWorkers()
+    public function testStartInitialDefaultWorkers()
     {
+        $method = self::getMethod('catchSignal');
+        $method->invokeArgs($this->queue, []);
         $method = self::getMethod('startInitialWorkers');
         $method->invokeArgs($this->queue, []);
         $method = self::getMethod('getForks');
         $forks = $method->invokeArgs($this->queue, []);
         $this->assertCount(1, $forks);
-    }*/
+    }
 
-    /*public function testStartTwoInitialWorkersViaConstructor()
+    public function testStartTwoInitialWorkersViaConstructor()
     {
         $mongodb = new MockDatabase();
         $scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
         $queue = new Queue($scheduler, $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class), null, [
-            Queue::OPTION_MIN_CHILDREN => 2
+            Queue::OPTION_MIN_CHILDREN => 2,
         ]);
 
+        $method = self::getMethod('catchSignal');
+        $method->invokeArgs($this->queue, []);
         $method = self::getMethod('startInitialWorkers');
         $method->invokeArgs($queue, []);
         $method = self::getMethod('getForks');
         $forks = $method->invokeArgs($queue, []);
         $this->assertCount(2, $forks);
-    }*/
+    }
 
     public function testTerminateStartedWorkers()
     {
         $this->queue->setOptions([
-            Queue::OPTION_MIN_CHILDREN => 1,
+            Queue::OPTION_MIN_CHILDREN => 2,
             Queue::OPTION_MAX_CHILDREN => 4,
         ]);
 
@@ -200,30 +204,30 @@ class QueueTest extends TestCase
         $method->invokeArgs($this->queue, []);
         $method = self::getMethod('getForks');
         $forks = $method->invokeArgs($this->queue, []);
-        //$this->assertCount(2, $forks);
-        sleep(300000);
-        var_dump($forks);
+        $this->assertCount(2, $forks);
 
-        /*        foreach($forks as $pid) {
-                    $this->assertNotSame(false, posix_getpgid($pid));
-                }
-        
-                $method = self::getMethod('handleSignal');
-                $method->invokeArgs($this->queue, [SIGKILL]);
-        sleep(30);
-                foreach($forks as $pid) {
-                    var_dump($pid."::".posix_getpgid($pid));
-                    $this->assertFalse(posix_getpgid($pid));
-                }*/
+        foreach ($forks as $pid) {
+            $this->assertNotSame(false, posix_getpgid($pid));
+        }
+
+        $method = self::getMethod('handleSignal');
+        $method->invokeArgs($this->queue, [SIGKILL]);
+
+        foreach ($forks as $pid) {
+            pcntl_waitpid($pid, $status);
+            $this->assertFalse(posix_getpgid($pid));
+        }
     }
 
-    /*public function testStartTwoStaticWorkers()
+    public function testStartTwoStaticWorkers()
     {
         $this->queue->setOptions([
             Queue::OPTION_MIN_CHILDREN => 2,
-            Queue::OPTION_PM => Queue::PM_STATIC
+            Queue::OPTION_PM => Queue::PM_STATIC,
         ]);
 
+        $method = self::getMethod('catchSignal');
+        $method->invokeArgs($this->queue, []);
         $method = self::getMethod('startInitialWorkers');
         $method->invokeArgs($this->queue, []);
         $method = self::getMethod('getForks');
@@ -234,15 +238,17 @@ class QueueTest extends TestCase
     public function testOndemandWorkers()
     {
         $this->queue->setOptions([
-            Queue::OPTION_PM => Queue::PM_ONDEMAND
+            Queue::OPTION_PM => Queue::PM_ONDEMAND,
         ]);
 
+        $method = self::getMethod('catchSignal');
+        $method->invokeArgs($this->queue, []);
         $method = self::getMethod('startInitialWorkers');
         $method->invokeArgs($this->queue, []);
         $method = self::getMethod('getForks');
         $forks = $method->invokeArgs($this->queue, []);
         $this->assertCount(0, $forks);
-    }*/
+    }
 
     public function testMinChildrenGreaterThanMaxChildren()
     {
