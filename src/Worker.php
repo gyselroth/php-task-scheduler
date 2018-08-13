@@ -234,7 +234,7 @@ class Worker extends AbstractQueue
         ];
 
         //isset($job['ended']) required due compatibility between 1.x and 2.x
-        if ($status >= JobInterface::STATUS_DONE && isset($set['ended'])) {
+        if ($status >= JobInterface::STATUS_DONE && isset($job['ended'])) {
             $set['ended'] = new UTCDateTime();
         }
 

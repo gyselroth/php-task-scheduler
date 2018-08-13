@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
+use InvalidArgumentException;
 use MongoDB\Database;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -26,7 +27,7 @@ class Queue extends AbstractQueue
     /**
      * Queue options.
      */
-    public const OPTION_PM = 'process_handling';
+    public const OPTION_PM = 'pm';
     public const OPTION_MAX_CHILDREN = 'max_children';
     public const OPTION_MIN_CHILDREN = 'min_children';
 
@@ -112,8 +113,8 @@ class Queue extends AbstractQueue
     {
         foreach ($config as $option => $value) {
             switch ($option) {
-                case 'max_children':
-                case 'min_children':
+                case self::OPTION_MAX_CHILDREN:
+                case self::OPTION_MIN_CHILDREN:
                     if (!is_int($value)) {
                         throw new InvalidArgumentException($option.' needs to be an integer');
                     }
@@ -121,9 +122,9 @@ class Queue extends AbstractQueue
                     $this->{$option} = $value;
 
                 break;
-                case 'pm':
-                    if (!defined('PM_'.strtoupper($value))) {
-                        throw new InvalidArgumentException($option.' is not a valid process handling type (static, dynamic, ondemand)');
+                case self::OPTION_PM:
+                    if (!defined('self::PM_'.strtoupper($value))) {
+                        throw new InvalidArgumentException($value.' is not a valid process handling type (static, dynamic, ondemand)');
                     }
 
                     $this->{$option} = $value;
@@ -132,6 +133,10 @@ class Queue extends AbstractQueue
                 default:
                     throw new InvalidArgumentException('invalid option '.$option.' given');
             }
+        }
+
+        if ($this->min_children > $this->max_children) {
+            throw new InvalidArgumentException('option min_children must not be greater than option max_children');
         }
 
         return $this;
@@ -161,6 +166,12 @@ class Queue extends AbstractQueue
         exit();
     }
 
+    public function exitChild($sig, $pid)
+    {
+        var_dump('exit child');
+        var_dump($sig, $pid);
+    }
+
     /**
      * Start initial workers.
      */
@@ -170,8 +181,6 @@ class Queue extends AbstractQueue
             'category' => get_class($this),
             'pm' => $this->process,
         ]);
-
-        $pids = [];
 
         if (self::PM_DYNAMIC === $this->pm || self::PM_STATIC === $this->pm) {
             for ($i = 0; $i < $this->min_children; ++$i) {
@@ -187,6 +196,8 @@ class Queue extends AbstractQueue
      * @see https://github.com/mongodb/mongo-php-driver/issues/174
      *
      * @param array $job
+     *
+     * @return int
      */
     protected function startWorker(?array $job = null): int
     {
@@ -197,7 +208,9 @@ class Queue extends AbstractQueue
             throw new Exception\Runtime('failed to start new worker');
         }
         if (!$pid) {
-            $worker = $this->factory->build()->start();
+            var_dump('start worker');
+            //$worker = $this->factory->build()->start();
+            var_dump('exit');
             exit();
         }
 
@@ -206,7 +219,19 @@ class Queue extends AbstractQueue
             'pm' => $this->process,
         ]);
 
+        pcntl_waitpid($pid, $status, WNOHANG | WUNTRACED);
+
         return $pid;
+    }
+
+    /**
+     * Get forks (array of pid's).
+     *
+     * @return int[]
+     */
+    protected function getForks(): array
+    {
+        return $this->forks;
     }
 
     /**
@@ -271,6 +296,7 @@ class Queue extends AbstractQueue
         pcntl_async_signals(true);
         pcntl_signal(SIGTERM, [$this, 'cleanup']);
         pcntl_signal(SIGINT, [$this, 'cleanup']);
+        pcntl_signal(SIGCHLD, [$this, 'exitChild']);
 
         return $this;
     }
@@ -287,13 +313,15 @@ class Queue extends AbstractQueue
             'pm' => $this->process,
         ]);
 
-        foreach ($this->forks as $pid) {
+        foreach ($this->getForks() as $key => $pid) {
             $this->logger->debug('forward signal ['.$sig.'] to child process ['.$pid.']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);
 
             posix_kill($pid, $sig);
+            //pcntl_waitpid($pid, $status, WNOHANG | WUNTRACED);
+            //unset($this->forks[$key]);
         }
     }
 }

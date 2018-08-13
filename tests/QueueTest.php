@@ -15,21 +15,18 @@ namespace TaskScheduler\Testsuite;
 use Helmich\MongoMock\MockCollection;
 use Helmich\MongoMock\MockCursor;
 use Helmich\MongoMock\MockDatabase;
-use MongoDB\BSON\UTCDateTime;
+use InvalidArgumentException;
 use MongoDB\Driver\Exception\ConnectionException;
 use MongoDB\Driver\Exception\RuntimeException;
 use MongoDB\Driver\Exception\ServerException;
 use PHPUnit\Framework\TestCase;
-use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionProperty;
-use TaskScheduler\Exception;
 use TaskScheduler\Queue;
 use TaskScheduler\Scheduler;
-use TaskScheduler\Testsuite\Mock\ErrorJobMock;
-use TaskScheduler\Testsuite\Mock\SuccessJobMock;
+use TaskScheduler\WorkerFactoryInterface;
 
 class QueueTest extends TestCase
 {
@@ -40,218 +37,7 @@ class QueueTest extends TestCase
     {
         $mongodb = new MockDatabase();
         $this->scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
-        $this->queue = new Queue($this->scheduler, $mongodb, $this->createMock(LoggerInterface::class));
-    }
-
-    public function testExecuteJobInvalidJobClass()
-    {
-        $this->expectException(Exception\InvalidJob::class);
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
-        $job = $this->scheduler->getJob($id);
-
-        $method = self::getMethod('executeJob');
-        $method->invokeArgs($this->queue, [$job]);
-    }
-
-    public function testExecuteSuccessfulJob()
-    {
-        $id = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
-        $job = $this->scheduler->getJob($id);
-
-        $start = new UTCDateTime();
-        $method = self::getMethod('executeJob');
-        $method->invokeArgs($this->queue, [$job]);
-        $job = $this->scheduler->getJob($id);
-        $this->assertSame(Queue::STATUS_DONE, $job['status']);
-        $this->assertTrue($job['ended'] >= $start);
-    }
-
-    public function testExecuteErrorJob()
-    {
-        $this->expectException(\Exception::class);
-        $id = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar']);
-        $job = $this->scheduler->getJob($id);
-
-        $start = new UTCDateTime();
-        $method = self::getMethod('executeJob');
-        $method->invokeArgs($this->queue, [$job]);
-
-        $job = $this->scheduler->getJob($id);
-        $this->assertSame(Queue::STATUS_FAILED, $job['status']);
-        $this->assertTrue($job['started'] >= $start);
-        $this->assertTrue($job['ended'] >= $start);
-    }
-
-    public function testProcessSuccessfulJob()
-    {
-        $id = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
-        $job = $this->scheduler->getJob($id);
-
-        $method = self::getMethod('processJob');
-        $method->invokeArgs($this->queue, [$job]);
-        $job = $this->scheduler->getJob($id);
-        $this->assertSame(Queue::STATUS_DONE, $job['status']);
-    }
-
-    public function testProcessErrorJob()
-    {
-        $id = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar']);
-        $job = $this->scheduler->getJob($id);
-
-        $method = self::getMethod('processJob');
-        $method->invokeArgs($this->queue, [$job]);
-        $job = $this->scheduler->getJob($id);
-        $this->assertSame(Queue::STATUS_FAILED, $job['status']);
-    }
-
-    public function testProcessPostponedJob()
-    {
-        $id = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
-            Scheduler::OPTION_AT => time() + 60,
-        ]);
-        $job = $this->scheduler->getJob($id);
-
-        $method = self::getMethod('processJob');
-        $method->invokeArgs($this->queue, [$job]);
-        $job = $this->scheduler->getJob($id);
-        $this->assertSame(Queue::STATUS_POSTPONED, $job['status']);
-    }
-
-    public function testUpdateJob()
-    {
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
-        $job = $this->scheduler->getJob($id);
-
-        $method = self::getMethod('updateJob');
-        $method->invokeArgs($this->queue, [$id, Queue::STATUS_PROCESSING]);
-        $job = $this->scheduler->getJob($id);
-        $this->assertSame(Queue::STATUS_PROCESSING, $job['status']);
-    }
-
-    public function testProcessLocalQueueWithPostponedJobInFuture()
-    {
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar'], [
-            Scheduler::OPTION_AT => time() + 10,
-        ]);
-
-        $method = self::getMethod('updateJob');
-        $method->invokeArgs($this->queue, [$id, Queue::STATUS_POSTPONED]);
-        $job = $this->scheduler->getJob($id);
-
-        $queue = self::getProperty('queue');
-        $queue->setValue($this->queue, [$job]);
-
-        $method = self::getMethod('processLocalQueue');
-        $method->invokeArgs($this->queue, []);
-
-        $queue = self::getProperty('queue');
-        $queue = $queue->getValue($this->queue);
-
-        $this->assertSame(1, count($queue));
-        $this->assertSame(Queue::STATUS_POSTPONED, $queue[0]['status']);
-    }
-
-    public function testProcessLocalQueueWithPostponedJobNow()
-    {
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar'], [
-            Scheduler::OPTION_AT => time(),
-        ]);
-
-        $method = self::getMethod('updateJob');
-        $method->invokeArgs($this->queue, [$id, Queue::STATUS_POSTPONED]);
-        $job = $this->scheduler->getJob($id);
-
-        $queue = self::getProperty('queue');
-        $queue->setValue($this->queue, [$job]);
-
-        $method = self::getMethod('processLocalQueue');
-        $method->invokeArgs($this->queue, []);
-
-        $queue = self::getProperty('queue');
-        $queue = $queue->getValue($this->queue);
-
-        $this->assertSame(0, count($queue));
-    }
-
-    public function testProcessLocalQueueWithPostponedJobFromPast()
-    {
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar'], [
-            Scheduler::OPTION_AT => time() - 10,
-        ]);
-
-        $method = self::getMethod('updateJob');
-        $method->invokeArgs($this->queue, [$id, Queue::STATUS_POSTPONED]);
-        $job = $this->scheduler->getJob($id);
-
-        $queue = self::getProperty('queue');
-        $queue->setValue($this->queue, [$job]);
-
-        $method = self::getMethod('processLocalQueue');
-        $method->invokeArgs($this->queue, []);
-
-        $queue = self::getProperty('queue');
-        $queue = $queue->getValue($this->queue);
-
-        $this->assertSame(0, count($queue));
-    }
-
-    public function testProcessErrorJobRetry()
-    {
-        $id = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar'], [
-            Scheduler::OPTION_RETRY => 1,
-        ]);
-
-        $job = $this->scheduler->getJob($id);
-        $method = self::getMethod('processJob');
-        $retry_id = $method->invokeArgs($this->queue, [$job]);
-        $retry_job = $this->scheduler->getJob($retry_id);
-
-        $this->assertSame(Queue::STATUS_WAITING, $retry_job['status']);
-        $this->assertSame(0, $retry_job['retry']);
-    }
-
-    public function testProcessJobInterval()
-    {
-        $id = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
-            Scheduler::OPTION_INTERVAL => 100,
-        ]);
-
-        $job = $this->scheduler->getJob($id);
-        $method = self::getMethod('processJob');
-        $interval_id = $method->invokeArgs($this->queue, [$job]);
-        $job = $this->scheduler->getJob($id);
-        $interval_job = $this->scheduler->getJob($interval_id);
-
-        $this->assertSame(Queue::STATUS_DONE, $job['status']);
-        $this->assertSame(Queue::STATUS_WAITING, $interval_job['status']);
-        $this->assertSame(100, $interval_job['interval']);
-        $this->assertTrue((int) $interval_job['at']->toDateTime()->format('U') > time());
-    }
-
-    public function testCollectJob()
-    {
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
-
-        $start = new UTCDateTime();
-        $job = $this->scheduler->getJob($id);
-        $method = self::getMethod('collectJob');
-        $result = $method->invokeArgs($this->queue, [$job['_id'], Queue::STATUS_PROCESSING, Queue::STATUS_WAITING]);
-        $this->assertTrue($result);
-        $job = $this->scheduler->getJob($id);
-        $this->assertSame(Queue::STATUS_PROCESSING, $job['status']);
-        $this->assertTrue($job['started'] >= $start);
-    }
-
-    public function testCollectAlreadyCollectedJob()
-    {
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
-
-        $job = $this->scheduler->getJob($id);
-        $method = self::getMethod('collectJob');
-        $method->invokeArgs($this->queue, [$job['_id'], Queue::STATUS_PROCESSING, Queue::STATUS_WAITING]);
-        $result = $method->invokeArgs($this->queue, [$job['_id'], Queue::STATUS_PROCESSING, Queue::STATUS_WAITING]);
-
-        $this->assertFalse($result);
+        $this->queue = new Queue($this->scheduler, $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class));
     }
 
     public function testCursor()
@@ -262,17 +48,6 @@ class QueueTest extends TestCase
         $method = self::getMethod('getCursor');
         $cursor = $method->invokeArgs($this->queue, []);
         $this->assertSame(1, count($cursor->toArray()));
-    }
-
-    public function testCursorEmpty()
-    {
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
-        $method = self::getMethod('updateJob');
-        $method->invokeArgs($this->queue, [$id, Queue::STATUS_DONE]);
-
-        $method = self::getMethod('getCursor');
-        $cursor = $method->invokeArgs($this->queue, []);
-        $this->assertSame(0, count($cursor->toArray()));
     }
 
     public function testCursorRetrieveNext()
@@ -287,34 +62,6 @@ class QueueTest extends TestCase
         $this->assertSame($id, $cursor->current()['_id']);
     }
 
-    public function testStartOnce()
-    {
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
-        $this->queue->processOnce();
-        $job = $this->scheduler->getJob($id);
-        $this->assertSame(Queue::STATUS_FAILED, $job['status']);
-    }
-
-    public function testExecuteViaContainer()
-    {
-        $mongodb = new MockDatabase();
-
-        $stub_container = $this->getMockBuilder(ContainerInterface::class)
-            ->getMock();
-        $stub_container->method('get')
-            ->willReturn(new SuccessJobMock());
-
-        $scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
-        $this->queue = new Queue($scheduler, $mongodb, $this->createMock(LoggerInterface::class), $stub_container);
-
-        $id = $scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
-        $job = $scheduler->getJob($id);
-        $method = self::getMethod('executeJob');
-        $method->invokeArgs($this->queue, [$job]);
-        $job = $scheduler->getJob($id);
-        $this->assertSame(Queue::STATUS_DONE, $job['status']);
-    }
-
     public function testSignalHandlerAttached()
     {
         $method = self::getMethod('catchSignal');
@@ -323,13 +70,13 @@ class QueueTest extends TestCase
         $this->assertSame(pcntl_signal_get_handler(SIGINT)[1], 'cleanup');
     }
 
-    public function testCleanupViaSigtermNoJob()
+    /*public function testCleanupViaSigtermNoJob()
     {
         $method = self::getMethod('handleSignal');
         $method->invokeArgs($this->queue, [SIGTERM]);
-    }
+    }*/
 
-    public function testCleanupViaSigtermScheduleJob()
+    /*public function testCleanupViaSigtermScheduleJob()
     {
         $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
         $property = self::getProperty('current_job');
@@ -338,13 +85,13 @@ class QueueTest extends TestCase
         $method = self::getMethod('handleSignal');
         $new = $method->invokeArgs($this->queue, [SIGTERM]);
         $this->assertNotSame($id, $new);
-    }
+    }*/
 
     public function testCreateQueue()
     {
         $mongodb = new MockDatabase();
         $scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
-        $queue = new Queue($scheduler, $mongodb, $this->createMock(LoggerInterface::class));
+        $queue = new Queue($scheduler, $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class));
 
         $method = self::getMethod('createQueue');
         $method->invokeArgs($queue, []);
@@ -354,7 +101,7 @@ class QueueTest extends TestCase
     public function testCreateQueueAlreadyExistsNoException()
     {
         $mongodb = new MockDatabase();
-        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(LoggerInterface::class));
+        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class));
         $method = self::getMethod('createQueue');
         $method->invokeArgs($queue, []);
 
@@ -369,7 +116,7 @@ class QueueTest extends TestCase
         $mongodb->expects($this->once())->method('createCollection')->will($this->throwException(new RuntimeException('error')));
         $this->expectException(RuntimeException::class);
 
-        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(LoggerInterface::class));
+        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class));
         $method = self::getMethod('createQueue');
         $method->invokeArgs($queue, []);
     }
@@ -394,26 +141,149 @@ class QueueTest extends TestCase
 
         $mongodb = $this->createMock(MockDatabase::class);
         $mongodb->method('__get')->willReturn($collection);
-        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(LoggerInterface::class));
+        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class));
         $method = self::getMethod('getCursor');
         $method->invokeArgs($queue, [true]);
     }
 
-    public function testCursorConnectionException()
+    /*public function testCursorConnectionException()
     {
         $this->expectException(ConnectionException::class);
         $collection = $this->createMock(MockCollection::class);
         $collection->expects($this->once())->method('find')->will($this->throwException(new ConnectionException('error')));
         $mongodb = $this->createMock(MockDatabase::class);
         $mongodb->method('__get')->willReturn($collection);
-        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(LoggerInterface::class));
+        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class));
         $queue->processOnce();
-    }
+    }*/
 
     public function testConvertQueue()
     {
         $method = self::getMethod('convertQueue');
         $method->invokeArgs($this->queue, []);
+    }
+
+    /*public function testStartInitialDefaultWorkers()
+    {
+        $method = self::getMethod('startInitialWorkers');
+        $method->invokeArgs($this->queue, []);
+        $method = self::getMethod('getForks');
+        $forks = $method->invokeArgs($this->queue, []);
+        $this->assertCount(1, $forks);
+    }*/
+
+    /*public function testStartTwoInitialWorkersViaConstructor()
+    {
+        $mongodb = new MockDatabase();
+        $scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
+        $queue = new Queue($scheduler, $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class), null, [
+            Queue::OPTION_MIN_CHILDREN => 2
+        ]);
+
+        $method = self::getMethod('startInitialWorkers');
+        $method->invokeArgs($queue, []);
+        $method = self::getMethod('getForks');
+        $forks = $method->invokeArgs($queue, []);
+        $this->assertCount(2, $forks);
+    }*/
+
+    public function testTerminateStartedWorkers()
+    {
+        $this->queue->setOptions([
+            Queue::OPTION_MIN_CHILDREN => 1,
+            Queue::OPTION_MAX_CHILDREN => 4,
+        ]);
+
+        $method = self::getMethod('catchSignal');
+        $method->invokeArgs($this->queue, []);
+        $method = self::getMethod('startInitialWorkers');
+        $method->invokeArgs($this->queue, []);
+        $method = self::getMethod('getForks');
+        $forks = $method->invokeArgs($this->queue, []);
+        //$this->assertCount(2, $forks);
+        sleep(300000);
+        var_dump($forks);
+
+        /*        foreach($forks as $pid) {
+                    $this->assertNotSame(false, posix_getpgid($pid));
+                }
+        
+                $method = self::getMethod('handleSignal');
+                $method->invokeArgs($this->queue, [SIGKILL]);
+        sleep(30);
+                foreach($forks as $pid) {
+                    var_dump($pid."::".posix_getpgid($pid));
+                    $this->assertFalse(posix_getpgid($pid));
+                }*/
+    }
+
+    /*public function testStartTwoStaticWorkers()
+    {
+        $this->queue->setOptions([
+            Queue::OPTION_MIN_CHILDREN => 2,
+            Queue::OPTION_PM => Queue::PM_STATIC
+        ]);
+
+        $method = self::getMethod('startInitialWorkers');
+        $method->invokeArgs($this->queue, []);
+        $method = self::getMethod('getForks');
+        $forks = $method->invokeArgs($this->queue, []);
+        $this->assertCount(2, $forks);
+    }
+
+    public function testOndemandWorkers()
+    {
+        $this->queue->setOptions([
+            Queue::OPTION_PM => Queue::PM_ONDEMAND
+        ]);
+
+        $method = self::getMethod('startInitialWorkers');
+        $method->invokeArgs($this->queue, []);
+        $method = self::getMethod('getForks');
+        $forks = $method->invokeArgs($this->queue, []);
+        $this->assertCount(0, $forks);
+    }*/
+
+    public function testMinChildrenGreaterThanMaxChildren()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->queue->setOptions([
+            Queue::OPTION_MIN_CHILDREN => 3,
+            Queue::OPTION_MAX_CHILDREN => 2,
+        ]);
+    }
+
+    public function testNotExistingProcessHandlingOption()
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->queue->setOptions([
+            Queue::OPTION_PM => 'foo',
+        ]);
+    }
+
+    public function testMinChildrenInteger()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->queue->setOptions([
+            Queue::OPTION_MIN_CHILDREN => 'foo',
+        ]);
+    }
+
+    public function testMaxChildrenInteger()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->queue->setOptions([
+            Queue::OPTION_MAX_CHILDREN => 'foo',
+        ]);
+    }
+
+    public function testNotExistingOption()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->queue->setOptions([
+            'bar' => 'foo',
+        ]);
     }
 
     protected static function getProperty($name): ReflectionProperty

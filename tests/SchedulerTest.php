@@ -18,7 +18,7 @@ use MongoDB\BSON\ObjectId;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception;
-use TaskScheduler\Queue;
+use TaskScheduler\JobInterface;
 use TaskScheduler\Scheduler;
 
 class SchedulerTest extends TestCase
@@ -41,7 +41,7 @@ class SchedulerTest extends TestCase
     {
         $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
         $job = $this->scheduler->getJob($id);
-        $this->assertSame($job['status'], Queue::STATUS_WAITING);
+        $this->assertSame($job['status'], JobInterface::STATUS_WAITING);
     }
 
     public function testNewJobTimestamps()
@@ -71,7 +71,7 @@ class SchedulerTest extends TestCase
     public function testGetClosedJobsWhenNoClosedJobsExist()
     {
         $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
-        $jobs = $this->scheduler->getJobs([Queue::STATUS_DONE]);
+        $jobs = $this->scheduler->getJobs([JobInterface::STATUS_DONE]);
         $this->assertSame(0, count($jobs->toArray()));
     }
 
@@ -86,7 +86,7 @@ class SchedulerTest extends TestCase
         $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
         $this->scheduler->cancelJob($id);
         $job = $this->scheduler->getJob($id);
-        $this->assertSame(Queue::STATUS_CANCELED, $job['status']);
+        $this->assertSame(JobInterface::STATUS_CANCELED, $job['status']);
     }
 
     public function testCancelJobNotFound()
@@ -150,7 +150,7 @@ class SchedulerTest extends TestCase
 
         $this->assertNotSame($first, $seccond);
 
-        $this->assertSame(Queue::STATUS_CANCELED, $this->scheduler->getJob($first)['status']);
+        $this->assertSame(JobInterface::STATUS_CANCELED, $this->scheduler->getJob($first)['status']);
         $jobs = $this->scheduler->getJobs();
         $this->assertSame(1, count($jobs->toArray()));
     }
