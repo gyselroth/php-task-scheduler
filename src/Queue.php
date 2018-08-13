@@ -272,8 +272,8 @@ class Queue extends AbstractQueue
             $job = $cursor->current();
             $this->retrieveNextJob($cursor);
 
-            if ($this->manager->getProcessCount() < $this->max_children && self::PM_STATIC !== $this->pm) {
-                $this->logger->debug('max_children ['.$this->max_children.'] processes not reached ['.$this->manager->getProcessCount().'], start new worker', [
+            if (count($this->forks) < $this->max_children && self::PM_STATIC !== $this->pm) {
+                $this->logger->debug('max_children ['.$this->max_children.'] processes not reached ['.count($this->forks).'], start new worker', [
                     'category' => get_class($this),
                     'pm' => $this->process,
                 ]);

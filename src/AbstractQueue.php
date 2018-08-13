@@ -21,7 +21,7 @@ use MongoDB\Operation\Find;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 
-class AbstractQueue
+abstract class AbstractQueue
 {
     /**
      * Scheduler.
@@ -69,7 +69,7 @@ class AbstractQueue
      * Create queue and insert a dummy object to start cursor
      * Dummy object is required, otherwise we would get a dead cursor.
      *
-     * @return Queue
+     * @return AbstractQueue
      */
     protected function createQueue(): self
     {
@@ -101,7 +101,7 @@ class AbstractQueue
      * Create queue and insert a dummy object to start cursor
      * Dummy object is required, otherwise we would get a dead cursor.
      *
-     * @return Queue
+     * @return AbstractQueue
      */
     protected function convertQueue(): self
     {
@@ -139,6 +139,11 @@ class AbstractQueue
             $this->main();
         }
     }
+
+    /**
+     * Main call.
+     */
+    abstract protected function main();
 
     /**
      * Get cursor.
