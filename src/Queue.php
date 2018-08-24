@@ -100,6 +100,9 @@ class Queue extends AbstractQueue
         $this->setOptions($config);
         $this->process = self::MAIN_PROCESS;
         $this->factory = $factory;
+
+        $this->jobs = new MessageQueue($db, $scheduler->getJobQueue(), $scheduler->getJobQueueSize());
+        $this->events = new MessageQueue($db, $scheduler->getEventQueue(), $scheduler->getEventQueueSize());
     }
 
     /**
@@ -148,7 +151,7 @@ class Queue extends AbstractQueue
     public function process(): void
     {
         try {
-            $this->startInitialWorkers();
+            $this->spawnInitialWorkers();
             $this->main();
         } catch (\Exception $e) {
             $this->cleanup(SIGTERM);
@@ -188,16 +191,16 @@ class Queue extends AbstractQueue
     /**
      * Start initial workers.
      */
-    protected function startInitialWorkers()
+    protected function spawnInitialWorkers()
     {
-        $this->logger->debug('start initial ['.$this->min_children.'] child processes', [
+        $this->logger->debug('spawn initial ['.$this->min_children.'] child processes', [
             'category' => get_class($this),
             'pm' => $this->process,
         ]);
 
         if (self::PM_DYNAMIC === $this->pm || self::PM_STATIC === $this->pm) {
             for ($i = 0; $i < $this->min_children; ++$i) {
-                $this->startWorker();
+                $this->spawnWorker();
             }
         }
     }
@@ -212,20 +215,20 @@ class Queue extends AbstractQueue
      *
      * @return int
      */
-    protected function startWorker(?array $job = null)
+    protected function spawnWorker(?array $job = null)
     {
         $pid = pcntl_fork();
         $this->forks[] = $pid;
 
         if (-1 === $pid) {
-            throw new Exception\Runtime('failed to start new worker');
+            throw new Exception\Runtime('failed to spawn new worker');
         }
         if (!$pid) {
             $worker = $this->factory->build()->start();
             exit();
         }
 
-        $this->logger->debug('start worker process ['.$pid.']', [
+        $this->logger->debug('spawn worker process ['.$pid.']', [
             'category' => get_class($this),
             'pm' => $this->process,
         ]);
@@ -273,21 +276,21 @@ class Queue extends AbstractQueue
             $this->retrieveNextJob($cursor);
 
             if (count($this->forks) < $this->max_children && self::PM_STATIC !== $this->pm) {
-                $this->logger->debug('max_children ['.$this->max_children.'] processes not reached ['.count($this->forks).'], start new worker', [
+                $this->logger->debug('max_children ['.$this->max_children.'] processes not reached ['.count($this->forks).'], spawn new worker', [
                     'category' => get_class($this),
                     'pm' => $this->process,
                 ]);
 
-                $this->startWorker();
+                $this->spawnWorker();
             } elseif (isset($job[Scheduler::OPTION_IGNORE_MAX_CHILDREN]) && true === $job[Scheduler::OPTION_IGNORE_MAX_CHILDREN]) {
-                $this->logger->debug('job ['.$job['_id'].'] deployed with ignore_max_children, start new worker', [
+                $this->logger->debug('job ['.$job['_id'].'] deployed with ignore_max_children, spawn new worker', [
                     'category' => get_class($this),
                     'pm' => $this->process,
                 ]);
 
-                $this->startWorker($job);
+                $this->spawnWorker($job);
             } else {
-                $this->logger->debug('max children ['.$this->max_children.'] reached for job ['.$job['_id'].'], do not start new worker', [
+                $this->logger->debug('max children ['.$this->max_children.'] reached for job ['.$job['_id'].'], do not spawn new worker', [
                     'category' => get_class($this),
                     'pm' => $this->process,
                 ]);

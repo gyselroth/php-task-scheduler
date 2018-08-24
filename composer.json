@@ -22,8 +22,8 @@
         "psr/container": "*",
         "ext-mongodb": "*",
         "ext-pcntl": "*",
-        "mongodb/mongodb": "*",
-        "misterion/ko-process": "^0.5.3"
+        "ext-posix": "*",
+        "mongodb/mongodb": "*"
     },
     "repositories": [
          {

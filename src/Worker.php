@@ -17,6 +17,7 @@ use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
+use League\Event\Emitter;
 
 class Worker extends AbstractQueue
 {
@@ -101,7 +102,7 @@ class Worker extends AbstractQueue
 
             $job = $cursor->current();
             $this->retrieveNextJob($cursor);
-            $this->queueJob($job);
+            $this->queueJob($process);
         }
     }
 
@@ -143,6 +144,12 @@ class Worker extends AbstractQueue
         ]);
 
         $this->updateJob($this->current_job, JobInterface::STATUS_CANCELED);
+
+        $this->{$this->scheduler->getEventCollection()}->insertOne([
+            'job' => $this->current_job['_id'],
+            'event' => 3,
+            'timestamp' => new UTCDateTime(),
+        ]);
 
         return $this->scheduler->addJob($this->current_job['class'], $this->current_job['data'], [
             Scheduler::OPTION_AT => $this->current_job['retry_interval'],
@@ -206,6 +213,12 @@ class Worker extends AbstractQueue
             $this->logger->debug('job ['.$job['_id'].'] updated to status ['.$status.']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
+            ]);
+
+            $this->{$this->scheduler->getEventQueue()}->insertOne([
+                'job' => $job['_id'],
+                'event' => $status
+                'timestamp' => new UTCDateTime(),
             ]);
 
             return true;
@@ -304,6 +317,12 @@ class Worker extends AbstractQueue
 
         $this->current_job = $job;
 
+        /*$this->{$this->scheduler->getEventCollection()}->insertOne([
+            'job' => $job['_id'],
+            'event' => JobInterface::STATUS_PROCESSING,
+            'timestamp' => new UTCDateTime(),
+        ]);*/
+
         try {
             $this->executeJob($job);
             $this->current_job = null;
@@ -316,6 +335,13 @@ class Worker extends AbstractQueue
 
             $this->updateJob($job, JobInterface::STATUS_FAILED);
             $this->current_job = null;
+
+            $this->{$this->scheduler->getEventCollection()}->insertOne([
+                'job' => $job['_id'],
+                'event' => JobInerface::STATUS_FAILED,
+                'timestamp' => new UTCDateTime(),
+                'data' => serialize($e),
+            ]);
 
             if ($job['retry'] >= 0) {
                 $this->logger->debug('failed job ['.$job['_id'].'] has a retry interval of ['.$job['retry'].']', [
@@ -374,11 +400,21 @@ class Worker extends AbstractQueue
             throw new Exception\InvalidJob('job must implement JobInterface');
         }
 
-        $instance
+        $result = $instance
             ->setData($job['data'])
             ->setId($job['_id'])
             ->start();
 
-        return $this->updateJob($job, JobInterface::STATUS_DONE);
+        $data = serialize($result);
+        $return = $this->updateJob($job, JobInterface::STATUS_DONE);
+
+        $this->{$this->event_collection}->insertOne([
+            'job' => $job['_id'],
+            'event' => JobInterface::STATUS_DONE,
+            'timestamp' => new UTCDateTime(),
+            'data' => $result,
+        ]);
+
+        return $return;
     }
 }
