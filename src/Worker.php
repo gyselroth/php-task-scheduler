@@ -17,10 +17,37 @@ use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
-use League\Event\Emitter;
 
-class Worker extends AbstractQueue
+class Worker
 {
+    /**
+     * Scheduler.
+     *
+     * @var Scheduler
+     */
+    protected $scheduler;
+
+    /**
+     * Database.
+     *
+     * @var Database
+     */
+    protected $db;
+
+    /**
+     * Logger.
+     *
+     * @var LoggerInterface
+     */
+    protected $logger;
+
+    /**
+     * Container.
+     *
+     * @var ContainerInterface
+     */
+    protected $container;
+
     /**
      * Local queue.
      *
@@ -36,11 +63,22 @@ class Worker extends AbstractQueue
     protected $current_job;
 
     /**
+     * Process ID (fork posix pid).
+     *
+     * @var string
+     */
+    protected $process;
+
+    /**
+     * Jobs queue.
+     *
+     * @var MessageQueue
+     */
+    protected $jobs;
+
+    /**
      * Init queue.
      *
-     * @param Scheduler          $scheduler
-     * @param Database           $db
-     * @param LoggerInterface    $logger
      * @param ContainerInterface $container
      */
     public function __construct(Scheduler $scheduler, Database $db, LoggerInterface $logger, ?ContainerInterface $container = null)
@@ -50,7 +88,7 @@ class Worker extends AbstractQueue
         $this->db = $db;
         $this->logger = $logger;
         $this->container = $container;
-        $this->collection_name = $scheduler->getCollection();
+        $this->jobs = new MessageQueue($db, $scheduler->getJobQueue(), $scheduler->getJobQueueSize(), $logger);
     }
 
     /**
@@ -63,8 +101,6 @@ class Worker extends AbstractQueue
 
     /**
      * Cleanup and exit.
-     *
-     * @param int $sig
      */
     public function cleanup(int $sig)
     {
@@ -75,9 +111,9 @@ class Worker extends AbstractQueue
     /**
      * Start worker.
      */
-    protected function main()
+    protected function main(): void
     {
-        $cursor = $this->getCursor();
+        $cursor = $this->jobs->getCursor();
         $this->catchSignal();
 
         while (true) {
@@ -90,19 +126,21 @@ class Worker extends AbstractQueue
                         'pm' => $this->process,
                     ]);
 
-                    $this->createQueue();
+                    $this->jobs->create();
 
-                    return $this->main();
+                    $this->main();
+
+                    break;
                 }
 
-                $this->retrieveNextJob($cursor);
+                $this->jobs->next($cursor);
 
                 continue;
             }
 
             $job = $cursor->current();
-            $this->retrieveNextJob($cursor);
-            $this->queueJob($process);
+            $this->jobs->next($cursor);
+            $this->queueJob($job);
         }
     }
 
@@ -123,11 +161,10 @@ class Worker extends AbstractQueue
     /**
      * Cleanup and exit.
      *
-     * @param int $sig
      *
-     * @return ObjectId
+     * @return Process
      */
-    protected function handleSignal(int $sig): ?ObjectId
+    protected function handleSignal(int $sig): ?Process
     {
         if (null === $this->current_job) {
             $this->logger->debug('received signal ['.$sig.'], no job is currently processing, exit now', [
@@ -145,7 +182,7 @@ class Worker extends AbstractQueue
 
         $this->updateJob($this->current_job, JobInterface::STATUS_CANCELED);
 
-        $this->{$this->scheduler->getEventCollection()}->insertOne([
+        $this->db->{$this->scheduler->getEventQueue()}->insertOne([
             'job' => $this->current_job['_id'],
             'event' => 3,
             'timestamp' => new UTCDateTime(),
@@ -162,11 +199,13 @@ class Worker extends AbstractQueue
 
     /**
      * Queue job.
-     *
-     * @param array $job
      */
     protected function queueJob(array $job): bool
     {
+        if (!isset($job['status'])) {
+            return false;
+        }
+
         if (true === $this->collectJob($job, JobInterface::STATUS_PROCESSING)) {
             $this->processJob($job);
         } elseif (JobInterface::STATUS_POSTPONED === $job['status']) {
@@ -183,12 +222,6 @@ class Worker extends AbstractQueue
 
     /**
      * Update job status.
-     *
-     * @param array $job
-     * @param int   $status
-     * @param mixed $from_status
-     *
-     * @return bool
      */
     protected function collectJob(array $job, int $status, $from_status = JobInterface::STATUS_WAITING): bool
     {
@@ -201,7 +234,7 @@ class Worker extends AbstractQueue
             $set['started'] = new UTCDateTime();
         }
 
-        $result = $this->db->{$this->collection_name}->updateMany([
+        $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
             '_id' => $job['_id'],
             'status' => $from_status,
             '$isolated' => true,
@@ -215,9 +248,9 @@ class Worker extends AbstractQueue
                 'pm' => $this->process,
             ]);
 
-            $this->{$this->scheduler->getEventQueue()}->insertOne([
+            $this->db->{$this->scheduler->getEventQueue()}->insertOne([
                 'job' => $job['_id'],
-                'event' => $status
+                'event' => $status,
                 'timestamp' => new UTCDateTime(),
             ]);
 
@@ -234,11 +267,6 @@ class Worker extends AbstractQueue
 
     /**
      * Update job status.
-     *
-     * @param array $job
-     * @param int   $status
-     *
-     * @return bool
      */
     protected function updateJob(array $job, int $status): bool
     {
@@ -251,7 +279,7 @@ class Worker extends AbstractQueue
             $set['ended'] = new UTCDateTime();
         }
 
-        $result = $this->db->{$this->collection_name}->updateMany([
+        $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
             '_id' => $job['_id'],
             '$isolated' => true,
         ], [
@@ -263,8 +291,6 @@ class Worker extends AbstractQueue
 
     /**
      * Check local queue for postponed jobs.
-     *
-     * @return bool
      */
     protected function processLocalQueue(): bool
     {
@@ -290,10 +316,6 @@ class Worker extends AbstractQueue
 
     /**
      * Process job.
-     *
-     * @param array $job
-     *
-     * @return ObjectId
      */
     protected function processJob(array $job): ObjectId
     {
@@ -317,7 +339,7 @@ class Worker extends AbstractQueue
 
         $this->current_job = $job;
 
-        /*$this->{$this->scheduler->getEventCollection()}->insertOne([
+        /*$this->{$this->scheduler->getEventQueue()}->insertOne([
             'job' => $job['_id'],
             'event' => JobInterface::STATUS_PROCESSING,
             'timestamp' => new UTCDateTime(),
@@ -336,9 +358,9 @@ class Worker extends AbstractQueue
             $this->updateJob($job, JobInterface::STATUS_FAILED);
             $this->current_job = null;
 
-            $this->{$this->scheduler->getEventCollection()}->insertOne([
+            $this->db->{$this->scheduler->getEventQueue()}->insertOne([
                 'job' => $job['_id'],
-                'event' => JobInerface::STATUS_FAILED,
+                'event' => JobInterface::STATUS_FAILED,
                 'timestamp' => new UTCDateTime(),
                 'data' => serialize($e),
             ]);
@@ -349,13 +371,15 @@ class Worker extends AbstractQueue
                     'pm' => $this->process,
                 ]);
 
-                return $this->scheduler->addJob($job['class'], $job['data'], [
+                $job = $this->scheduler->addJob($job['class'], $job['data'], [
                     Scheduler::OPTION_AT => time() + $job['retry_interval'],
                     Scheduler::OPTION_INTERVAL => $job['interval'],
                     Scheduler::OPTION_RETRY => --$job['retry'],
                     Scheduler::OPTION_RETRY_INTERVAL => $job['retry_interval'],
                     Scheduler::OPTION_IGNORE_MAX_CHILDREN => $job['ignore_max_children'],
                 ]);
+
+                return $job->getId();
             }
         }
 
@@ -365,13 +389,15 @@ class Worker extends AbstractQueue
                 'pm' => $this->process,
             ]);
 
-            return $this->scheduler->addJob($job['class'], $job['data'], [
+            $job = $this->scheduler->addJob($job['class'], $job['data'], [
                 Scheduler::OPTION_AT => time() + $job['interval'],
                 Scheduler::OPTION_INTERVAL => $job['interval'],
                 Scheduler::OPTION_RETRY => $job['retry'],
                 Scheduler::OPTION_RETRY_INTERVAL => $job['retry_interval'],
                 Scheduler::OPTION_IGNORE_MAX_CHILDREN => $job['ignore_max_children'],
             ]);
+
+            return $job->getId();
         }
 
         return $job['_id'];
@@ -379,10 +405,6 @@ class Worker extends AbstractQueue
 
     /**
      * Execute job.
-     *
-     * @param array $job
-     *
-     * @return bool
      */
     protected function executeJob(array $job): bool
     {
@@ -408,7 +430,7 @@ class Worker extends AbstractQueue
         $data = serialize($result);
         $return = $this->updateJob($job, JobInterface::STATUS_DONE);
 
-        $this->{$this->event_collection}->insertOne([
+        $this->db->{$this->scheduler->getEventQueue()}->insertOne([
             'job' => $job['_id'],
             'event' => JobInterface::STATUS_DONE,
             'timestamp' => new UTCDateTime(),

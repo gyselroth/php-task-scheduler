@@ -12,6 +12,8 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
+use Closure;
+use Generator;
 use InvalidArgumentException;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
@@ -118,24 +120,26 @@ class Scheduler
     protected $event_queue_size = 500000;
 
     /**
-     * Init queue.
+     * Events queue.
      *
-     * @param Database        $db
-     * @param LoggerInterface $logger
-     * @param array           $config
+     * @var MessageQueue
+     */
+    protected $events;
+
+    /**
+     * Init queue.
      */
     public function __construct(Database $db, LoggerInterface $logger, array $config = [])
     {
         $this->db = $db;
         $this->logger = $logger;
         $this->setOptions($config);
-        $this->events = new MessageQueue($db, $this->getEventQueue(), $this->getEventQueueSize());
+        $this->events = new MessageQueue($db, $this->getEventQueue(), $this->getEventQueueSize(), $logger);
     }
 
     /**
      * Set options.
      *
-     * @param array $config
      *
      * @return Scheduler
      */
@@ -167,8 +171,6 @@ class Scheduler
 
     /**
      * Get job Queue size.
-     *
-     * @return int
      */
     public function getJobQueueSize(): int
     {
@@ -177,8 +179,6 @@ class Scheduler
 
     /**
      * Get event Queue size.
-     *
-     * @return int
      */
     public function getEventQueueSize(): int
     {
@@ -187,8 +187,6 @@ class Scheduler
 
     /**
      * Get job collection name.
-     *
-     * @return string
      */
     public function getJobQueue(): string
     {
@@ -197,8 +195,6 @@ class Scheduler
 
     /**
      * Get event collection name.
-     *
-     * @return string
      */
     public function getEventQueue(): string
     {
@@ -209,8 +205,6 @@ class Scheduler
      * Get job by Id.
      *
      * @param ObjectId
-     *
-     * @return Process
      */
     public function getJob(ObjectId $id): Process
     {
@@ -224,15 +218,11 @@ class Scheduler
             throw new Exception\JobNotFound('job '.$id.' was not found');
         }
 
-        return new Process($job, $this, $this->events);
+        return new Process($result, $this, $this->events);
     }
 
     /**
      * Cancel job.
-     *
-     * @param ObjectId $id
-     *
-     * @return bool
      */
     public function cancelJob(ObjectId $id): bool
     {
@@ -247,10 +237,6 @@ class Scheduler
 
     /**
      * Get jobs (Pass a filter which contains job status, by default all active jobs get returned).
-     *
-     * @param array $query
-     *
-     * @return Generator
      */
     public function getJobs(array $query = []): Generator
     {
@@ -273,12 +259,6 @@ class Scheduler
 
     /**
      * Add job to queue.
-     *
-     * @param string $class
-     * @param mixed  $data
-     * @param array  $options
-     *
-     * @return Process
      */
     public function addJob(string $class, $data, array $options = []): Process
     {
@@ -318,13 +298,16 @@ class Scheduler
             'data' => $data,
         ]);
 
-        $this->{$this->event_queue}->insertOne([
+        $this->db->{$this->event_queue}->insertOne([
             'job' => $result->getInsertedId(),
             'event' => JobInterface::STATUS_WAITING,
             'timestamp' => new UTCDateTime(),
         ]);
 
-        $document = $this->db->{$this->job_queue}->findOne(['_id' => $result->getInsertedId()]);
+        $document = $this->db->{$this->job_queue}->findOne(['_id' => $result->getInsertedId()], [
+            'typeMap' => self::TYPE_MAP,
+        ]);
+
         $process = new Process($document, $this, $this->events);
 
         return $process;
@@ -332,12 +315,6 @@ class Scheduler
 
     /**
      * Only add job if not in queue yet.
-     *
-     * @param string $class
-     * @param mixed  $data
-     * @param array  $options
-     *
-     * @return Process
      */
     public function addJobOnce(string $class, $data, array $options = []): Process
     {
@@ -380,7 +357,6 @@ class Scheduler
      * Listen for events.
      *
      * @param Closure callback
-     * @param array $query
      */
     public function listen(Closure $callback, array $query = []): void
     {
@@ -395,16 +371,18 @@ class Scheduler
 
                     $this->events->create();
 
-                    return $this->wait();
+                    $this->wait();
+
+                    break;
                 }
 
-                $this->next($cursor);
+                $this->events->next($cursor);
 
                 continue;
             }
 
             $result = $cursor->current();
-            $this->next($cursor);
+            $this->events->next($cursor);
             $process = new Process($result, $this, $this->events);
             $callback->call($process);
         }
@@ -413,7 +391,6 @@ class Scheduler
     /**
      * Validate given job options.
      *
-     * @param array $options
      *
      * @return Scheduler
      */
@@ -446,11 +423,6 @@ class Scheduler
 
     /**
      * Update job status.
-     *
-     * @param ObjectId $id
-     * @param int      $status
-     *
-     * @return UpdateResult
      */
     protected function updateJob(ObjectId $id, int $status): UpdateResult
     {

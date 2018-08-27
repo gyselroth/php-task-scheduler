@@ -14,10 +14,9 @@ namespace TaskScheduler;
 
 use InvalidArgumentException;
 use MongoDB\Database;
-use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 
-class Queue extends AbstractQueue
+class Queue
 {
     /**
      * Process identifier.
@@ -39,18 +38,32 @@ class Queue extends AbstractQueue
     public const PM_ONDEMAND = 'ondemand';
 
     /**
-     * Collection name.
-     *
-     * @var string
-     */
-    protected $collection_name = 'queue';
-
-    /**
      * Process management.
      *
      * @var string
      */
     protected $pm = self::PM_DYNAMIC;
+
+    /**
+     * Scheduler.
+     *
+     * @var Scheduler
+     */
+    protected $scheduler;
+
+    /**
+     * Database.
+     *
+     * @var Database
+     */
+    protected $db;
+
+    /**
+     * Logger.
+     *
+     * @var LoggerInterface
+     */
+    protected $logger;
 
     /**
      * Max children.
@@ -81,34 +94,45 @@ class Queue extends AbstractQueue
     protected $factory;
 
     /**
-     * Init queue.
+     * Jobs queue.
      *
-     * @param Scheduler              $scheduler
-     * @param Database               $db
-     * @param WorkerFactoryInterface $factory
-     * @param LoggerInterface        $logger
-     * @param ContainerInterface     $container
-     * @param array                  $options
+     * @var MessageQueue
      */
-    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?ContainerInterface $container = null, array $config = [])
+    protected $jobs;
+
+    /**
+     * Events queue.
+     *
+     * @var MessageQueue
+     */
+    protected $events;
+
+    /**
+     * Main process name.
+     *
+     * @var string
+     */
+    protected $process;
+
+    /**
+     * Init queue.
+     */
+    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, array $config = [])
     {
         $this->scheduler = $scheduler;
         $this->db = $db;
         $this->logger = $logger;
-        $this->container = $container;
-        $this->collection_name = $scheduler->getCollection();
         $this->setOptions($config);
         $this->process = self::MAIN_PROCESS;
         $this->factory = $factory;
 
-        $this->jobs = new MessageQueue($db, $scheduler->getJobQueue(), $scheduler->getJobQueueSize());
-        $this->events = new MessageQueue($db, $scheduler->getEventQueue(), $scheduler->getEventQueueSize());
+        $this->jobs = new MessageQueue($db, $scheduler->getJobQueue(), $scheduler->getJobQueueSize(), $logger);
+        $this->events = new MessageQueue($db, $scheduler->getEventQueue(), $scheduler->getEventQueueSize(), $logger);
     }
 
     /**
      * Set options.
      *
-     * @param array $config
      *
      * @return Queue
      */
@@ -160,8 +184,6 @@ class Queue extends AbstractQueue
 
     /**
      * Cleanup and exit.
-     *
-     * @param int $sig
      */
     public function cleanup(int $sig)
     {
@@ -172,8 +194,6 @@ class Queue extends AbstractQueue
     /**
      * Wait for child and terminate.
      *
-     * @param int   $sig
-     * @param array $pid
      *
      * @return Queue
      */
@@ -249,9 +269,9 @@ class Queue extends AbstractQueue
     /**
      * Fork handling, blocking process.
      */
-    protected function main()
+    protected function main(): void
     {
-        $cursor = $this->getCursor();
+        $cursor = $this->jobs->getCursor();
         $this->catchSignal();
 
         while (true) {
@@ -262,18 +282,20 @@ class Queue extends AbstractQueue
                         'pm' => $this->process,
                     ]);
 
-                    $this->createQueue();
+                    $this->jobs->create();
 
-                    return $this->main();
+                    $this->main();
+
+                    break;
                 }
 
-                $this->retrieveNextJob($cursor);
+                $this->jobs->next($cursor);
 
                 continue;
             }
 
             $job = $cursor->current();
-            $this->retrieveNextJob($cursor);
+            $this->jobs->next($cursor);
 
             if (count($this->forks) < $this->max_children && self::PM_STATIC !== $this->pm) {
                 $this->logger->debug('max_children ['.$this->max_children.'] processes not reached ['.count($this->forks).'], spawn new worker', [
@@ -315,8 +337,6 @@ class Queue extends AbstractQueue
 
     /**
      * Cleanup.
-     *
-     * @param int $sig
      */
     protected function handleSignal(int $sig): void
     {

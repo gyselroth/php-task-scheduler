@@ -29,7 +29,6 @@ interface JobInterface
     /**
      * Get job data.
      *
-     * @param mixed $data
      *
      * @return JobInterface
      */
@@ -37,8 +36,6 @@ interface JobInterface
 
     /**
      * Get job data.
-     *
-     * @return mixed
      */
     public function getData();
 
@@ -51,15 +48,11 @@ interface JobInterface
 
     /**
      * Get ID.
-     *
-     * @return ObjectId
      */
     public function getId(): ObjectId;
 
     /**
      * Start job.
-     *
-     * @return bool
      */
     public function start(): bool;
 }

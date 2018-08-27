@@ -12,29 +12,32 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
-use InvalidArgumentException;
-use MongoDB\BSON\ObjectId;
-use MongoDB\BSON\UTCDateTime;
+use IteratorIterator;
 use MongoDB\Database;
-use MongoDB\UpdateResult;
+use MongoDB\Driver\Exception\ConnectionException;
+use MongoDB\Driver\Exception\RuntimeException;
+use MongoDB\Driver\Exception\ServerException;
+use MongoDB\Operation\Find;
 use Psr\Log\LoggerInterface;
-use Traversable;
-use League\Event\Emitter;
 
 class MessageQueue
 {
     protected $db;
     protected $name;
     protected $size = 100000;
+    protected $logger;
 
     /**
-     * Message queue
+     * Message queue.
      *
-     * @var Database $db
+     * @var Database
      */
-    public function __construct(Database $db, string $name, int $size)
+    public function __construct(Database $db, string $name, int $size, LoggerInterface $logger)
     {
-        $this->db = $db:;
+        $this->db = $db;
+        $this->name = $name;
+        $this->size = $size;
+        $this->logger = $logger;
     }
 
     /**
@@ -47,7 +50,6 @@ class MessageQueue
     {
         $this->logger->info('create new queue ['.$this->name.']', [
             'category' => get_class($this),
-            'pm' => $this->process,
         ]);
 
         try {
@@ -70,6 +72,54 @@ class MessageQueue
     }
 
     /**
+     * Retrieve next job.
+     */
+    public function next(IteratorIterator $cursor)
+    {
+        try {
+            $cursor->next();
+        } catch (RuntimeException $e) {
+            $this->logger->error('job queue cursor failed to retrieve next job, restart queue listener', [
+                'category' => get_class($this),
+                'exception' => $e,
+            ]);
+
+            $this->main();
+        }
+    }
+
+    /**
+     * Get cursor.
+     */
+    public function getCursor(array $query = []): IteratorIterator
+    {
+        $options = [
+            'typeMap' => Scheduler::TYPE_MAP,
+            'cursorType' => Find::TAILABLE,
+            'noCursorTimeout' => true,
+        ];
+
+        try {
+            $cursor = $this->db->{$this->name}->find($query, $options);
+        } catch (ConnectionException | ServerException $e) {
+            if (2 === $e->getCode()) {
+                $this->convert();
+
+                return $this->getCursor($query);
+            }
+
+            throw $e;
+        } catch (RuntimeException $e) {
+            return $this->getCursor($query);
+        }
+
+        $iterator = new IteratorIterator($cursor);
+        $iterator->rewind();
+
+        return $iterator;
+    }
+
+    /**
      * Create queue and insert a dummy object to start cursor
      * Dummy object is required, otherwise we would get a dead cursor.
      *
@@ -89,60 +139,5 @@ class MessageQueue
         $this->db->{$this->name}->insertOne(['class' => 'dummy']);
 
         return $this;
-    }
-
-    /**
-     * Retrieve next job.
-     *
-     * @param IteratorIterator $cursor
-     */
-    public function next(IteratorIterator $cursor)
-    {
-        try {
-            $cursor->next();
-        } catch (RuntimeException $e) {
-            $this->logger->error('job queue cursor failed to retrieve next job, restart queue listener', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-                'exception' => $e,
-            ]);
-
-            $this->main();
-        }
-    }
-
-    /**
-     * Get cursor.
-     *
-     * @param bool $tailable
-     *
-     * @return IteratorIterator
-     */
-    public function getCursor(array $query = []): IteratorIterator
-    {
-        $options = [
-            'typeMap' => Scheduler::TYPE_MAP,
-            'cursorType'] => Find::TAILABLE,
-            'noCursorTimeout'] = true,
-        ];
-
-        try {
-            $cursor = $this->db->{$this->name}->find($query, $options);
-        } catch (ConnectionException | ServerException $e) {
-            if (2 === $e->getCode()) {
-                $this->convert();
-
-                return $this->getCursor($tailable);
-            }
-
-            throw $e;
-        } catch (RuntimeException $e) {
-            return $this->getCursor($query);
-        }
-
-        $iterator = new IteratorIterator($cursor);
-        $iterator->rewind();
-
-        return $iterator;
     }
 }
