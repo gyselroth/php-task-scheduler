@@ -139,7 +139,7 @@ class Process
             $event = $cursor->current();
             $this->events->next($cursor);
 
-            $this->status = $event['status'];
+            $this->job['status'] = $event['status'];
 
             if (JobInterface::STATUS_FAILED === $this->status || JobInterface::STATUS_DONE === $this->status) {
                 $this->result = unserialize($event['data']);
@@ -165,6 +165,6 @@ class Process
      */
     public function getStatus(): int
     {
-        return $this->status;
+        return $this->job['status'];
     }
 }

@@ -125,7 +125,7 @@ class MessageQueue
      *
      * @return AbstractQueue
      */
-    protected function convert(): self
+    public function convert(): self
     {
         $this->logger->info('convert existing queue collection ['.$this->name.'] into a capped collection', [
             'category' => get_class($this),
