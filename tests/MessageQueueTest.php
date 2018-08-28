@@ -15,6 +15,7 @@ namespace TaskScheduler\Testsuite;
 use Helmich\MongoMock\MockCollection;
 use Helmich\MongoMock\MockCursor;
 use Helmich\MongoMock\MockDatabase;
+use IteratorIterator;
 use MongoDB\Driver\Exception\ConnectionException;
 use MongoDB\Driver\Exception\RuntimeException;
 use MongoDB\Driver\Exception\ServerException;
@@ -24,41 +25,67 @@ use TaskScheduler\MessageQueue;
 
 class MessageQueueTest extends TestCase
 {
+    protected $mongodb;
     protected $queue;
 
     public function setUp()
     {
-        $mongodb = new MockDatabase();
-        $this->queue = new MessageQueue($mongodb, 'taskscheduler.queue', 100, $this->createMock(LoggerInterface::class));
+        $this->mongodb = new MockDatabase();
+        $this->queue = new MessageQueue($this->mongodb, 'taskscheduler.queue', 100, $this->createMock(LoggerInterface::class));
     }
 
     public function testCursor()
     {
         $cursor = $this->queue->getCursor();
-        /*$id = $this->scheduler->addJob('test', ['foo' => 'bar']);
-
-        $job = $this->scheduler->getJob($id);
-        $method = self::getMethod('getCursor');
-        $cursor = $method->invokeArgs($this->queue, []);
-        $this->assertSame(1, count($cursor->toArray()));*/
+        $this->assertSame(0, count(iterator_to_array($cursor)));
+        $this->mongodb->{'taskscheduler.queue'}->insertOne(['foo' => 'bar']);
+        $cursor = $this->queue->getCursor();
+        $this->assertSame(1, count(iterator_to_array($cursor)));
     }
 
     public function testCursorRetrieveNext()
     {
+        $this->mongodb->{'taskscheduler.queue'}->insertOne(['foo' => 'bar']);
+        $this->mongodb->{'taskscheduler.queue'}->insertOne(['foo' => 'foo']);
         $cursor = $this->queue->getCursor();
-        $this->queue->next($cursor);
+        $this->assertSame('bar', $cursor->current()['foo']);
+        $this->queue->next($cursor, function () {});
+        $this->assertSame('foo', $cursor->current()['foo']);
+    }
+
+    public function testCursorRetrieveNextExceptionCallCallback()
+    {
+        $cursor = $this->createMock(IteratorIterator::class);
+        $cursor->expects($this->once())->method('next')->will($this->throwException(new RuntimeException('cursor failure')));
+        $called = false;
+        $this->queue->next($cursor, function () use (&$called) {
+            $called = true;
+        });
+        $this->assertTrue($called);
     }
 
     public function testCreate()
     {
         $this->queue->create();
-        //$this->assertSame('dummy', $mongodb->{$scheduler->getCollection()}->findOne([])['class']);
+        $queue = iterator_to_array($this->mongodb->listCollections())[0];
+        $this->assertTrue($queue->isCapped());
+        $this->assertSame(100, $queue->getCappedSize());
     }
 
     public function testCreateQueueAlreadyExistsNoException()
     {
         $this->queue->create();
         $this->queue->create();
+        $this->assertSame(1, count(iterator_to_array($this->mongodb->listCollections())));
+    }
+
+    public function testCreateQueueExceptionIfNotCode48()
+    {
+        $this->expectException(RuntimeException::class);
+        $mongodb = $this->createMock(MockDatabase::class);
+        $mongodb->expects($this->once())->method('createCollection')->will($this->throwException(new RuntimeException('error')));
+        $queue = new MessageQueue($mongodb, 'taskscheduler.queue', 100, $this->createMock(LoggerInterface::class));
+        $queue->create();
     }
 
     public function testCreateQueueRuntimeException()
@@ -95,17 +122,6 @@ class MessageQueueTest extends TestCase
         $queue = new MessageQueue($mongodb, 'taskscheduler.queue', 100, $this->createMock(LoggerInterface::class));
         $cursor = $queue->getCursor();
     }
-
-    /*public function testCursorConnectionException()
-    {
-        $this->expectException(ConnectionException::class);
-        $collection = $this->createMock(MockCollection::class);
-        $collection->expects($this->once())->method('find')->will($this->throwException(new ConnectionException('error')));
-        $mongodb = $this->createMock(MockDatabase::class);
-        $mongodb->method('__get')->willReturn($collection);
-        $queue = new Queue($this->createMock(Scheduler::class), $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class));
-        $queue->processOnce();
-    }*/
 
     public function testConvertQueue()
     {

@@ -28,9 +28,6 @@ interface JobInterface
 
     /**
      * Get job data.
-     *
-     *
-     * @return JobInterface
      */
     public function setData($data): self;
 
@@ -41,8 +38,6 @@ interface JobInterface
 
     /**
      * Set ID.
-     *
-     * @return JobInterface
      */
     public function setId(ObjectId $id): self;
 

@@ -20,7 +20,7 @@ use Psr\Log\LoggerInterface;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionProperty;
-use TaskScheduler\Exception;
+use TaskScheduler\Exception\InvalidJobException;
 use TaskScheduler\JobInterface;
 use TaskScheduler\Scheduler;
 use TaskScheduler\Testsuite\Mock\ErrorJobMock;
@@ -41,7 +41,7 @@ class WorkerTest extends TestCase
 
     public function testExecuteJobInvalidJobClass()
     {
-        $this->expectException(Exception\InvalidJob::class);
+        $this->expectException(InvalidJobException::class);
         $job = $this->scheduler->addJob('test', ['foo' => 'bar'])->toArray();
         $method = self::getMethod('executeJob');
         $method->invokeArgs($this->worker, [$job]);
@@ -57,6 +57,16 @@ class WorkerTest extends TestCase
         $this->assertTrue($job->toArray()['ended'] >= $start);
     }
 
+    public function testExecuteSuccessfulJobWaitFor()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
+        $start = new UTCDateTime();
+        $method = self::getMethod('executeJob');
+        $method->invokeArgs($this->worker, [$job->toArray()]);
+        $job->wait();
+        $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
+    }
+
     public function testExecuteErrorJob()
     {
         $this->expectException(\Exception::class);
@@ -70,6 +80,17 @@ class WorkerTest extends TestCase
         $this->assertSame(JobInterface::STATUS_FAILED, $job['status']);
         $this->assertTrue($job['started'] >= $start);
         $this->assertTrue($job['ended'] >= $start);
+    }
+
+    public function testExecuteErrorJobWaitFor()
+    {
+        $this->expectException(\Exception::class);
+        $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar']);
+        $start = new UTCDateTime();
+        $method = self::getMethod('processJob');
+        $method->invokeArgs($this->worker, [$job->toArray()]);
+        $job->wait();
+        $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
     }
 
     public function testProcessSuccessfulJob()
@@ -232,41 +253,6 @@ class WorkerTest extends TestCase
 
         $this->assertFalse($result);
     }
-
-    /*
-    public function testCursor()
-    {
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
-
-        $job = $this->scheduler->getJob($id);
-        $method = self::getMethod('getCursor');
-        $cursor = $method->invokeArgs($this->worker, []);
-        $this->assertSame(1, count($cursor->toArray()));
-    }
-
-    public function testCursorEmpty()
-    {
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
-        $job = $this->scheduler->getJob($id);
-        $method = self::getMethod('updateJob');
-        $method->invokeArgs($this->worker, [$job, JobInterface::STATUS_DONE]);
-
-        $method = self::getMethod('getCursor');
-        $cursor = $method->invokeArgs($this->worker, []);
-        $this->assertSame(0, count($cursor->toArray()));
-    }
-
-    public function testCursorRetrieveNext()
-    {
-        $this->scheduler->addJob('test', ['foo' => 'bar']);
-        $id = $this->scheduler->addJob('test', ['foo' => 'foobar']);
-        $method = self::getMethod('getCursor');
-        $cursor = $method->invokeArgs($this->worker, []);
-
-        $method = self::getMethod('retrieveNextJob');
-        $job = $method->invokeArgs($this->worker, [$cursor]);
-        $this->assertSame($id, $cursor->current()['_id']);
-    }*/
 
     public function testExecuteViaContainer()
     {

@@ -38,18 +38,6 @@ class Process
     protected $events;
 
     /**
-     * Task result data.
-     */
-    protected $result;
-
-    /**
-     * Task status.
-     *
-     * @var int
-     */
-    protected $status;
-
-    /**
      * Initialize process.
      */
     public function __construct(array $job, Scheduler $scheduler, MessageQueue $events)
@@ -120,7 +108,7 @@ class Process
     {
         $cursor = $this->events->getCursor([
             'job' => $this->getId(),
-            'event' => ['$gte' => JobInterface::STATUS_DONE],
+            'status' => ['$gte' => JobInterface::STATUS_DONE],
         ]);
 
         while (true) {
@@ -131,33 +119,29 @@ class Process
                     return $this->wait();
                 }
 
-                $this->events->next($cursor);
+                $this->events->next($cursor, function () {
+                    $this->wait();
+                });
 
                 continue;
             }
 
             $event = $cursor->current();
-            $this->events->next($cursor);
+            $this->events->next($cursor, function () {
+                $this->wait();
+            });
 
             $this->job['status'] = $event['status'];
 
-            if (JobInterface::STATUS_FAILED === $this->status || JobInterface::STATUS_DONE === $this->status) {
-                $this->result = unserialize($event['data']);
-                if ($this->result instanceof \Exception) {
-                    throw $this->result;
+            if (JobInterface::STATUS_FAILED === $this->job['status']) {
+                $result = unserialize($event['data']);
+                if ($result instanceof \Exception) {
+                    throw $result;
                 }
             }
 
             return $this;
         }
-    }
-
-    /**
-     * Get job result.
-     */
-    public function getResult()
-    {
-        return $this->result;
     }
 
     /**

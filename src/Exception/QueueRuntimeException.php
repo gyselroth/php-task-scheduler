@@ -12,6 +12,6 @@ declare(strict_types=1);
 
 namespace TaskScheduler\Exception;
 
-class JobNotFound extends \Exception
+class QueueRuntimeException extends \RuntimeException
 {
 }

@@ -12,9 +12,10 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
-use InvalidArgumentException;
 use MongoDB\Database;
 use Psr\Log\LoggerInterface;
+use TaskScheduler\Exception\InvalidArgumentException;
+use TaskScheduler\Exception\QueueRuntimeException;
 
 class Queue
 {
@@ -230,10 +231,6 @@ class Queue
      *
      * @see https://github.com/mongodb/mongo-php-driver/issues/828
      * @see https://github.com/mongodb/mongo-php-driver/issues/174
-     *
-     * @param array $job
-     *
-     * @return int
      */
     protected function spawnWorker(?array $job = null)
     {
@@ -241,7 +238,7 @@ class Queue
         $this->forks[] = $pid;
 
         if (-1 === $pid) {
-            throw new Exception\Runtime('failed to spawn new worker');
+            throw new QueueRuntimeException('failed to spawn new worker');
         }
         if (!$pid) {
             $worker = $this->factory->build()->start();
@@ -289,13 +286,17 @@ class Queue
                     break;
                 }
 
-                $this->jobs->next($cursor);
+                $this->jobs->next($cursor, function () {
+                    $this->main();
+                });
 
                 continue;
             }
 
             $job = $cursor->current();
-            $this->jobs->next($cursor);
+            $this->jobs->next($cursor, function () {
+                $this->main();
+            });
 
             if (count($this->forks) < $this->max_children && self::PM_STATIC !== $this->pm) {
                 $this->logger->debug('max_children ['.$this->max_children.'] processes not reached ['.count($this->forks).'], spawn new worker', [

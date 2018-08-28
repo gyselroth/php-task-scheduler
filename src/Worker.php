@@ -17,6 +17,7 @@ use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
+use TaskScheduler\Exception\InvalidJobException;
 
 class Worker
 {
@@ -133,13 +134,18 @@ class Worker
                     break;
                 }
 
-                $this->jobs->next($cursor);
+                $this->jobs->next($cursor, function () {
+                    $this->main();
+                });
 
                 continue;
             }
 
             $job = $cursor->current();
-            $this->jobs->next($cursor);
+            $this->jobs->next($cursor, function () {
+                $this->main();
+            });
+
             $this->queueJob($job);
         }
     }
@@ -184,7 +190,7 @@ class Worker
 
         $this->db->{$this->scheduler->getEventQueue()}->insertOne([
             'job' => $this->current_job['_id'],
-            'event' => 3,
+            'status' => JobInterface::STATUS_CANCELED,
             'timestamp' => new UTCDateTime(),
         ]);
 
@@ -250,7 +256,7 @@ class Worker
 
             $this->db->{$this->scheduler->getEventQueue()}->insertOne([
                 'job' => $job['_id'],
-                'event' => $status,
+                'status' => $status,
                 'timestamp' => new UTCDateTime(),
             ]);
 
@@ -339,12 +345,6 @@ class Worker
 
         $this->current_job = $job;
 
-        /*$this->{$this->scheduler->getEventQueue()}->insertOne([
-            'job' => $job['_id'],
-            'event' => JobInterface::STATUS_PROCESSING,
-            'timestamp' => new UTCDateTime(),
-        ]);*/
-
         try {
             $this->executeJob($job);
             $this->current_job = null;
@@ -360,7 +360,7 @@ class Worker
 
             $this->db->{$this->scheduler->getEventQueue()}->insertOne([
                 'job' => $job['_id'],
-                'event' => JobInterface::STATUS_FAILED,
+                'status' => JobInterface::STATUS_FAILED,
                 'timestamp' => new UTCDateTime(),
                 'data' => serialize($e),
             ]);
@@ -409,7 +409,7 @@ class Worker
     protected function executeJob(array $job): bool
     {
         if (!class_exists($job['class'])) {
-            throw new Exception\InvalidJob('job class does not exists');
+            throw new InvalidJobException('job class does not exists');
         }
 
         if (null === $this->container) {
@@ -419,7 +419,7 @@ class Worker
         }
 
         if (!($instance instanceof JobInterface)) {
-            throw new Exception\InvalidJob('job must implement JobInterface');
+            throw new InvalidJobException('job must implement JobInterface');
         }
 
         $result = $instance
@@ -427,14 +427,12 @@ class Worker
             ->setId($job['_id'])
             ->start();
 
-        $data = serialize($result);
         $return = $this->updateJob($job, JobInterface::STATUS_DONE);
 
         $this->db->{$this->scheduler->getEventQueue()}->insertOne([
             'job' => $job['_id'],
-            'event' => JobInterface::STATUS_DONE,
+            'status' => JobInterface::STATUS_DONE,
             'timestamp' => new UTCDateTime(),
-            'data' => $result,
         ]);
 
         return $return;

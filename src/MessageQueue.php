@@ -43,8 +43,6 @@ class MessageQueue
     /**
      * Create queue and insert a dummy object to start cursor
      * Dummy object is required, otherwise we would get a dead cursor.
-     *
-     * @return AbstractQueue
      */
     public function create(): self
     {
@@ -63,6 +61,7 @@ class MessageQueue
 
             $this->db->{$this->name}->insertOne(['class' => 'dummy']);
         } catch (RuntimeException $e) {
+            //ignore if code 48 (collection does already exist)
             if (48 !== $e->getCode()) {
                 throw $e;
             }
@@ -72,19 +71,19 @@ class MessageQueue
     }
 
     /**
-     * Retrieve next job.
+     * Retrieve next message.
      */
-    public function next(IteratorIterator $cursor)
+    public function next(IteratorIterator $cursor, callable $callback): void
     {
         try {
             $cursor->next();
         } catch (RuntimeException $e) {
-            $this->logger->error('job queue cursor failed to retrieve next job, restart queue listener', [
+            $this->logger->error('message queue cursor for ['.$this->name.'] failed to retrieve next message', [
                 'category' => get_class($this),
                 'exception' => $e,
             ]);
 
-            $this->main();
+            $callback();
         }
     }
 

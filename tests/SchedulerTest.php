@@ -13,11 +13,11 @@ declare(strict_types=1);
 namespace TaskScheduler\Testsuite;
 
 use Helmich\MongoMock\MockDatabase;
-use InvalidArgumentException;
 use MongoDB\BSON\ObjectId;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
-use TaskScheduler\Exception;
+use TaskScheduler\Exception\InvalidArgumentException;
+use TaskScheduler\Exception\JobNotFoundException;
 use TaskScheduler\JobInterface;
 use TaskScheduler\Process;
 use TaskScheduler\Scheduler;
@@ -38,10 +38,12 @@ class SchedulerTest extends TestCase
         $this->assertInstanceOf(Process::class, $job);
     }
 
-    public function testNewJobStatus()
+    public function testNewJob()
     {
         $job = $this->scheduler->addJob('test', ['foo' => 'bar']);
         $this->assertSame($job->getStatus(), JobInterface::STATUS_WAITING);
+        $this->assertSame($job->getClass(), 'test');
+        $this->assertInstanceOf(ObjectId::class, $job->getId());
     }
 
     public function testNewJobTimestamps()
@@ -78,7 +80,7 @@ class SchedulerTest extends TestCase
 
     public function testGetInexistingJob()
     {
-        $this->expectException(Exception\JobNotFound::class);
+        $this->expectException(JobNotFoundException::class);
         $job = $this->scheduler->getJob(new ObjectId());
     }
 
@@ -92,7 +94,7 @@ class SchedulerTest extends TestCase
 
     public function testCancelJobNotFound()
     {
-        $this->expectException(Exception\JobNotFound::class);
+        $this->expectException(JobNotFoundException::class);
         $this->scheduler->cancelJob(new ObjectId());
     }
 
@@ -213,5 +215,13 @@ class SchedulerTest extends TestCase
         $this->scheduler->setOptions([
             'foo' => 'bar',
         ]);
+    }
+
+    public function testListen()
+    {
+        $job = $this->scheduler->addJob('test', 'foobar');
+        $this->scheduler->listen(function (Process $process) {
+            return true;
+        }, ['job' => $job->getId()]);
     }
 }

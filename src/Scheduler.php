@@ -14,12 +14,13 @@ namespace TaskScheduler;
 
 use Closure;
 use Generator;
-use InvalidArgumentException;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use MongoDB\UpdateResult;
 use Psr\Log\LoggerInterface;
+use TaskScheduler\Exception\InvalidArgumentException;
+use TaskScheduler\Exception\JobNotFoundException;
 
 class Scheduler
 {
@@ -215,7 +216,7 @@ class Scheduler
         ]);
 
         if (null === $result) {
-            throw new Exception\JobNotFound('job '.$id.' was not found');
+            throw new JobNotFoundException('job '.$id.' was not found');
         }
 
         return new Process($result, $this, $this->events);
@@ -229,7 +230,7 @@ class Scheduler
         $result = $this->updateJob($id, JobInterface::STATUS_CANCELED);
 
         if (1 !== $result->getModifiedCount()) {
-            throw new Exception\JobNotFound('job '.$id.' was not found');
+            throw new JobNotFoundException('job '.$id.' was not found');
         }
 
         return true;
@@ -300,7 +301,7 @@ class Scheduler
 
         $this->db->{$this->event_queue}->insertOne([
             'job' => $result->getInsertedId(),
-            'event' => JobInterface::STATUS_WAITING,
+            'status' => JobInterface::STATUS_WAITING,
             'timestamp' => new UTCDateTime(),
         ]);
 
@@ -355,10 +356,8 @@ class Scheduler
 
     /**
      * Listen for events.
-     *
-     * @param Closure callback
      */
-    public function listen(Closure $callback, array $query = []): void
+    public function listen(Closure $callback, array $query = []): self
     {
         $cursor = $this->events->getCursor($query);
 
@@ -371,28 +370,30 @@ class Scheduler
 
                     $this->events->create();
 
-                    $this->wait();
-
-                    break;
+                    return $this->listen($callback, $query);
                 }
 
-                $this->events->next($cursor);
+                $this->events->next($cursor, function () use ($callback, $query) {
+                    return $this->listen($callback, $query);
+                });
 
                 continue;
             }
 
             $result = $cursor->current();
-            $this->events->next($cursor);
+            $this->events->next($cursor, function () use ($callback, $query) {
+                $this->listen($callback, $query);
+            });
+
             $process = new Process($result, $this, $this->events);
-            $callback->call($process);
+            if (true === $callback($process)) {
+                return $this;
+            }
         }
     }
 
     /**
      * Validate given job options.
-     *
-     *
-     * @return Scheduler
      */
     protected function validateOptions(array $options): self
     {
