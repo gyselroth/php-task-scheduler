@@ -60,7 +60,7 @@ class Process
      */
     public function getOptions(): array
     {
-        return $this->job;
+        return $this->job['options'];
     }
 
     /**
@@ -133,11 +133,13 @@ class Process
 
             $this->job['status'] = $event['status'];
 
-            if (JobInterface::STATUS_FAILED === $this->job['status']) {
-                $result = unserialize($event['data']);
-                if ($result instanceof \Exception) {
-                    throw $result;
-                }
+            if (JobInterface::STATUS_FAILED === $this->job['status'] && isset($this->job['exception'])) {
+                throw new $this->job['exception']['class'](
+                    $this->job['exception']['message'],
+                    $this->job['exception']['code'],
+                    $this->job['exception']['file'],
+                    $this->job['exception']['line']
+                );
             }
 
             return $this;

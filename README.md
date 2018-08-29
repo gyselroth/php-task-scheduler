@@ -10,8 +10,7 @@
 ## Description
 Asynchronous task scheduler for PHP using MongoDB as message queue. Execute asynchronous tasks the easy way.
 This library has built-in support for clustered systems and multi core cpu. You can start up multiple worker nodes and they will load balance the available jobs with the principal first comes first serves. Each node will also spawn a (dynamically) configurable number of child processes to use all available resources. Moreover it is possible to schedule jobs at certain times, endless intervals as well as rescheduling if jobs fail.
-This brings a real world implementation for asynchronous process management to PHP. You are also able to sync child tasks and much more cool stuff.
-
+This brings a real world implementation for asynchronous process management to PHP. You are also able to sync child tasks and much more nice stuff.
 
 ## Features
 
@@ -23,6 +22,7 @@ This brings a real world implementation for asynchronous process management to P
 * Scalable
 * Sync tasks between each other
 * Abort running tasks
+* Timeout jobs
 * Easy deployable on kubernets and other container orchestration platforms
 * Retry and intervals
 * Schedule tasks at specific times
@@ -300,31 +300,10 @@ TaskScheduler\Scheduler::addJob() also accepts a third option (options) which le
 | ------------- | ------------- |
 | `at`  | `null`  | ?int | Accepts a specific unix time which let you specify the time at which the job should be executed. The default is immediatly or better saying as soon as there is a free slot. |
 | `interval`  | `-1`  | int | You may specify a job interval (in secconds) which is usefuly for jobs which need to be executed in a specific interval, for example cleaning a temporary directory. The default is `-1` which means no interval at all, `0` would mean execute the job immediatly again (But be careful with `0`, this could lead to huge cpu usage depending what job you're executing). Configuring `3600` would mean the job will be executed hourly. |
-
-
-
-
-### Advanced scheduler options
-TaskScheduler\Scheduler::addJob() also accepts a third option (options) which let you append more advanced options for the scheduler:
-
-| Option  | Default | Type | Description |
-| ------------- | ------------- |
-| `at`  | `null`  | ?int | Accepts a specific unix time which let you specify the time at which the job should be executed. The default is immediatly or better saying as soon as there is a free slot. |
-| `interval`  | `-1`  | int | You may specify a job interval (in secconds) which is usefuly for jobs which need to be executed in a specific interval, for example cleaning a temporary directory. The default is `-1` which means no interval at all, `0` would mean execute the job immediatly again (But be careful with `0`, this could lead to huge cpu usage depending what job you're executing). Configuring `3600` would mean the job will be executed hourly. |
-| `retry`  | `0`  | int | Specifies a retry interval if the job fails to execute. The default is `0` which means do not retry. |
-| `retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. The default is `300` which is 5 minutes. |
-
-
-### Advanced scheduler options
-TaskScheduler\Scheduler::addJob() also accepts a third option (options) which let you append more advanced options for the scheduler:
-
-| Option  | Default | Type | Description |
-| ------------- | ------------- |
-| `at`  | `null`  | ?int | Accepts a specific unix time which let you specify the time at which the job should be executed. The default is immediatly or better saying as soon as there is a free slot. |
-| `interval`  | `-1`  | int | You may specify a job interval (in secconds) which is usefuly for jobs which need to be executed in a specific interval, for example cleaning a temporary directory. The default is `-1` which means no interval at all, `0` would mean execute the job immediatly again (But be careful with `0`, this could lead to huge cpu usage depending what job you're executing). Configuring `3600` would mean the job will be executed hourly. |
 | `retry`  | `0`  | int | Specifies a retry interval if the job fails to execute. The default is `0` which means do not retry. |
 | `retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. The default is `300` which is 5 minutes. |
 | `ignore_max_children`  | `false`  | bool | You may specify `true` for this option to spawn a new child process. This will ignore the configured max_children option for the queue node. The queue node will always fork a new child if job with this option is scheduled. Use this option wisely! It makes perfectly sense for jobs which make blocking calls, for example a listener which listens for local filesystem changes (inotify). A job with this enabled option should only consume as little cpu/memory as possible. |
+| `timeout`  | `0`  | int | Specify a timeout in secconds which will forcly terminate the job after the given time has passed. The default `0` means no timeout at all. A timeout job will get rescheduled if retry is not `0` and will marked as timed out.  |
 
 Let us add our mail job example again with some custom options:
 **Note:** We are using the OPTION_ constansts here, you may also just use the names documented above.
@@ -457,6 +436,7 @@ class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
 }
 ```
 
+If a container is passed, the scheduler will request job instances through the dic.
 
 ```php
 $mongodb = new MongoDB\Client('mongodb://localhost:27017');
@@ -466,5 +446,3 @@ $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
 $worker_factory = My\App\WorkerFactory();
 $queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger);
 ```
-
-If a container is passed, the scheduler will request job instances through the dic.

@@ -13,6 +13,7 @@ declare(strict_types=1);
 namespace TaskScheduler\Testsuite;
 
 use Helmich\MongoMock\MockDatabase;
+use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -131,6 +132,66 @@ class WorkerTest extends TestCase
         $method->invokeArgs($this->worker, [$job, JobInterface::STATUS_PROCESSING]);
         $job = $this->scheduler->getJob($job['_id']);
         $this->assertSame(JobInterface::STATUS_PROCESSING, $job->getStatus());
+    }
+
+    public function testTimeoutNoRunningJob()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_TIMEOUT => 10,
+        ])->toArray();
+
+        $this->assertSame(null, $this->worker->timeout());
+        $this->assertCount(1, iterator_to_array($this->scheduler->getJobs()));
+    }
+
+    public function testTimeoutJob()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_TIMEOUT => 10,
+        ])->toArray();
+
+        $current = self::getProperty('current_job');
+        $current->setValue($this->worker, $job);
+        $called = false;
+
+        pcntl_signal(SIGTERM, function () use (&$called) {
+            $called = true;
+        });
+
+        $this->worker->timeout();
+
+        $this->assertTrue($called);
+        $job = $this->scheduler->getJob($job['_id']);
+        $this->assertSame(JobInterface::STATUS_TIMEOUT, $job->getStatus());
+    }
+
+    public function testTimeoutJobWithInterval()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_TIMEOUT => 10,
+            Scheduler::OPTION_INTERVAL => 10,
+        ])->toArray();
+
+        $current = self::getProperty('current_job');
+        $current->setValue($this->worker, $job);
+        $new = $this->worker->timeout();
+        $this->assertInstanceOf(ObjectId::class, $new);
+        $this->assertNotSame($job['_id'], $new);
+    }
+
+    public function testTimeoutJobWithRetry()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_TIMEOUT => 10,
+            Scheduler::OPTION_RETRY => 2,
+        ])->toArray();
+
+        $current = self::getProperty('current_job');
+        $current->setValue($this->worker, $job);
+        $new = $this->worker->timeout();
+        $new = $this->scheduler->getJob($new);
+        $this->assertSame(1, $new->getOptions()['retry']);
+        $this->assertNotSame($job['_id'], $new->getId());
     }
 
     public function testProcessLocalQueueWithPostponedJobInFuture()
@@ -283,7 +344,7 @@ class WorkerTest extends TestCase
 
     public function testCleanupViaSigtermNoJob()
     {
-        $method = self::getMethod('handleSignal');
+        $method = self::getMethod('terminate');
         $method->invokeArgs($this->worker, [SIGTERM]);
     }
 
@@ -291,10 +352,11 @@ class WorkerTest extends TestCase
     {
         $job = $this->scheduler->addJob('test', ['foo' => 'bar']);
         $property = self::getProperty('current_job');
-        $property->setValue($this->scheduler, $this->scheduler->getJob($job->getId()));
+        $property->setValue($this->worker, $job->toArray());
 
-        $method = self::getMethod('handleSignal');
+        $method = self::getMethod('terminate');
         $new = $method->invokeArgs($this->worker, [SIGTERM]);
+        $this->assertInstanceOf(ObjectId::class, $new);
         $this->assertNotSame($job->getId(), $new);
     }
 

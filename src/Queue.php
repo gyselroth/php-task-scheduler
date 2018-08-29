@@ -175,12 +175,10 @@ class Queue
      */
     public function process(): void
     {
-        try {
-            $this->spawnInitialWorkers();
-            $this->main();
-        } catch (\Exception $e) {
-            $this->cleanup(SIGTERM);
-        }
+        $this->spawnInitialWorkers();
+        $this->main();
+
+        $this->cleanup(SIGTERM);
     }
 
     /**
@@ -194,12 +192,13 @@ class Queue
 
     /**
      * Wait for child and terminate.
-     *
-     *
-     * @return Queue
      */
     public function exitChild(int $sig, array $pid): self
     {
+        $this->logger->debug('child process ['.$pid['pid'].'] exit with ['.$sig.']', [
+            'category' => get_class($this),
+        ]);
+
         pcntl_waitpid($pid['pid'], $status, WNOHANG | WUNTRACED);
 
         if (isset($this->forks[$pid['pid']])) {
@@ -268,7 +267,13 @@ class Queue
      */
     protected function main(): void
     {
-        $cursor = $this->jobs->getCursor();
+        $cursor = $this->jobs->getCursor([
+            '$or' => [
+                ['status' => JobInterface::STATUS_WAITING],
+                ['status' => JobInterface::STATUS_POSTPONED],
+            ],
+        ]);
+
         $this->catchSignal();
 
         while (true) {
@@ -305,7 +310,7 @@ class Queue
                 ]);
 
                 $this->spawnWorker();
-            } elseif (isset($job[Scheduler::OPTION_IGNORE_MAX_CHILDREN]) && true === $job[Scheduler::OPTION_IGNORE_MAX_CHILDREN]) {
+            } elseif (isset($job['options'][Scheduler::OPTION_IGNORE_MAX_CHILDREN]) && true === $job['options'][Scheduler::OPTION_IGNORE_MAX_CHILDREN]) {
                 $this->logger->debug('job ['.$job['_id'].'] deployed with ignore_max_children, spawn new worker', [
                     'category' => get_class($this),
                     'pm' => $this->process,

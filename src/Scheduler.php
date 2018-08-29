@@ -32,10 +32,12 @@ class Scheduler
     public const OPTION_RETRY = 'retry';
     public const OPTION_RETRY_INTERVAL = 'retry_interval';
     public const OPTION_IGNORE_MAX_CHILDREN = 'ignore_max_children';
+    public const OPTION_TIMEOUT = 'timeout';
     public const OPTION_DEFAULT_AT = 'default_at';
     public const OPTION_DEFAULT_INTERVAL = 'default_interval';
     public const OPTION_DEFAULT_RETRY = 'default_retry';
     public const OPTION_DEFAULT_RETRY_INTERVAL = 'default_retry_interval';
+    public const OPTION_DEFAULT_TIMEOUT = 'default_timeout';
     public const OPTION_JOB_QUEUE = 'job_queue';
     public const OPTION_JOB_QUEUE_SIZE = 'job_queue_size';
     public const OPTION_EVENT_QUEUE = 'event_queue';
@@ -107,6 +109,13 @@ class Scheduler
     protected $default_retry_interval = 300;
 
     /**
+     * Default timeout.
+     *
+     * @var int
+     */
+    protected $default_timeout = 0;
+
+    /**
      * Job Queue size.
      *
      * @var int
@@ -157,6 +166,7 @@ class Scheduler
                 case self::OPTION_DEFAULT_RETRY_INTERVAL:
                 case self::OPTION_DEFAULT_INTERVAL:
                 case self::OPTION_DEFAULT_RETRY:
+                case self::OPTION_DEFAULT_TIMEOUT:
                 case self::OPTION_JOB_QUEUE_SIZE:
                 case self::OPTION_EVENT_QUEUE_SIZE:
                     $this->{$option} = (int) $value;
@@ -269,14 +279,14 @@ class Scheduler
             self::OPTION_RETRY => $this->default_retry,
             self::OPTION_RETRY_INTERVAL => $this->default_retry_interval,
             self::OPTION_IGNORE_MAX_CHILDREN => false,
+            self::OPTION_TIMEOUT => $this->default_timeout,
         ];
 
         $options = array_merge($defaults, $options);
         $this->validateOptions($options);
-        $at = null;
 
         if ($options[self::OPTION_AT] > 0) {
-            $at = new UTCDateTime($options[self::OPTION_AT] * 1000);
+            $options[self::OPTION_AT] = new UTCDateTime($options[self::OPTION_AT] * 1000);
         }
 
         $result = $this->db->{$this->job_queue}->insertOne([
@@ -285,11 +295,7 @@ class Scheduler
             'created' => new UTCDateTime(),
             'started' => new UTCDateTime(0),
             'ended' => new UTCDateTime(0),
-            'at' => $at,
-            'retry' => $options[self::OPTION_RETRY],
-            'retry_interval' => $options[self::OPTION_RETRY_INTERVAL],
-            'interval' => $options[self::OPTION_INTERVAL],
-            'ignore_max_children' => $options[self::OPTION_IGNORE_MAX_CHILDREN],
+            'options' => $options,
             'data' => $data,
         ], ['$isolated' => true]);
 
@@ -403,6 +409,7 @@ class Scheduler
                 case self::OPTION_INTERVAL:
                 case self::OPTION_RETRY:
                 case self::OPTION_RETRY_INTERVAL:
+                case self::OPTION_TIMEOUT:
                     if (!is_int($value)) {
                         throw new InvalidArgumentException('option '.$option.' must be an integer');
                     }
