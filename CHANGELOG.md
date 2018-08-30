@@ -1,3 +1,14 @@
+## 3.0.0-beta1
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Thu Aug 30 11:47:34 CEST 2018
+
+* [FEATURE] Possibility to timeout jobs
+* [CHANGE] Process handling changed (breaking!), new Process class which gets returned and can be called for options
+* [FEATURE] Possibility to wait for job execution
+* [FEATURE] Possibility to listen for any events
+* [FEATURE] Event (and exception) log
+
+
 ## 3.0.0-alpha1
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Mon Aug 13 16:50:34 CEST 2018

@@ -175,10 +175,18 @@ class Queue
      */
     public function process(): void
     {
-        $this->spawnInitialWorkers();
-        $this->main();
+        try {
+            $this->spawnInitialWorkers();
+            $this->main();
+        } catch (Exception $e) {
+            $this->logger->error('main() throw an exception, cleanup and exit', [
+                'class' => get_class($this),
+                'exception' => $e,
+                'pm' => $this->process,
+            ]);
 
-        $this->cleanup(SIGTERM);
+            $this->cleanup(SIGTERM);
+        }
     }
 
     /**
@@ -197,6 +205,7 @@ class Queue
     {
         $this->logger->debug('child process ['.$pid['pid'].'] exit with ['.$sig.']', [
             'category' => get_class($this),
+            'pm' => $this->process,
         ]);
 
         pcntl_waitpid($pid['pid'], $status, WNOHANG | WUNTRACED);
@@ -206,6 +215,14 @@ class Queue
         }
 
         return $this;
+    }
+
+    /**
+     * Count children.
+     */
+    public function count(): int
+    {
+        return count($this->forks);
     }
 
     /**
@@ -219,7 +236,7 @@ class Queue
         ]);
 
         if (self::PM_DYNAMIC === $this->pm || self::PM_STATIC === $this->pm) {
-            for ($i = 0; $i < $this->min_children; ++$i) {
+            for ($i = $this->count(); $i < $this->min_children; ++$i) {
                 $this->spawnWorker();
             }
         }
@@ -231,14 +248,16 @@ class Queue
      * @see https://github.com/mongodb/mongo-php-driver/issues/828
      * @see https://github.com/mongodb/mongo-php-driver/issues/174
      */
-    protected function spawnWorker(?array $job = null)
+    protected function spawnWorker()
     {
         $pid = pcntl_fork();
-        $this->forks[] = $pid;
 
         if (-1 === $pid) {
             throw new QueueRuntimeException('failed to spawn new worker');
         }
+
+        $this->forks[] = $pid;
+
         if (!$pid) {
             $worker = $this->factory->build()->start();
             exit();
@@ -263,6 +282,14 @@ class Queue
     }
 
     /**
+     * This method may seem useless but is actually very useful to mock the loop.
+     */
+    protected function loop(): bool
+    {
+        return true;
+    }
+
+    /**
      * Fork handling, blocking process.
      */
     protected function main(): void
@@ -276,7 +303,7 @@ class Queue
 
         $this->catchSignal();
 
-        while (true) {
+        while ($this->loop()) {
             if (null === $cursor->current()) {
                 if ($cursor->getInnerIterator()->isDead()) {
                     $this->logger->error('job queue cursor is dead, is it a capped collection?', [
@@ -303,20 +330,20 @@ class Queue
                 $this->main();
             });
 
-            if (count($this->forks) < $this->max_children && self::PM_STATIC !== $this->pm) {
-                $this->logger->debug('max_children ['.$this->max_children.'] processes not reached ['.count($this->forks).'], spawn new worker', [
+            if ($this->count() < $this->max_children && self::PM_STATIC !== $this->pm) {
+                $this->logger->debug('max_children ['.$this->max_children.'] processes not reached ['.$this->count().'], spawn new worker', [
                     'category' => get_class($this),
                     'pm' => $this->process,
                 ]);
 
                 $this->spawnWorker();
-            } elseif (isset($job['options'][Scheduler::OPTION_IGNORE_MAX_CHILDREN]) && true === $job['options'][Scheduler::OPTION_IGNORE_MAX_CHILDREN]) {
+            } elseif (true === $job['options'][Scheduler::OPTION_IGNORE_MAX_CHILDREN]) {
                 $this->logger->debug('job ['.$job['_id'].'] deployed with ignore_max_children, spawn new worker', [
                     'category' => get_class($this),
                     'pm' => $this->process,
                 ]);
 
-                $this->spawnWorker($job);
+                $this->spawnWorker();
             } else {
                 $this->logger->debug('max children ['.$this->max_children.'] reached for job ['.$job['_id'].'], do not spawn new worker', [
                     'category' => get_class($this),

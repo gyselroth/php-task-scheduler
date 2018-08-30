@@ -27,40 +27,46 @@ class QueueTest extends TestCase
 {
     protected $queue;
     protected $scheduler;
+    protected $called = 0;
 
     public function setUp()
     {
         $mongodb = new MockDatabase();
         $this->scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
-        $this->queue = new Queue($this->scheduler, $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class));
+
+        $called = &$this->called;
+        $this->queue = $this->getMockBuilder(Queue::class)
+            ->setConstructorArgs([$this->scheduler, $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class)])
+            ->setMethods(['loop'])
+            ->getMock();
+        $this->queue->method('loop')
+            ->will(
+                $this->returnCallback(function () use (&$called) {
+                    if (0 === $called) {
+                        ++$called;
+
+                        return true;
+                    }
+
+                    return false;
+                })
+        );
     }
 
     public function testStartInitialDefaultWorkers()
     {
-        $method = self::getMethod('catchSignal');
-        $method->invokeArgs($this->queue, []);
-        $method = self::getMethod('spawnInitialWorkers');
-        $method->invokeArgs($this->queue, []);
-        $method = self::getMethod('getForks');
-        $forks = $method->invokeArgs($this->queue, []);
-        $this->assertCount(1, $forks);
+        $this->queue->process();
+        $this->assertSame(1, $this->queue->count());
     }
 
-    public function testStartTwoInitialWorkersViaConstructor()
+    public function testStartTwoInitialDynamicWorkers()
     {
-        $mongodb = new MockDatabase();
-        $scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
-        $queue = new Queue($scheduler, $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class), [
+        $this->queue->setOptions([
             Queue::OPTION_MIN_CHILDREN => 2,
         ]);
 
-        $method = self::getMethod('catchSignal');
-        $method->invokeArgs($this->queue, []);
-        $method = self::getMethod('spawnInitialWorkers');
-        $method->invokeArgs($queue, []);
-        $method = self::getMethod('getForks');
-        $forks = $method->invokeArgs($queue, []);
-        $this->assertCount(2, $forks);
+        $this->queue->process();
+        $this->assertSame(2, $this->queue->count());
     }
 
     public function testTerminateStartedWorkers()
@@ -70,10 +76,8 @@ class QueueTest extends TestCase
             Queue::OPTION_MAX_CHILDREN => 4,
         ]);
 
-        $method = self::getMethod('catchSignal');
-        $method->invokeArgs($this->queue, []);
-        $method = self::getMethod('spawnInitialWorkers');
-        $method->invokeArgs($this->queue, []);
+        $this->queue->process();
+
         $method = self::getMethod('getForks');
         $forks = $method->invokeArgs($this->queue, []);
         $this->assertCount(2, $forks);
@@ -98,28 +102,59 @@ class QueueTest extends TestCase
             Queue::OPTION_PM => Queue::PM_STATIC,
         ]);
 
-        $method = self::getMethod('catchSignal');
-        $method->invokeArgs($this->queue, []);
-        $method = self::getMethod('spawnInitialWorkers');
-        $method->invokeArgs($this->queue, []);
-        $method = self::getMethod('getForks');
-        $forks = $method->invokeArgs($this->queue, []);
-        $this->assertCount(2, $forks);
+        $this->queue->process();
+        $this->assertSame(2, $this->queue->count());
     }
 
-    public function testOndemandWorkers()
+    public function testOndemandWorkersNoJobs()
     {
         $this->queue->setOptions([
             Queue::OPTION_PM => Queue::PM_ONDEMAND,
         ]);
 
-        $method = self::getMethod('catchSignal');
-        $method->invokeArgs($this->queue, []);
-        $method = self::getMethod('spawnInitialWorkers');
-        $method->invokeArgs($this->queue, []);
-        $method = self::getMethod('getForks');
-        $forks = $method->invokeArgs($this->queue, []);
-        $this->assertCount(0, $forks);
+        $this->queue->process();
+        $this->assertSame(0, $this->queue->count());
+    }
+
+    public function testOndemandWorkersOneJob()
+    {
+        $this->queue->setOptions([
+            Queue::OPTION_PM => Queue::PM_ONDEMAND,
+        ]);
+
+        $this->scheduler->addJob('foo', 'bar');
+        $this->queue->process();
+        $this->assertSame(1, $this->queue->count());
+    }
+
+    public function testDynamicWorkersUntilMax()
+    {
+        $this->scheduler->addJob('foo', 'bar');
+        $this->queue->process();
+        $this->assertSame(2, $this->queue->count());
+
+        $this->scheduler->addJob('foo', 'bar');
+        $this->called = 0;
+        $this->queue->process();
+        $this->assertSame(2, $this->queue->count());
+    }
+
+    public function testDynamicForceStartWorkerIfIgnoreMaxChildren()
+    {
+        $this->scheduler->addJob('foo', 'foo', [
+            Scheduler::OPTION_IGNORE_MAX_CHILDREN => true,
+        ]);
+
+        $this->queue->process();
+        $this->assertSame(2, $this->queue->count());
+
+        $this->scheduler->addJob('foo', 'foo', [
+            Scheduler::OPTION_IGNORE_MAX_CHILDREN => true,
+        ]);
+
+        $this->called = 0;
+        $this->queue->process();
+        $this->assertSame(3, $this->queue->count());
     }
 
     public function testMinChildrenGreaterThanMaxChildren()

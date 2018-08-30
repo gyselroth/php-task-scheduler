@@ -26,6 +26,7 @@ This brings a real world implementation for asynchronous process management to P
 * Easy deployable on kubernets and other container orchestration platforms
 * Retry and intervals
 * Schedule tasks at specific times
+* Signal management
 
 # Table of Contents
   * [Description](#description)
@@ -36,6 +37,7 @@ This brings a real world implementation for asynchronous process management to P
   * [Download](#download)
   * [Changelog](#changelog)
   * [Contribute](#contribute)
+  * [Terms](#terms)
   * [Documentation](#documentation)
     * [Create job](#create-job)
     * [Initialize scheduler](#initialize-scheduler)
@@ -56,16 +58,17 @@ This brings a real world implementation for asynchronous process management to P
 PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronously. Sure there are threads (pthreads) and forks (pcntl) but those are only usable in cli mode (Or you should them only be using in cli mode). Using this library you are able to write your code async, schedule them and let them execute asynchronously.
 
 ## How does it work (The short way please)?
-A job is scheduled via a scheduler which will get appended in a central message queue using MongoDB. All Queue nodes will get notified in (soft) realtime that a new job is available.
+A job is scheduled via a scheduler which will get appended to a central message queue (MongoDB). All Queue nodes will get notified in (soft) realtime that a new job is available.
 One node will execute the task according the principle first come first serves. If no free slots are available the job will wait in the queue and get executed as soon as there is a free slot. 
 
 ## Requirements
-* >= PHP7.1 
+* Posix system (Basically every linux)
+* PHP7.1 and newer 
 * MongoDB server >= 2.2
 * PHP pcntl extension
 * PHP posix extension
 
->**Note**: This library will only work on \*nix system. There is no windows support and there will never be.
+>**Note**: This library will only work on \*nix system. There is no windows support and there will most likely never be.
 
 
 ## Download
@@ -81,6 +84,19 @@ A changelog is available [here](https://github.com/gyselroth/mongodb-php-task-sc
 
 ## Contribute
 We are glad that you would like to contribute to this project. Please follow the given [terms](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/master/CONTRIBUTING.md).
+
+## Terms
+You may encounter the follwing terms in this readme or elsewhere:
+
+| Term | Class | Description |
+| --- | --- | --- |
+| Scheduler | `TaskScheduler\Scheduler` | The Scheduler is used to add jobs, query jobs, delete jobs and listen for events, it is the only component besides Jobs which is actually used in your main application.  |
+| Job | `TaskScheduler\JobInterface`  | A job implementation is the actual asynchronous job you want to execute. |
+| Process | `TaskScheduler\Process` | You will receive a process after adding jobs, query jobs and so on, a process is basically an upperset of your job implementation. |
+| Queue Node | Queue nodes are the main processes which spawn new workers. |
+| Worker | `TaskScheduler\Worker` | Workers are the ones which process a job from the queue. |
+| Worker Factory | `TaskScheduler\WorkerFactoryInterface` | A worker factory needs to be implemented by you, it will spawn new workers. |
+| Cluster | - | A cluster is a set of multiple queue nodes. A cluster does not need to be configured in any way, you may start as many queue nodes as you want. |
 
 ## Documentation
 
@@ -143,11 +159,11 @@ But now we need to execute those queued jobs.
 That's where the queue nodes come into play.
 Those nodes listen in (soft) realtime for new jobs and will load balance those jobs. 
 
-#### Create queue worker factory
+#### Create worker factory
 
 You will need to create your own worker node factory in your app namespace which gets called to spawn new child processes.
 This factory gets called during a new fork is spawned. This means if build() get called you are in a new process and you will need to bootstrap your application 
-from scatch. In this simple example we will manually create a new mongodb connection, create a new scheduler and logger instance and finally return a new TaskScheduler\Worker instance.
+from scratch. In this simple example we will manually create a new mongodb connection, create a new scheduler and logger instance and finally return a new TaskScheduler\Worker instance.
 
 For better understanding: for example there is a configuration file where the mongodb uri is stored, in build() you will need to parse this configuration again and create a new mongodb instance.
 Or you may be using a dic, the dic need to be created from scratch in build() (A new dependency tree). You may pass an instance of a dic (compatible to Psr\Container\ContainerInterface) as fourth argument to TaskScheduler\Worker.
@@ -195,7 +211,7 @@ $queue->process();
 >**Note**: TaskScheduler\Queue::process() is a blocking call.
 
 
-Our mail gets sent as soon as a queue node is running. 
+Our mail gets sent as soon as a queue node is running and started some workers. 
 
 Usually you want those nodes running at all times! They act like invisible execution nodes behind your app.
 
@@ -224,7 +240,7 @@ $jobs = $scheduler->getJobs([
         ['class' => 'MyApp\\MyTask1'],
         ['class' => 'MyApp\\MyTask2'],
     ]
-']);
+]);
 
 foreach($jobs as $job) {
     echo $job->getId()." done\n";
@@ -253,7 +269,7 @@ $scheduler->addJob(MyTask::class, 'foobar')
   ->wait();
 ```
 
-This will force main() (Your process) to wait until the task `MyTask::class` was executed. (Either with status DONE, FAILED or CANCELED).
+This will force main() (Your process) to wait until the task `MyTask::class` was executed. (Either with status DONE, FAILED, CANCELED, KILLED, TIMEOUT).
 
 Here is more complex example:
 ```php
@@ -272,7 +288,7 @@ foreach($jobs as $job) {
 
 This will wait for all three jobs to be finished before continuing.
 
-**Important note**:
+**Important note**:\
 If you are programming in http mode (incoming http requests) and your app needs to deploy tasks it is good practice not to wait!. 
 Best practics is to return a [HTTP 202 code](https://httpstatuses.com/202) instead. If the client needs to know the result of those jobs you may return 
 the process id's and send a 2nd reqeuest which then waits and returns the status of those jobs.
@@ -288,22 +304,19 @@ foreach($jobs as $job) {
 }
 ```
 
-**Important note**:
-If you are programming in http mode (incoming http requests) and your app needs to deploy tasks it is good practice not to wait!. 
-Best practics is to return a [HTTP 202 code](https://httpstatuses.com/202) instead. If the client needs to know the result of those jobs you may return 
-the process id's and send a 2nd reqeuest which then waits and returns the status of those jobs.
-
 ### Advanced scheduler options
 TaskScheduler\Scheduler::addJob() also accepts a third option (options) which let you append more advanced options for the scheduler:
 
 | Option  | Default | Type | Description |
-| ------------- | ------------- |
+| --- | --- | --- | --- |
 | `at`  | `null`  | ?int | Accepts a specific unix time which let you specify the time at which the job should be executed. The default is immediatly or better saying as soon as there is a free slot. |
 | `interval`  | `-1`  | int | You may specify a job interval (in secconds) which is usefuly for jobs which need to be executed in a specific interval, for example cleaning a temporary directory. The default is `-1` which means no interval at all, `0` would mean execute the job immediatly again (But be careful with `0`, this could lead to huge cpu usage depending what job you're executing). Configuring `3600` would mean the job will be executed hourly. |
 | `retry`  | `0`  | int | Specifies a retry interval if the job fails to execute. The default is `0` which means do not retry. |
 | `retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. The default is `300` which is 5 minutes. |
 | `ignore_max_children`  | `false`  | bool | You may specify `true` for this option to spawn a new child process. This will ignore the configured max_children option for the queue node. The queue node will always fork a new child if job with this option is scheduled. Use this option wisely! It makes perfectly sense for jobs which make blocking calls, for example a listener which listens for local filesystem changes (inotify). A job with this enabled option should only consume as little cpu/memory as possible. |
 | `timeout`  | `0`  | int | Specify a timeout in secconds which will forcly terminate the job after the given time has passed. The default `0` means no timeout at all. A timeout job will get rescheduled if retry is not `0` and will marked as timed out.  |
+
+>**Note**: Be careful with timeouts since it will kill your running job by force. You have been warned.
 
 Let us add our mail job example again with some custom options:
 **Note:** We are using the OPTION_ constansts here, you may also just use the names documented above.
@@ -364,7 +377,7 @@ $scheduler->setOptions([
 ```
 
 | Name  | Default | Type | Description |
-| ------------- | ------------- |
+| --- | --- | --- | --- |
 | `job_queue`  | `taskscheduler.jobs`  | string | The MongoDB collection which acts as job message queue. |
 | `job_queue_size`  | `100000`  | int | The maximum size of jobs, if reached the first jobs get overwritten by new ones. |
 | `event_queue`  | `taskscheduler.events`  | string | The MongoDB collection which acts as event message queue. |
@@ -373,6 +386,7 @@ $scheduler->setOptions([
 | `default_interval`  | `-1`  | int | Define a default interval for **all** jobs. This relates only for newly added jobs. The default is `-1` which means no interval at all. |
 | `default_retry`  | `0`  | int | Define a default retry interval for **all** jobs. This relates only for newly added jobs. There are now retries by default for failed jobs. |
 | `default_retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. This relates only for newly added jobs. The default is `300` which is 5 minutes. |
+| `default_timeout`  | `0`  | int | Specify a default timeout for all jobs. This relates only for newly added jobs. Per default there is no timeout at all. |
 
 ### Advanced queue node options
 
@@ -398,7 +412,7 @@ $scheduler->setOptions([
 ```
 
 | Name  | Default | Type | Description |
-| ------------- | ------------- |
+| --- | --- | --- | --- |
 | `pm`  | `dynamic`  | string | You may change the way how fork handling is done. There are three modes, see bellow this table. |
 | `min_children`  | `1`  | int | The minimum number of child processes. |
 | `max_children`  | `2`  | int | The maximum number of child processes. |
@@ -446,3 +460,10 @@ $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
 $worker_factory = My\App\WorkerFactory();
 $queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger);
 ```
+
+### Terminate queue nodes
+
+Terminating queue nodes is possible of course. They even manage to reschedule running jobs. You just need to send a SIGTERM to the process. The queue node then will transmit this to all running workers and they 
+will save their state and nicely exit. A worker also saves its state if the worker process directly receives a SIGTERM.
+If a SIGKILL was used to terminate the queue node (or worker) the state can not be saved and you might get zombie jobs (Jobs with the state PROCESSING but no worker will actually process those jobs).
+No good sysadmin will terminate running jobs by using SIGKILL, it is not acceptable and may only be used if you know what you are doing.

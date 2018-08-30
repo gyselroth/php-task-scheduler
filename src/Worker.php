@@ -91,14 +91,6 @@ class Worker
     }
 
     /**
-     * Start worker.
-     */
-    public function start()
-    {
-        $this->main();
-    }
-
-    /**
      * Cleanup and exit.
      */
     public function cleanup(int $sig)
@@ -155,7 +147,7 @@ class Worker
                 'pm' => $this->process,
             ]);
 
-            $job['options']['at'] = time() + $job['options']['at'];
+            $job['options']['at'] = time() + $job['options']['interval'];
             $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
             return $job->getId();
@@ -170,7 +162,7 @@ class Worker
     /**
      * Start worker.
      */
-    protected function main(): void
+    public function start(): void
     {
         $cursor = $this->jobs->getCursor([
             '$or' => [
@@ -181,7 +173,7 @@ class Worker
 
         $this->catchSignal();
 
-        while (true) {
+        while ($this->loop()) {
             $this->processLocalQueue();
 
             if (null === $cursor->current()) {
@@ -193,13 +185,13 @@ class Worker
 
                     $this->jobs->create();
 
-                    $this->main();
+                    $this->start();
 
                     break;
                 }
 
                 $this->jobs->next($cursor, function () {
-                    $this->main();
+                    $this->start();
                 });
 
                 continue;
@@ -207,11 +199,19 @@ class Worker
 
             $job = $cursor->current();
             $this->jobs->next($cursor, function () {
-                $this->main();
+                $this->start();
             });
 
             $this->queueJob($job);
         }
+    }
+
+    /**
+     * This method may seem useless but is actually very useful to mock the loop.
+     */
+    protected function loop(): bool
+    {
+        return true;
     }
 
     /**
@@ -276,7 +276,7 @@ class Worker
                 'pm' => $this->process,
             ]);
 
-            $this->queue[] = $job;
+            $this->queue[(string) $job['_id']] = $job;
         }
 
         return true;
@@ -379,9 +379,11 @@ class Worker
      */
     protected function processJob(array $job): ObjectId
     {
-        if ($job['options']['at'] instanceof UTCDateTime) {
+        $now = new UTCDateTime();
+
+        if ($job['options']['at'] instanceof UTCDateTime && $job['options']['at'] > $now) {
             $this->updateJob($job, JobInterface::STATUS_POSTPONED);
-            $this->queue[] = $job;
+            $this->queue[(string) $job['_id']] = $job;
 
             $this->logger->debug('execution of job ['.$job['_id'].'] ['.$job['class'].'] is postponed at ['.$job['options']['at']->toDateTime()->format('c').']', [
                 'category' => get_class($this),
@@ -452,7 +454,7 @@ class Worker
                 'pm' => $this->process,
             ]);
 
-            $job['options']['at'] = time() + $job['options']['at'];
+            $job['options']['at'] = time() + $job['options']['interval'];
             $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
             return $job->getId();

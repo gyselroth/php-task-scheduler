@@ -133,12 +133,10 @@ class Process
 
             $this->job['status'] = $event['status'];
 
-            if (JobInterface::STATUS_FAILED === $this->job['status'] && isset($this->job['exception'])) {
-                throw new $this->job['exception']['class'](
-                    $this->job['exception']['message'],
-                    $this->job['exception']['code'],
-                    $this->job['exception']['file'],
-                    $this->job['exception']['line']
+            if (JobInterface::STATUS_FAILED === $this->job['status'] && isset($event['exception'])) {
+                throw new $event['exception']['class'](
+                    $event['exception']['message'],
+                    $event['exception']['code']
                 );
             }
 

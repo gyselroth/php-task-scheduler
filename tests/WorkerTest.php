@@ -32,12 +32,58 @@ class WorkerTest extends TestCase
 {
     protected $worker;
     protected $scheduler;
+    protected $mongodb;
+    protected $called = 0;
 
     public function setUp()
     {
-        $mongodb = new MockDatabase();
-        $this->scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
-        $this->worker = new Worker($this->scheduler, $mongodb, $this->createMock(LoggerInterface::class));
+        $this->mongodb = new MockDatabase();
+        $this->scheduler = new Scheduler($this->mongodb, $this->createMock(LoggerInterface::class));
+
+        $called = &$this->called;
+        $this->worker = $this->getMockBuilder(Worker::class)
+            ->setConstructorArgs([$this->scheduler, $this->mongodb, $this->createMock(LoggerInterface::class)])
+            ->setMethods(['loop'])
+            ->getMock();
+        $this->worker->method('loop')
+            ->will(
+                $this->returnCallback(function () use (&$called) {
+                    if (0 === $called) {
+                        ++$called;
+
+                        return true;
+                    }
+
+                    return false;
+                })
+        );
+    }
+
+    public function testStartWorkerNoJob()
+    {
+        $this->worker->start();
+    }
+
+    public function testStartWorkerOneSuccessJob()
+    {
+        $start = new UTCDateTime();
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->start();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
+        $this->assertTrue($job->toArray()['ended'] >= $start);
+    }
+
+    public function testStartWorkerOneErrorJob()
+    {
+        $start = new UTCDateTime();
+        $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar']);
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->start();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
+        $this->assertTrue($job->toArray()['ended'] >= $start);
     }
 
     public function testExecuteJobInvalidJobClass()
@@ -48,81 +94,61 @@ class WorkerTest extends TestCase
         $method->invokeArgs($this->worker, [$job]);
     }
 
-    public function testExecuteSuccessfulJob()
-    {
-        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'])->toArray();
-        $start = new UTCDateTime();
-        $method = self::getMethod('executeJob');
-        $method->invokeArgs($this->worker, [$job]);
-        $job = $this->scheduler->getJob($job['_id']);
-        $this->assertTrue($job->toArray()['ended'] >= $start);
-    }
-
     public function testExecuteSuccessfulJobWaitFor()
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
-        $start = new UTCDateTime();
-        $method = self::getMethod('executeJob');
-        $method->invokeArgs($this->worker, [$job->toArray()]);
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->start();
         $job->wait();
         $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
-    }
-
-    public function testExecuteErrorJob()
-    {
-        $this->expectException(\Exception::class);
-        $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar'])->toArray();
-
-        $start = new UTCDateTime();
-        $method = self::getMethod('executeJob');
-        $method->invokeArgs($this->worker, [$job]);
-
-        $job = $this->scheduler->getJob($job['_id']);
-        $this->assertSame(JobInterface::STATUS_FAILED, $job['status']);
-        $this->assertTrue($job['started'] >= $start);
-        $this->assertTrue($job['ended'] >= $start);
     }
 
     public function testExecuteErrorJobWaitFor()
     {
         $this->expectException(\Exception::class);
         $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar']);
-        $start = new UTCDateTime();
-        $method = self::getMethod('processJob');
-        $method->invokeArgs($this->worker, [$job->toArray()]);
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->start();
         $job->wait();
         $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
     }
 
-    public function testProcessSuccessfulJob()
+    public function testStartWorkerPostponedJob()
     {
-        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'])->toArray();
-        $method = self::getMethod('processJob');
-        $method->invokeArgs($this->worker, [$job]);
-        $job = $this->scheduler->getJob($job['_id']);
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_AT => time() + 1,
+        ]);
+
+        $this->worker->start();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_POSTPONED, $job->getStatus());
+    }
+
+    public function testStartWorkerExecutePostponedJob()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_AT => time() + 1,
+        ]);
+
+        $this->worker->start();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_POSTPONED, $job->getStatus());
+        sleep(1);
+        $this->called = 0;
+        $this->worker->start();
+        $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
     }
 
-    public function testProcessErrorJob()
-    {
-        $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar'])->toArray();
-
-        $method = self::getMethod('processJob');
-        $method->invokeArgs($this->worker, [$job]);
-        $job = $this->scheduler->getJob($job['_id']);
-        $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
-    }
-
-    public function testProcessPostponedJob()
+    public function testStartWorkerPostponedJobFromPast()
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
-            Scheduler::OPTION_AT => time() + 60,
-        ])->toArray();
+            Scheduler::OPTION_AT => time() - 1,
+        ]);
 
-        $method = self::getMethod('processJob');
-        $method->invokeArgs($this->worker, [$job]);
-        $job = $this->scheduler->getJob($job['_id']);
-        $this->assertSame(JobInterface::STATUS_POSTPONED, $job->getStatus());
+        $this->worker->start();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
     }
 
     public function testUpdateJob()
@@ -177,6 +203,7 @@ class WorkerTest extends TestCase
         $new = $this->worker->timeout();
         $this->assertInstanceOf(ObjectId::class, $new);
         $this->assertNotSame($job['_id'], $new);
+        $this->assertTrue($this->scheduler->getJob($new)->getOptions()['at'] > new UTCDateTime());
     }
 
     public function testTimeoutJobWithRetry()
@@ -194,83 +221,17 @@ class WorkerTest extends TestCase
         $this->assertNotSame($job['_id'], $new->getId());
     }
 
-    public function testProcessLocalQueueWithPostponedJobInFuture()
-    {
-        $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
-            Scheduler::OPTION_AT => time() + 10,
-        ])->toArray();
-
-        $method = self::getMethod('updateJob');
-        $method->invokeArgs($this->worker, [$job, JobInterface::STATUS_POSTPONED]);
-        $job = $this->scheduler->getJob($job['_id'])->toArray();
-
-        $queue = self::getProperty('queue');
-        $queue->setValue($this->worker, [$job]);
-
-        $method = self::getMethod('processLocalQueue');
-        $method->invokeArgs($this->worker, []);
-
-        $queue = self::getProperty('queue');
-        $queue = $queue->getValue($this->worker);
-
-        $this->assertSame(1, count($queue));
-        $this->assertSame(JobInterface::STATUS_POSTPONED, $queue[0]['status']);
-    }
-
-    public function testProcessLocalQueueWithPostponedJobNow()
-    {
-        $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
-            Scheduler::OPTION_AT => time(),
-        ])->toArray();
-
-        $method = self::getMethod('updateJob');
-        $method->invokeArgs($this->worker, [$job, JobInterface::STATUS_POSTPONED]);
-        $job = $this->scheduler->getJob($job['_id'])->toArray();
-
-        $queue = self::getProperty('queue');
-        $queue->setValue($this->worker, [$job]);
-
-        $method = self::getMethod('processLocalQueue');
-        $method->invokeArgs($this->worker, []);
-
-        $queue = self::getProperty('queue');
-        $queue = $queue->getValue($this->worker);
-
-        $this->assertSame(0, count($queue));
-    }
-
-    public function testProcessLocalQueueWithPostponedJobFromPast()
-    {
-        $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
-            Scheduler::OPTION_AT => time() - 10,
-        ])->toArray();
-
-        $method = self::getMethod('updateJob');
-        $method->invokeArgs($this->worker, [$job, JobInterface::STATUS_POSTPONED]);
-        $job = $this->scheduler->getJob($job['_id'])->toArray();
-
-        $queue = self::getProperty('queue');
-        $queue->setValue($this->worker, [$job]);
-
-        $method = self::getMethod('processLocalQueue');
-        $method->invokeArgs($this->worker, []);
-
-        $queue = self::getProperty('queue');
-        $queue = $queue->getValue($this->worker);
-
-        $this->assertSame(0, count($queue));
-    }
-
     public function testProcessErrorJobRetry()
     {
         $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar'], [
             Scheduler::OPTION_RETRY => 1,
-        ])->toArray();
+        ]);
 
-        $method = self::getMethod('processJob');
-        $retry_id = $method->invokeArgs($this->worker, [$job]);
-        $retry_job = $this->scheduler->getJob($retry_id);
-
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->start();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
+        $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertSame(JobInterface::STATUS_WAITING, $retry_job->getStatus());
         $this->assertSame(0, $retry_job->getOptions()['retry']);
     }
@@ -279,17 +240,16 @@ class WorkerTest extends TestCase
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
             Scheduler::OPTION_INTERVAL => 100,
-        ])->toArray();
+        ]);
 
-        $method = self::getMethod('processJob');
-        $interval_id = $method->invokeArgs($this->worker, [$job]);
-        $job = $this->scheduler->getJob($job['_id']);
-        $interval_job = $this->scheduler->getJob($interval_id);
-
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->start();
+        $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
+        $interval_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertSame(JobInterface::STATUS_WAITING, $interval_job->getStatus());
         $this->assertSame(100, $interval_job->getOptions()['interval']);
-        $this->assertTrue((int) $interval_job->getOptions()['at']->toDateTime()->format('U') > time());
+        $this->assertTrue($interval_job->getOptions()['at'] > new UTCDateTime());
     }
 
     public function testCollectJob()
@@ -317,21 +277,31 @@ class WorkerTest extends TestCase
 
     public function testExecuteViaContainer()
     {
-        $mongodb = new MockDatabase();
-
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
         $stub_container = $this->getMockBuilder(ContainerInterface::class)
             ->getMock();
-        $stub_container->method('get')
+        $stub_container->expects($this->once())->method('get')
             ->willReturn(new SuccessJobMock());
 
-        $scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
-        $worker = new Worker($scheduler, $mongodb, $this->createMock(LoggerInterface::class), $stub_container);
+        $called = 0;
+        $worker = $this->getMockBuilder(Worker::class)
+            ->setConstructorArgs([$this->scheduler, $this->mongodb, $this->createMock(LoggerInterface::class), $stub_container])
+            ->setMethods(['loop'])
+            ->getMock();
+        $worker->method('loop')
+            ->will(
+                $this->returnCallback(function () use (&$called) {
+                    if (0 === $called) {
+                        ++$called;
 
-        $job = $scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'])->toArray();
-        $method = self::getMethod('executeJob');
-        $method->invokeArgs($worker, [$job]);
-        $job = $scheduler->getJob($job['_id']);
-        $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
+                        return true;
+                    }
+
+                    return false;
+                })
+        );
+
+        $worker->start();
     }
 
     public function testSignalHandlerAttached()
