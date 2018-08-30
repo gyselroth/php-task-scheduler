@@ -180,7 +180,7 @@ class Queue
         try {
             $this->spawnInitialWorkers();
             $this->main();
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             $this->logger->error('main() throw an exception, cleanup and exit', [
                 'class' => get_class($this),
                 'exception' => $e,
@@ -263,7 +263,7 @@ class Queue
 
         $this->forks[(string) $id] = $pid;
         if (!$pid) {
-            $worker = $this->factory->build($id)->start();
+            $this->factory->build($id)->start();
             exit();
         }
 

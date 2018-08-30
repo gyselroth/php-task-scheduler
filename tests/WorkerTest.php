@@ -278,29 +278,7 @@ class WorkerTest extends TestCase
     public function testExecuteViaContainer()
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
-        $stub_container = $this->getMockBuilder(ContainerInterface::class)
-            ->getMock();
-        $stub_container->expects($this->once())->method('get')
-            ->willReturn(new SuccessJobMock());
-
-        $called = 0;
-        $worker = $this->getMockBuilder(Worker::class)
-            ->setConstructorArgs([new ObjectId(), $this->scheduler, $this->mongodb, $this->createMock(LoggerInterface::class), $stub_container])
-            ->setMethods(['loop'])
-            ->getMock();
-        $worker->method('loop')
-            ->will(
-                $this->returnCallback(function () use (&$called) {
-                    if (0 === $called) {
-                        ++$called;
-
-                        return true;
-                    }
-
-                    return false;
-                })
-        );
-
+        $worker = $this->getWorker();
         $worker->start();
     }
 
@@ -328,6 +306,34 @@ class WorkerTest extends TestCase
         $new = $method->invokeArgs($this->worker, [SIGTERM]);
         $this->assertInstanceOf(ObjectId::class, $new);
         $this->assertNotSame($job->getId(), $new);
+    }
+
+    protected function getWorker()
+    {
+        $stub_container = $this->getMockBuilder(ContainerInterface::class)
+            ->getMock();
+        $stub_container->expects($this->once())->method('get')
+            ->willReturn(new SuccessJobMock());
+
+        $called = 0;
+        $worker = $this->getMockBuilder(Worker::class)
+            ->setConstructorArgs([new ObjectId(), $this->scheduler, $this->mongodb, $this->createMock(LoggerInterface::class), $stub_container])
+            ->setMethods(['loop'])
+            ->getMock();
+        $worker->method('loop')
+            ->will(
+                $this->returnCallback(function () use (&$called) {
+                    if (0 === $called) {
+                        ++$called;
+
+                        return true;
+                    }
+
+                    return false;
+                })
+        );
+
+        return $worker;
     }
 
     protected static function getProperty($name): ReflectionProperty
