@@ -227,9 +227,9 @@ $scheduler->getJobs();
 ```
 
 By default you will receive all jobs with the status:
-* Queue::STATUS_WAITING,
-* Queue::STATUS_PROCESSING
-* Queue::STATUS_POSTPONED
+* WAITING,
+* PROCESSING
+* POSTPONED
 
 You may pass an optional query to query specific jobs.
 
