@@ -25,8 +25,7 @@ interface JobInterface
     public const STATUS_DONE = 3;
     public const STATUS_FAILED = 4;
     public const STATUS_CANCELED = 5;
-    public const STATUS_KILLED = 6;
-    public const STATUS_TIMEOUT = 7;
+    public const STATUS_TIMEOUT = 6;
 
     /**
      * Get job data.

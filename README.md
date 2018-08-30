@@ -37,22 +37,23 @@ This brings a real world implementation for asynchronous process management to P
 * [Contribute](#contribute)
 * [Terms](#terms)
 * [Documentation](#documentation)
- * [Create job](#create-job)
- * [Initialize scheduler](#initialize-scheduler)
- * [Append job](#append-job)
- * [Execute jobs](#execute-jobs)
-    * [Create worker factory](#create-worker-factory)
-    * [Create queue node](#create-queue-node)
- * [Manage jobs](#manage-jobs)
-    * [Get jobs](#get-jobs)
-    * [Cancel job](#cancel-job)
-    * [Modify jobs](#modify-jobs)
- * [Asynchronous programming](#asynchronous-programming)
- * [Advanced scheduler options](#advanced-scheduler-options)
- * [Add job if not exists](#add-job-if-not-exists)
- * [Advanced scheduler options](#advanced-scheduler-options-1)
- * [Advanced queue node options](#advanced-queue-node-options)
- * [Using a DIC (dependeny injection container)](#using-a-dic-dependeny-injection-container)
+    * [Create job](#create-job)
+    * [Initialize scheduler](#initialize-scheduler)
+    * [Append job](#append-job)
+    * [Execute jobs](#execute-jobs)
+        * [Create worker factory](#create-worker-factory)
+        * [Create queue node](#create-queue-node)
+    * [Manage jobs](#manage-jobs)
+        * [Get jobs](#get-jobs)
+        * [Cancel job](#cancel-job)
+        * [Modify jobs](#modify-jobs)
+    * [Asynchronous programming](#asynchronous-programming)
+    * [Listen for Events](#listen-for-events)
+    * [Advanced scheduler options](#advanced-scheduler-options)
+    * [Add job if not exists](#add-job-if-not-exists)
+    * [Advanced scheduler options](#advanced-scheduler-options-1)
+    * [Advanced queue node options](#advanced-queue-node-options)
+    * [Using a DIC (dependeny injection container)](#using-a-dic-dependeny-injection-container)
 
 ## Why?
 PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronously. Sure there are threads (pthreads) and forks (pcntl) but those are only usable in cli mode (Or you should them only be using in cli mode). Using this library you are able to write your code async, schedule them and let them execute asynchronously.
@@ -89,11 +90,11 @@ We are glad that you would like to contribute to this project. Please follow the
 You may encounter the follwing terms in this readme or elsewhere:
 
 | Term | Class | Description |
-| --- | --- | --- |
+| ------------------- | ------------------ | --- |
 | Scheduler | `TaskScheduler\Scheduler` | The Scheduler is used to add jobs, query jobs, delete jobs and listen for events, it is the only component besides Jobs which is actually used in your main application.  |
 | Job | `TaskScheduler\JobInterface`  | A job implementation is the actual asynchronous job you want to execute. |
 | Process | `TaskScheduler\Process` | You will receive a process after adding jobs, query jobs and so on, a process is basically an upperset of your job implementation. |
-| Queue Node | Queue nodes are the main processes which spawn new workers. |
+| Queue Node | `TaskScheduler\Queue` | Queue nodes are the main processes which spawn new workers. |
 | Worker | `TaskScheduler\Worker` | Workers are the ones which process a job from the queue. |
 | Worker Factory | `TaskScheduler\WorkerFactoryInterface` | A worker factory needs to be implemented by you, it will spawn new workers. |
 | Cluster | - | A cluster is a set of multiple queue nodes. A cluster does not need to be configured in any way, you may start as many queue nodes as you want. |
@@ -248,13 +249,14 @@ foreach($jobs as $job) {
 ```
 
 #### Cancel job
-You are able to cancel a scheduled job by passing the job id to the scheduler:
+It is possible to cancel jobs waiting in the queue as well as kill jobs which are actually running.
 ```php
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
 $scheduler->cancelJob(MongoDB\BSON\ObjectId $job_id);
 ```
-
-It is **not** possible to cancel running jobs (jobs with status Queue::STATUS_PROCESSING).
+If you cancel a job with the status PROCESSING, the job gets killed by force and my corrupt data. You have been warnend.
+(This is similar as the job ends with status TIMEOUT). The only difference is that a timeout job gets rescheduled if it has retry > 0 or has a configured interval.
+A canceled job will not get rescheduled. You will need to create a new job manually for that.
 
 #### Modify jobs
 It is **not** possible to modify a scheduled job by design. You need to cancel the job and append a new one.
@@ -269,7 +271,7 @@ $scheduler->addJob(MyTask::class, 'foobar')
   ->wait();
 ```
 
-This will force main() (Your process) to wait until the task `MyTask::class` was executed. (Either with status DONE, FAILED, CANCELED, KILLED, TIMEOUT).
+This will force main() (Your process) to wait until the task `MyTask::class` was executed. (Either with status DONE, FAILED, CANCELED, TIMEOUT).
 
 Here is more complex example:
 ```php
@@ -304,6 +306,28 @@ foreach($jobs as $job) {
 }
 ```
 
+### Listen for events
+You may bind to the scheduler and listen for any changes which occur asynchrounly.
+
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$jobs = $scheduler->listen(function(TaskScheduler\Process $process) {
+    echo "status of ".$process->getId().' change to '.$process->getStatus();
+});
+```
+
+It is also possible to filter such events, this example will only get notified for events occured in a specific job.
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$jobs = $scheduler->listen(function(TaskScheduler\Process $process) {
+    echo "status of ".$process->getId().' change to '.$process->getStatus();
+}, [
+    '_id' => new MongoDB\BSON\ObjectId('5b3cbc39e26cf26c6d0ede69')
+]);
+```
+
+>**Note**: listen() is a blocking call, you may exit the listener and continue with main() if you return a boolean `true` in the listener callback.
+
 ### Advanced scheduler options
 TaskScheduler\Scheduler::addJob() also accepts a third option (options) which let you append more advanced options for the scheduler:
 
@@ -318,8 +342,8 @@ TaskScheduler\Scheduler::addJob() also accepts a third option (options) which le
 
 >**Note**: Be careful with timeouts since it will kill your running job by force. You have been warned.
 
-Let us add our mail job example again with some custom options:
-**Note:** We are using the OPTION_ constansts here, you may also just use the names documented above.
+Let us add our mail job example again with some custom options:\
+>**Note:** We are using the OPTION_ constansts here, you may also just use the names documented above.
 
 ```php
 $mongodb = new MongoDB\Client('mongodb://localhost:27017');

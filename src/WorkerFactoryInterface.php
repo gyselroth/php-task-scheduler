@@ -12,7 +12,9 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
+use MongoDB\BSON\ObjectId;
+
 interface WorkerFactoryInterface
 {
-    public function build(): Worker;
+    public function build(ObjectId $id): Worker;
 }

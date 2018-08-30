@@ -149,9 +149,6 @@ class Scheduler
 
     /**
      * Set options.
-     *
-     *
-     * @return Scheduler
      */
     public function setOptions(array $config = []): self
     {
@@ -214,8 +211,6 @@ class Scheduler
 
     /**
      * Get job by Id.
-     *
-     * @param ObjectId
      */
     public function getJob(ObjectId $id): Process
     {
@@ -242,6 +237,12 @@ class Scheduler
         if (1 !== $result->getModifiedCount()) {
             throw new JobNotFoundException('job '.$id.' was not found');
         }
+
+        $this->db->{$this->event_queue}->insertOne([
+            'job' => $id,
+            'status' => JobInterface::STATUS_CANCELED,
+            'timestamp' => new UTCDateTime(),
+        ]);
 
         return true;
     }
@@ -295,6 +296,7 @@ class Scheduler
             'created' => new UTCDateTime(),
             'started' => new UTCDateTime(0),
             'ended' => new UTCDateTime(0),
+            'worker' => new ObjectId(),
             'options' => $options,
             'data' => $data,
         ], ['$isolated' => true]);
@@ -365,6 +367,12 @@ class Scheduler
      */
     public function listen(Closure $callback, array $query = []): self
     {
+        if (0 === count($query)) {
+            $query = [
+                'timestamp' => ['$gte' => new UTCDateTime()],
+            ];
+        }
+
         $cursor = $this->events->getCursor($query);
 
         while (true) {

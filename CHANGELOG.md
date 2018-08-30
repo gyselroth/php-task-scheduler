@@ -7,6 +7,7 @@
 * [FEATURE] Possibility to wait for job execution
 * [FEATURE] Possibility to listen for any events
 * [FEATURE] Event (and exception) log
+* [FEATURE] Abort running jobs
 
 
 ## 3.0.0-alpha1

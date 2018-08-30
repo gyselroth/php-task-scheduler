@@ -78,10 +78,18 @@ class Worker
     protected $jobs;
 
     /**
+     * Worker ID.
+     *
+     * @var ObjectId
+     */
+    protected $id;
+
+    /**
      * Init worker.
      */
-    public function __construct(Scheduler $scheduler, Database $db, LoggerInterface $logger, ?ContainerInterface $container = null)
+    public function __construct(ObjectId $id, Scheduler $scheduler, Database $db, LoggerInterface $logger, ?ContainerInterface $container = null)
     {
+        $this->id = $id;
         $this->process = getmypid();
         $this->scheduler = $scheduler;
         $this->db = $db;
@@ -254,7 +262,7 @@ class Worker
             'timestamp' => new UTCDateTime(),
         ]);
 
-        $this->current_job['options']['at'] = time() + $this->current_job['options']['retry_interval'];
+        $this->current_job['options']['at'] = 0;
 
         return $this->scheduler->addJob($this->current_job['class'], $this->current_job['data'], $this->current_job['options'])->getId();
     }
@@ -293,6 +301,7 @@ class Worker
 
         if (JobInterface::STATUS_PROCESSING === $status) {
             $set['started'] = new UTCDateTime();
+            $set['worker'] = $this->id;
         }
 
         $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
@@ -439,7 +448,7 @@ class Worker
                 ]);
 
                 --$job['options']['retry'];
-                $job['options']['at'] = time() + $job['options']['at'];
+                $job['options']['at'] = time() + $job['options']['retry_interval'];
                 $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
                 return $job->getId();
@@ -482,7 +491,7 @@ class Worker
             throw new InvalidJobException('job must implement JobInterface');
         }
 
-        $result = $instance
+        $instance
             ->setData($job['data'])
             ->setId($job['_id'])
             ->start();
@@ -494,6 +503,8 @@ class Worker
             'status' => JobInterface::STATUS_DONE,
             'timestamp' => new UTCDateTime(),
         ]);
+
+        unset($instance);
 
         return $return;
     }

@@ -42,7 +42,7 @@ class WorkerTest extends TestCase
 
         $called = &$this->called;
         $this->worker = $this->getMockBuilder(Worker::class)
-            ->setConstructorArgs([$this->scheduler, $this->mongodb, $this->createMock(LoggerInterface::class)])
+            ->setConstructorArgs([new ObjectId(), $this->scheduler, $this->mongodb, $this->createMock(LoggerInterface::class)])
             ->setMethods(['loop'])
             ->getMock();
         $this->worker->method('loop')
@@ -285,7 +285,7 @@ class WorkerTest extends TestCase
 
         $called = 0;
         $worker = $this->getMockBuilder(Worker::class)
-            ->setConstructorArgs([$this->scheduler, $this->mongodb, $this->createMock(LoggerInterface::class), $stub_container])
+            ->setConstructorArgs([new ObjectId(), $this->scheduler, $this->mongodb, $this->createMock(LoggerInterface::class), $stub_container])
             ->setMethods(['loop'])
             ->getMock();
         $worker->method('loop')

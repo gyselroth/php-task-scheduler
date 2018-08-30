@@ -12,6 +12,8 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
+use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidArgumentException;
@@ -203,15 +205,17 @@ class Queue
      */
     public function exitChild(int $sig, array $pid): self
     {
-        $this->logger->debug('child process ['.$pid['pid'].'] exit with ['.$sig.']', [
+        $this->logger->debug('worker ['.$pid['pid'].'] exit with ['.$sig.']', [
             'category' => get_class($this),
             'pm' => $this->process,
         ]);
 
         pcntl_waitpid($pid['pid'], $status, WNOHANG | WUNTRACED);
 
-        if (isset($this->forks[$pid['pid']])) {
-            unset($this->forks[$pid['pid']]);
+        foreach ($this->forks as $id => $pid) {
+            if ($pid === $pid['pi']) {
+                unset($this->forks[$id]);
+            }
         }
 
         return $this;
@@ -230,7 +234,7 @@ class Queue
      */
     protected function spawnInitialWorkers()
     {
-        $this->logger->debug('spawn initial ['.$this->min_children.'] child processes', [
+        $this->logger->debug('spawn initial ['.$this->min_children.'] workers', [
             'category' => get_class($this),
             'pm' => $this->process,
         ]);
@@ -250,20 +254,20 @@ class Queue
      */
     protected function spawnWorker()
     {
+        $id = new ObjectId();
         $pid = pcntl_fork();
 
         if (-1 === $pid) {
             throw new QueueRuntimeException('failed to spawn new worker');
         }
 
-        $this->forks[] = $pid;
-
+        $this->forks[(string) $id] = $pid;
         if (!$pid) {
-            $worker = $this->factory->build()->start();
+            $worker = $this->factory->build($id)->start();
             exit();
         }
 
-        $this->logger->debug('spawn worker process ['.$pid.']', [
+        $this->logger->debug('spawn worker ['.$id.'] with pid ['.$pid.']', [
             'category' => get_class($this),
             'pm' => $this->process,
         ]);
@@ -294,18 +298,45 @@ class Queue
      */
     protected function main(): void
     {
-        $cursor = $this->jobs->getCursor([
+        $cursor_jobs = $this->jobs->getCursor([
             '$or' => [
                 ['status' => JobInterface::STATUS_WAITING],
                 ['status' => JobInterface::STATUS_POSTPONED],
             ],
         ]);
 
+        $cursor_events = $this->events->getCursor([
+            'status' => JobInterface::STATUS_CANCELED,
+            'timestamp' => ['$gte' => new UTCDateTime()],
+        ]);
+
         $this->catchSignal();
 
         while ($this->loop()) {
-            if (null === $cursor->current()) {
-                if ($cursor->getInnerIterator()->isDead()) {
+            $event = $cursor_events->current();
+            $this->events->next($cursor_events, function () {
+                $this->main();
+            });
+
+            if (null === $event) {
+                if ($cursor_events->getInnerIterator()->isDead()) {
+                    $this->logger->error('event queue cursor is dead, is it a capped collection?', [
+                        'category' => get_class($this),
+                        'pm' => $this->process,
+                    ]);
+
+                    $this->events->create();
+
+                    $this->main();
+
+                    break;
+                }
+            } else {
+                $this->handleCancel($event);
+            }
+
+            if (null === $cursor_jobs->current()) {
+                if ($cursor_jobs->getInnerIterator()->isDead()) {
                     $this->logger->error('job queue cursor is dead, is it a capped collection?', [
                         'category' => get_class($this),
                         'pm' => $this->process,
@@ -318,45 +349,77 @@ class Queue
                     break;
                 }
 
-                $this->jobs->next($cursor, function () {
+                $this->jobs->next($cursor_jobs, function () {
                     $this->main();
                 });
 
                 continue;
             }
 
-            $job = $cursor->current();
-            $this->jobs->next($cursor, function () {
+            $job = $cursor_jobs->current();
+            $this->jobs->next($cursor_jobs, function () {
                 $this->main();
             });
 
-            if ($this->count() < $this->max_children && self::PM_STATIC !== $this->pm) {
-                $this->logger->debug('max_children ['.$this->max_children.'] processes not reached ['.$this->count().'], spawn new worker', [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                ]);
-
-                $this->spawnWorker();
-            } elseif (true === $job['options'][Scheduler::OPTION_IGNORE_MAX_CHILDREN]) {
-                $this->logger->debug('job ['.$job['_id'].'] deployed with ignore_max_children, spawn new worker', [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                ]);
-
-                $this->spawnWorker();
-            } else {
-                $this->logger->debug('max children ['.$this->max_children.'] reached for job ['.$job['_id'].'], do not spawn new worker', [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                ]);
-            }
+            $this->manageChildren($job);
         }
     }
 
     /**
+     * Handle cancel event.
+     */
+    protected function handleCancel(array $event): self
+    {
+        $process = $this->scheduler->getJob($event['job']);
+
+        $this->logger->debug('received cancel event for job ['.$event['job'].'] running on worker ['.$process->getWorker().']', [
+            'category' => get_class($this),
+        ]);
+
+        $worker = $process->getWorker();
+
+        if (isset($this->forks[(string) $worker])) {
+            $this->logger->debug('found running worker ['.$process->getWorker().'] on this queue node, terminate it now', [
+                'category' => get_class($this),
+            ]);
+
+            posix_kill($this->forks[(string) $worker], SIGKILL);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Manage children.
+     */
+    protected function manageChildren(array $job): self
+    {
+        if ($this->count() < $this->max_children && self::PM_STATIC !== $this->pm) {
+            $this->logger->debug('max_children ['.$this->max_children.'] workers not reached ['.$this->count().'], spawn new worker', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
+
+            $this->spawnWorker();
+        } elseif (true === $job['options'][Scheduler::OPTION_IGNORE_MAX_CHILDREN]) {
+            $this->logger->debug('job ['.$job['_id'].'] deployed with ignore_max_children, spawn new worker', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
+
+            $this->spawnWorker();
+        } else {
+            $this->logger->debug('max children ['.$this->max_children.'] reached for job ['.$job['_id'].'], do not spawn new worker', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
+        }
+
+        return $this;
+    }
+
+    /**
      * Catch signals and cleanup.
-     *
-     * @return Queue
      */
     protected function catchSignal(): self
     {
@@ -378,8 +441,8 @@ class Queue
             'pm' => $this->process,
         ]);
 
-        foreach ($this->getForks() as $key => $pid) {
-            $this->logger->debug('forward signal ['.$sig.'] to child process ['.$pid.']', [
+        foreach ($this->getForks() as $id => $pid) {
+            $this->logger->debug('forward signal ['.$sig.'] to worker ['.$id.'] running with pid ['.$pid.']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);

@@ -90,15 +90,9 @@ class Process
     /**
      * Restart job.
      */
-    public function restart(): Process
+    public function getWorker(): ObjectId
     {
-    }
-
-    /**
-     * Kill running process.
-     */
-    public function kill(): bool
-    {
+        return $this->job['worker'];
     }
 
     /**
