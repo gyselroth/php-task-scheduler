@@ -163,11 +163,11 @@ Those nodes listen in (soft) realtime for new jobs and will load balance those j
 #### Create worker factory
 
 You will need to create your own worker node factory in your app namespace which gets called to spawn new child processes.
-This factory gets called during a new fork is spawned. This means if build() get called you are in a new process and you will need to bootstrap your application 
-from scratch. In this simple example we will manually create a new mongodb connection, create a new scheduler and logger instance and finally return a new TaskScheduler\Worker instance.
+This factory gets called during a new fork is spawned. This means if it gets called, you are in a new process and you will need to bootstrap your application 
+from scratch (Or just the things you need for a worker). In this simple example we will manually create a new MongoDB connection, create a new scheduler and logger instance and finally return a new TaskScheduler\Worker instance.
 
-For better understanding: for example there is a configuration file where the mongodb uri is stored, in build() you will need to parse this configuration again and create a new mongodb instance.
-Or you may be using a dic, the dic need to be created from scratch in build() (A new dependency tree). You may pass an instance of a dic (compatible to Psr\Container\ContainerInterface) as fourth argument to TaskScheduler\Worker.
+For better understanding: if there is a configuration file where you have stored your configs like a MongoDB uri, in the factory you will need to parse this configuration again and create a new mongodb instance.
+Or you may be using a dic, the dic needs to be created from scratch in the factory (A new dependency tree). You may pass an instance of a dic (compatible to Psr\Container\ContainerInterface) as fith argument to TaskScheduler\Worker (See more at [Using a DIC](#using-a-dic-dependeny-injection-container)).
 
 ```php
 class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
@@ -175,13 +175,13 @@ class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
     /**
      * {@inheritdoc}
      */
-    public function build(): TaskScheduler\Worker
+    public function build(MongoDB\BSON\ObjectId $id): TaskScheduler\Worker
     {
         $mongodb = new MongoDB\Client('mongodb://localhost:27017');
         $logger = new \A\Psr4\Compatible\Logger();
         $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
 
-        return new TaskScheduler\Worker($scheduler, $mongodb->mydb, $logger);
+        return new TaskScheduler\Worker($id, $scheduler, $mongodb->mydb, $logger);
     }
 }
 ```
@@ -462,14 +462,14 @@ class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
     /**
      * {@inheritdoc}
      */
-    public function build(): TaskScheduler\Worker
+    public function build(MongoDB\BSON\ObjectId $id): TaskScheduler\Worker
     {
         $mongodb = new MongoDB\Client('mongodb://localhost:27017');
         $logger = new \A\Psr4\Compatible\Logger();
         $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
         $dic = new \A\Psr11\Compatible\Dic();
 
-        return new TaskScheduler\Worker($scheduler, $mongodb->mydb, $logger, $dic);
+        return new TaskScheduler\Worker($id, $scheduler, $mongodb->mydb, $logger, $dic);
     }
 }
 ```
