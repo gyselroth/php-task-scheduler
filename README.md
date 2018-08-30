@@ -7,7 +7,6 @@
 [![GitHub release](https://img.shields.io/github/release/gyselroth/mongodb-php-task-scheduler.svg)](https://github.com/gyselroth/mongodb-php-task-scheduler/releases)
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/gyselroth/mongodb-php-task-scheduler/master/LICENSE)
 
-## Description
 Asynchronous task scheduler for PHP using MongoDB as message queue. Execute asynchronous tasks the easy way.
 This library has built-in support for clustered systems and multi core cpu. You can start up multiple worker nodes and they will load balance the available jobs with the principal first comes first serves. Each node will also spawn a (dynamically) configurable number of child processes to use all available resources. Moreover it is possible to schedule jobs at certain times, endless intervals as well as rescheduling if jobs fail.
 This brings a real world implementation for asynchronous process management to PHP. You are also able to sync child tasks and much more nice stuff.
@@ -23,36 +22,37 @@ This brings a real world implementation for asynchronous process management to P
 * Sync tasks between each other
 * Abort running tasks
 * Timeout jobs
-* Easy deployable on kubernets and other container orchestration platforms
+* Perfectly suited for kubernets and other container orchestration platforms
 * Retry and intervals
 * Schedule tasks at specific times
 * Signal management
 
 # Table of Contents
-  * [Description](#description)
-  * [Features](#features)
-  * [Why?](#why)
-  * [How does it work (The short way please)?](#how-does-it-work-the-short-way-please)
-  * [Requirements](#requirements)
-  * [Download](#download)
-  * [Changelog](#changelog)
-  * [Contribute](#contribute)
-  * [Terms](#terms)
-  * [Documentation](#documentation)
-    * [Create job](#create-job)
-    * [Initialize scheduler](#initialize-scheduler)
-    * [Create job queue](#create-job-queue)
-    * [Create a job (mail example)](#Create-a-job-mail-example)
-    * [Execute jobs](#execute-jobs)
-    * [Advanced job options](#advanced-job-options)
-    * [Add job if not exists](#add-job-if-not-exists)
-    * [Advanced scheduler options](#advanced-scheduler-options)
-    * [Advanced queue node options](#advanced-queue-node-options)
-    * [Using a DIC (dependeny injection container)](#using-a-dic-dependeny-injection-container)
-    * [Manage jobs](#manage-jobs)
+* [Features](#features)
+* [Why?](#why)
+* [How does it work (The short way please)?](#how-does-it-work-the-short-way-please)
+* [Requirements](#requirements)
+* [Download](#download)
+* [Changelog](#changelog)
+* [Contribute](#contribute)
+* [Terms](#terms)
+* [Documentation](#documentation)
+ * [Create job](#create-job)
+ * [Initialize scheduler](#initialize-scheduler)
+ * [Append job](#append-job)
+ * [Execute jobs](#execute-jobs)
+    * [Create worker factory](#create-worker-factory)
+    * [Create queue node](#create-queue-node)
+ * [Manage jobs](#manage-jobs)
     * [Get jobs](#get-jobs)
     * [Cancel job](#cancel-job)
-    * [Modify job](#modify-job)
+    * [Modify jobs](#modify-jobs)
+ * [Asynchronous programming](#asynchronous-programming)
+ * [Advanced scheduler options](#advanced-scheduler-options)
+ * [Add job if not exists](#add-job-if-not-exists)
+ * [Advanced scheduler options](#advanced-scheduler-options-1)
+ * [Advanced queue node options](#advanced-queue-node-options)
+ * [Using a DIC (dependeny injection container)](#using-a-dic-dependeny-injection-container)
 
 ## Why?
 PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronously. Sure there are threads (pthreads) and forks (pcntl) but those are only usable in cli mode (Or you should them only be using in cli mode). Using this library you are able to write your code async, schedule them and let them execute asynchronously.
