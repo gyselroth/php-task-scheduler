@@ -22,7 +22,7 @@ This brings a real world implementation for asynchronous process management to P
 * Sync tasks between each other
 * Abort running tasks
 * Timeout jobs
-* Perfectly suited for kubernets and other container orchestration platforms
+* Perfectly suited for kubernetes and other container orchestration platforms
 * Retry and intervals
 * Schedule tasks at specific times
 * Signal management
@@ -56,11 +56,12 @@ This brings a real world implementation for asynchronous process management to P
     * [Using a DIC (dependeny injection container)](#using-a-dic-dependeny-injection-container)
 
 ## Why?
-PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronously. Sure there are threads (pthreads) and forks (pcntl) but those are only usable in cli mode (Or you should them only be using in cli mode). Using this library you are able to write your code async, schedule them and let them execute asynchronously.
+PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronously. Sure there is pthreads and pcntl but those are only usable in cli mode (or are only usable in cli mode). Using this library you are able to write your code async, schedule tasks and let them execute behind the scenes. 
 
 ## How does it work (The short way please)?
-A job is scheduled via a scheduler which will get appended to a central message queue (MongoDB). All Queue nodes will get notified in (soft) realtime that a new job is available.
-One node will execute the task according the principle first come first serves. If no free slots are available the job will wait in the queue and get executed as soon as there is a free slot. 
+A job is scheduled via a task scheduler and gets written into a central message queue (MongoDB). All Queue nodes will get notified in (soft) realtime that a new job is available.
+One node will execute the task according the principle first come first serves. If no free slots are available the job will wait in the queue and get executed as soon as there is a free slot.
+A job may be rescheduled if it failed. There are lots of more features available, continue reading. 
 
 ## Requirements
 * Posix system (Basically every linux)
