@@ -43,7 +43,9 @@ class SchedulerTest extends TestCase
         $job = $this->scheduler->addJob('test', ['foo' => 'bar']);
         $this->assertSame($job->getStatus(), JobInterface::STATUS_WAITING);
         $this->assertSame($job->getClass(), 'test');
+        $this->assertSame(['foo' => 'bar'], $job->getData());
         $this->assertInstanceOf(ObjectId::class, $job->getId());
+        $this->assertInstanceOf(ObjectId::class, $job->getWorker());
     }
 
     public function testNewJobTimestamps()

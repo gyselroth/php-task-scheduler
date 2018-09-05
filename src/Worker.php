@@ -130,6 +130,7 @@ class Worker
 
         $this->db->{$this->scheduler->getEventQueue()}->insertOne([
             'job' => $this->current_job['_id'],
+            'worker' => $this->id,
             'status' => JobInterface::STATUS_TIMEOUT,
             'timestamp' => new UTCDateTime(),
         ]);
@@ -258,6 +259,7 @@ class Worker
 
         $this->db->{$this->scheduler->getEventQueue()}->insertOne([
             'job' => $this->current_job['_id'],
+            'worker' => $this->id,
             'status' => JobInterface::STATUS_CANCELED,
             'timestamp' => new UTCDateTime(),
         ]);
@@ -320,6 +322,7 @@ class Worker
 
             $this->db->{$this->scheduler->getEventQueue()}->insertOne([
                 'job' => $job['_id'],
+                'worker' => $this->id,
                 'status' => $status,
                 'timestamp' => new UTCDateTime(),
             ]);
@@ -429,6 +432,7 @@ class Worker
 
             $this->db->{$this->scheduler->getEventQueue()}->insertOne([
                 'job' => $job['_id'],
+                'worker' => $this->id,
                 'status' => JobInterface::STATUS_FAILED,
                 'timestamp' => new UTCDateTime(),
                 'exception' => [
@@ -500,6 +504,7 @@ class Worker
 
         $this->db->{$this->scheduler->getEventQueue()}->insertOne([
             'job' => $job['_id'],
+            'worker' => $this->id,
             'status' => JobInterface::STATUS_DONE,
             'timestamp' => new UTCDateTime(),
         ]);

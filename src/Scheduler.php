@@ -71,14 +71,14 @@ class Scheduler
      *
      * @var string
      */
-    protected $job_queue = 'takscheduler.jobs';
+    protected $job_queue = 'taskscheduler.jobs';
 
     /**
      * Event Collection name.
      *
      * @var string
      */
-    protected $event_queue = 'takscheduler.events';
+    protected $event_queue = 'taskscheduler.events';
 
     /**
      * Default at (Secconds from now).

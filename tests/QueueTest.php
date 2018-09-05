@@ -13,14 +13,18 @@ declare(strict_types=1);
 namespace TaskScheduler\Testsuite;
 
 use Helmich\MongoMock\MockDatabase;
+use MongoDB\BSON\UTCDateTime;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionProperty;
 use TaskScheduler\Exception\InvalidArgumentException;
+use TaskScheduler\JobInterface;
 use TaskScheduler\Queue;
 use TaskScheduler\Scheduler;
+use TaskScheduler\Testsuite\Mock\EndlessJobMock;
+use TaskScheduler\Worker;
 use TaskScheduler\WorkerFactoryInterface;
 
 class QueueTest extends TestCase
@@ -28,15 +32,16 @@ class QueueTest extends TestCase
     protected $queue;
     protected $scheduler;
     protected $called = 0;
+    protected $mongodb;
 
     public function setUp()
     {
-        $mongodb = new MockDatabase();
-        $this->scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
+        $this->mongodb = new MockDatabase();
+        $this->scheduler = new Scheduler($this->mongodb, $this->createMock(LoggerInterface::class));
 
         $called = &$this->called;
         $this->queue = $this->getMockBuilder(Queue::class)
-            ->setConstructorArgs([$this->scheduler, $mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class)])
+            ->setConstructorArgs([$this->scheduler, $this->mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class)])
             ->setMethods(['loop'])
             ->getMock();
         $this->queue->method('loop')
@@ -156,6 +161,30 @@ class QueueTest extends TestCase
         $this->queue->process();
         $this->assertSame(3, $this->queue->count());
     }
+
+    /*public function testCancelRunningJob()
+    {
+        $mongodb = $this->mongodb;
+        $job = $this->scheduler->addJob(EndlessJobMock::class, 'foo');
+
+        $this->queue->process();
+
+        $method = self::getMethod('getForks');
+        $forks = $method->invokeArgs($this->queue, []);
+        reset($forks);
+        $worker = key($forks);
+
+        $mongodb->{'taskscheduler.events'}->insertOne([
+            'job' => $job->getId(),
+            'worker' => $worker,
+            'status' => JobInterface::STATUS_PROCESSING,
+            'timestamp' => new UTCDateTime(),
+        ]);
+
+        $this->scheduler->cancelJob($job->getId());
+        $this->called = 0;
+        $this->queue->process();
+    }*/
 
     public function testMinChildrenGreaterThanMaxChildren()
     {

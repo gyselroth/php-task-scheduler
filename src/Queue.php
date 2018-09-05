@@ -90,6 +90,13 @@ class Queue
     protected $forks = [];
 
     /**
+     * Worker/Job mapping.
+     *
+     * @var array
+     */
+    protected $job_map = [];
+
+    /**
      * Worker factory.
      *
      * @var WorkerFactoryInterface
@@ -117,6 +124,8 @@ class Queue
      */
     protected $process;
 
+    protected $started;
+
     /**
      * Init queue.
      */
@@ -131,6 +140,7 @@ class Queue
 
         $this->jobs = new MessageQueue($db, $scheduler->getJobQueue(), $scheduler->getJobQueueSize(), $logger);
         $this->events = new MessageQueue($db, $scheduler->getEventQueue(), $scheduler->getEventQueueSize(), $logger);
+        $this->started = new UTCDateTime();
     }
 
     /**
@@ -215,6 +225,10 @@ class Queue
         foreach ($this->forks as $id => $pid) {
             if ($pid === $pid['pi']) {
                 unset($this->forks[$id]);
+
+                if (isset($this->jobs[$id])) {
+                    unset($this->jobs[$id]);
+                }
             }
         }
 
@@ -262,6 +276,7 @@ class Queue
         }
 
         $this->forks[(string) $id] = $pid;
+
         if (!$pid) {
             $this->factory->build($id)->start();
             exit();
@@ -306,8 +321,11 @@ class Queue
         ]);
 
         $cursor_events = $this->events->getCursor([
-            'status' => JobInterface::STATUS_CANCELED,
-            'timestamp' => ['$gte' => new UTCDateTime()],
+            '$or' => [
+                ['status' => JobInterface::STATUS_CANCELED],
+                ['status' => JobInterface::STATUS_PROCESSING],
+            ],
+            'timestamp' => ['$gte' => $this->started],
         ]);
 
         $this->catchSignal();
@@ -332,7 +350,7 @@ class Queue
                     break;
                 }
             } else {
-                $this->handleCancel($event);
+                $this->handleEvent($event);
             }
 
             if (null === $cursor_jobs->current()) {
@@ -368,21 +386,30 @@ class Queue
     /**
      * Handle cancel event.
      */
-    protected function handleCancel(array $event): self
+    protected function handleEvent(array $event): self
     {
-        $process = $this->scheduler->getJob($event['job']);
+        if (JobInterface::STATUS_PROCESSING === $event['status']) {
+            $this->job_map[(string) $event['worker']] = $event['job'];
 
-        $this->logger->debug('received cancel event for job ['.$event['job'].'] running on worker ['.$process->getWorker().']', [
+            return $this;
+        }
+
+        $worker = array_search((string) $event['job'], $this->job_map, true);
+
+        if (false === $worker) {
+            return $this;
+        }
+
+        $this->logger->debug('received cancel event for job ['.$event['job'].'] running on worker ['.$worker.']', [
             'category' => get_class($this),
         ]);
 
-        $worker = $process->getWorker();
-
         if (isset($this->forks[(string) $worker])) {
-            $this->logger->debug('found running worker ['.$process->getWorker().'] on this queue node, terminate it now', [
+            $this->logger->debug('found running worker ['.$worker.'] on this queue node, terminate it now', [
                 'category' => get_class($this),
             ]);
 
+            unset($this->job_map[(string) $event['job']]);
             posix_kill($this->forks[(string) $worker], SIGKILL);
         }
 

@@ -404,14 +404,18 @@ $scheduler->setOptions([
 | Name  | Default | Type | Description |
 | --- | --- | --- | --- |
 | `job_queue`  | `taskscheduler.jobs`  | string | The MongoDB collection which acts as job message queue. |
-| `job_queue_size`  | `100000`  | int | The maximum size of jobs, if reached the first jobs get overwritten by new ones. |
+| `job_queue_size`  | `100000`  | int | The maximum size in bytes of the job collection, if reached the first jobs get overwritten by new ones. |
 | `event_queue`  | `taskscheduler.events`  | string | The MongoDB collection which acts as event message queue. |
-| `event_queue_size`  | `500000`  | int | The maximum size of events, if reached the first events get overwritten by new ones. This value should usually be a multiplicated value of `job_queue_size` since a job can have more events. |
+| `event_queue_size`  | `500000`  | int | The maximum size in bytes of the event collection, if reached the first events get overwritten by new ones. This value should usually be 5 times bigger than the value of `job_queue_size` since a job can have more events. |
 | `default_at`  | `null`  | ?int | Define a default execution time for **all** jobs. This relates only for newly added jobs. The default is immediatly or better saying as soon as there is a free slot. |
 | `default_interval`  | `-1`  | int | Define a default interval for **all** jobs. This relates only for newly added jobs. The default is `-1` which means no interval at all. |
 | `default_retry`  | `0`  | int | Define a default retry interval for **all** jobs. This relates only for newly added jobs. There are now retries by default for failed jobs. |
 | `default_retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. This relates only for newly added jobs. The default is `300` which is 5 minutes. |
 | `default_timeout`  | `0`  | int | Specify a default timeout for all jobs. This relates only for newly added jobs. Per default there is no timeout at all. |
+
+
+>**Note**: It is important to choose a queue size (job_queue_size and event_queue_size) which fits into your setup.
+
 
 ### Advanced queue node options
 

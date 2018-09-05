@@ -77,7 +77,7 @@ class MessageQueue
     {
         try {
             $cursor->next();
-        } catch (RuntimeException $e) {
+        } catch (RuntimeException | ServerException $e) {
             $this->logger->error('message queue cursor for ['.$this->name.'] failed to retrieve next message', [
                 'category' => get_class($this),
                 'exception' => $e,
@@ -94,7 +94,7 @@ class MessageQueue
     {
         $options = [
             'typeMap' => Scheduler::TYPE_MAP,
-            'cursorType' => Find::TAILABLE,
+            'cursorType' => Find::TAILABLE_AWAIT,
             'noCursorTimeout' => true,
         ];
 

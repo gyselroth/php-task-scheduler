@@ -1,3 +1,13 @@
+## 3.0.0-beta2
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Wed Sep 05 16:47:34 CEST 2018
+
+* [FIX] Fixed naming of the collections
+* [CHANGE] Using awaitData cursors now instead just tailable which will have a big impact on cpu usage
+* [FIX] Cancelling a job which is out of the queue does now work as well
+
+
+* [FEATURE] Possibility to timeout jobs
 ## 3.0.0-beta1
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Thu Aug 30 11:47:34 CEST 2018
