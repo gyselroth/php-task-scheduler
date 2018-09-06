@@ -39,7 +39,6 @@ class WorkerTest extends TestCase
     {
         $this->mongodb = new MockDatabase();
         $this->scheduler = new Scheduler($this->mongodb, $this->createMock(LoggerInterface::class));
-
         $called = &$this->called;
         $this->worker = $this->getMockBuilder(Worker::class)
             ->setConstructorArgs([new ObjectId(), $this->scheduler, $this->mongodb, $this->createMock(LoggerInterface::class)])
@@ -151,6 +150,36 @@ class WorkerTest extends TestCase
         $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
     }
 
+    public function testRescheduleLocalQueuedJobAfterTimeout()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_AT => time() + 1,
+        ]);
+
+        $this->worker->start();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->worker->timeout();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_POSTPONED, $job->getStatus());
+    }
+
+    public function testRescheduleLocalQueuedJobWithTheSameIdIfJobWasOverwrittenInQueue()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_AT => time() + 1,
+        ]);
+
+        $this->worker->start();
+        $this->mongodb->{'taskscheduler.jobs'}->deleteOne(['_id' => $job->getId()]);
+        $method = self::getMethod('terminate');
+        $method->invokeArgs($this->worker, [SIGTERM]);
+        $new = $this->scheduler->getJob($job->getId());
+        $this->assertSame($new->getId(), $job->getId());
+        $this->assertNotSame($new->toArray()['created'], $job->toArray()['created']);
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->assertSame($new->getOptions()['at'], $job->getOptions()['at']);
+    }
+
     public function testUpdateJob()
     {
         $job = $this->scheduler->addJob('test', ['foo' => 'bar'])->toArray();
@@ -234,6 +263,22 @@ class WorkerTest extends TestCase
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertSame(JobInterface::STATUS_WAITING, $retry_job->getStatus());
         $this->assertSame(0, $retry_job->getOptions()['retry']);
+        $this->assertTrue($retry_job->getOptions()['at'] === new UTCDateTime((time() + 300).'000'));
+    }
+
+    public function testProcessErrorJobRetryLowInterval()
+    {
+        $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_RETRY => 1,
+            Scheduler::OPTION_RETRY_INTERVAL => 10,
+        ]);
+
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->start();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
+        $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertTrue($retry_job->getOptions()['at'] === new UTCDateTime((time() + 10).'000'));
     }
 
     public function testProcessJobInterval()

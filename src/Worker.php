@@ -216,6 +216,33 @@ class Worker
     }
 
     /**
+     * Save local queue.
+     */
+    protected function saveState(): self
+    {
+        foreach ($this->queue as $key => $job) {
+            try {
+                $options = $job['options'];
+                $options[Scheduler::OPTION_ID] = $job['_id'];
+                $this->scheduler->addJob($job['class'], $job['data'], $options);
+                unset($this->queue[$key]);
+            } catch (JobAlreadyExistsException $e) {
+                $this->logger->warning('do not reschedule locally queued job ['.$job['_id'].'] since it already exists', [
+                    'exception' => $e,
+                    'category' => get_class($this),
+                ]);
+            } catch (\Exception $e) {
+                $this->logger->warning('failed reschedule locally queued job ['.$job['_id'].']', [
+                    'exception' => $e,
+                    'category' => get_class($this),
+                ]);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
      * This method may seem useless but is actually very useful to mock the loop.
      */
     protected function loop(): bool
@@ -241,6 +268,8 @@ class Worker
      */
     protected function terminate(int $sig): ?ObjectId
     {
+        $this->saveState();
+
         if (null === $this->current_job) {
             $this->logger->debug('received signal ['.$sig.'], no job is currently processing, exit now', [
                 'category' => get_class($this),
@@ -264,9 +293,10 @@ class Worker
             'timestamp' => new UTCDateTime(),
         ]);
 
-        $this->current_job['options']['at'] = 0;
+        $options = $this->current_job['options'];
+        $options['at'] = 0;
 
-        return $this->scheduler->addJob($this->current_job['class'], $this->current_job['data'], $this->current_job['options'])->getId();
+        return $this->scheduler->addJob($this->current_job['class'], $this->current_job['data'], $options)->getId();
     }
 
     /**
@@ -441,7 +471,6 @@ class Worker
                     'file' => $e->getFile(),
                     'line' => $e->getLine(),
                     'code' => $e->getCode(),
-                    'trace' => $e->getTrace(),
                 ],
             ]);
 

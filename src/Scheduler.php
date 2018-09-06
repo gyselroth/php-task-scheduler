@@ -33,11 +33,20 @@ class Scheduler
     public const OPTION_RETRY_INTERVAL = 'retry_interval';
     public const OPTION_IGNORE_MAX_CHILDREN = 'ignore_max_children';
     public const OPTION_TIMEOUT = 'timeout';
+    public const OPTION_ID = 'id';
+
+    /**
+     * Default job options.
+     */
     public const OPTION_DEFAULT_AT = 'default_at';
     public const OPTION_DEFAULT_INTERVAL = 'default_interval';
     public const OPTION_DEFAULT_RETRY = 'default_retry';
     public const OPTION_DEFAULT_RETRY_INTERVAL = 'default_retry_interval';
     public const OPTION_DEFAULT_TIMEOUT = 'default_timeout';
+
+    /**
+     * Queue options.
+     */
     public const OPTION_JOB_QUEUE = 'job_queue';
     public const OPTION_JOB_QUEUE_SIZE = 'job_queue_size';
     public const OPTION_EVENT_QUEUE = 'event_queue';
@@ -284,23 +293,31 @@ class Scheduler
         ];
 
         $options = array_merge($defaults, $options);
-        $this->validateOptions($options);
+        $options = SchedulerValidator::validateOptions($options);
 
-        if ($options[self::OPTION_AT] > 0) {
-            $options[self::OPTION_AT] = new UTCDateTime($options[self::OPTION_AT] * 1000);
-        }
-
-        $result = $this->db->{$this->job_queue}->insertOne([
+        $document = [
             'class' => $class,
             'status' => JobInterface::STATUS_WAITING,
             'created' => new UTCDateTime(),
             'started' => new UTCDateTime(0),
             'ended' => new UTCDateTime(0),
             'worker' => new ObjectId(),
-            'options' => $options,
             'data' => $data,
-        ], ['$isolated' => true]);
+        ];
 
+        if (isset($options[self::OPTION_ID])) {
+            $id = $options[self::OPTION_ID];
+            unset($options[self::OPTION_ID]);
+            $document['_id'] = $id;
+        }
+
+        if (is_int($options[self::OPTION_AT]) && $options[self::OPTION_AT] > 0) {
+            $options[self::OPTION_AT] = new UTCDateTime($options[self::OPTION_AT] * 1000);
+        }
+
+        $document['options'] = $options;
+
+        $result = $this->db->{$this->job_queue}->insertOne($document, ['$isolated' => true]);
         $this->logger->debug('queue job ['.$result->getInsertedId().'] added to ['.$class.']', [
             'category' => get_class($this),
             'params' => $options,
@@ -404,37 +421,6 @@ class Scheduler
                 return $this;
             }
         }
-    }
-
-    /**
-     * Validate given job options.
-     */
-    protected function validateOptions(array $options): self
-    {
-        foreach ($options as $option => $value) {
-            switch ($option) {
-                case self::OPTION_AT:
-                case self::OPTION_INTERVAL:
-                case self::OPTION_RETRY:
-                case self::OPTION_RETRY_INTERVAL:
-                case self::OPTION_TIMEOUT:
-                    if (!is_int($value)) {
-                        throw new InvalidArgumentException('option '.$option.' must be an integer');
-                    }
-
-                break;
-                case self::OPTION_IGNORE_MAX_CHILDREN:
-                    if (!is_bool($value)) {
-                        throw new InvalidArgumentException('option '.$option.' must be a boolean');
-                    }
-
-                break;
-                default:
-                    throw new InvalidArgumentException('invalid option '.$option.' given');
-            }
-        }
-
-        return $this;
     }
 
     /**
