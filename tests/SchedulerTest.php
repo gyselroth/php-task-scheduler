@@ -48,6 +48,37 @@ class SchedulerTest extends TestCase
         $this->assertInstanceOf(ObjectId::class, $job->getWorker());
     }
 
+    public function testAddJobWithCustomIdInvalidValue()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
+            Scheduler::OPTION_ID => 'foobar',
+        ]);
+    }
+
+    public function testAddJobWithCustomId()
+    {
+        $id = new ObjectId();
+        $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
+            Scheduler::OPTION_ID => $id,
+        ]);
+
+        $this->assertSame($id, $job->getId());
+    }
+
+    public function testAddJobWithCustomIdAlreadyExists()
+    {
+        $this->expectException(\Exception::class);
+        $id = new ObjectId();
+        $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
+            Scheduler::OPTION_ID => $id,
+        ]);
+
+        $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
+            Scheduler::OPTION_ID => $id,
+        ]);
+    }
+
     public function testNewJobTimestamps()
     {
         $job = $this->scheduler->addJob('test', ['foo' => 'bar'])->toArray();

@@ -99,15 +99,6 @@ class Worker
     }
 
     /**
-     * Cleanup and exit.
-     */
-    public function cleanup(int $sig)
-    {
-        $this->terminate($sig);
-        exit();
-    }
-
-    /**
      * Handle worker timeout.
      */
     public function timeout(): ?ObjectId
@@ -137,7 +128,7 @@ class Worker
 
         $job = $this->current_job;
 
-        if ($job['options']['retry'] >= 0) {
+        if (0 !== $job['options']['retry']) {
             $this->logger->debug('failed job ['.$job['_id'].'] has a retry interval of ['.$job['options']['retry'].']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
@@ -149,14 +140,24 @@ class Worker
 
             return $job->getId();
         }
-
-        if ($job['options']['interval'] >= 0) {
+        if ($job['options']['interval'] > 0) {
             $this->logger->debug('job ['.$job['_id'].'] has an interval of ['.$job['options']['interval'].'s]', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);
 
             $job['options']['at'] = time() + $job['options']['interval'];
+            $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
+
+            return $job->getId();
+        }
+        if ($job['options']['interval'] <= -1) {
+            $this->logger->debug('job ['.$job['_id'].'] has an endless interval', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
+
+            unset($job['options']['at']);
             $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
             return $job->getId();
@@ -216,6 +217,53 @@ class Worker
     }
 
     /**
+     * Cleanup and exit.
+     */
+    public function cleanup()
+    {
+        $this->saveState();
+
+        if (null === $this->current_job) {
+            $this->logger->debug('received cleanup call, no job is currently processing, exit now', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
+
+            return null;
+        }
+
+        $this->logger->debug('received cleanup call, reschedule current processing job ['.$this->current_job['_id'].']', [
+            'category' => get_class($this),
+            'pm' => $this->process,
+        ]);
+
+        $this->updateJob($this->current_job, JobInterface::STATUS_CANCELED);
+
+        $this->db->{$this->scheduler->getEventQueue()}->insertOne([
+            'job' => $this->current_job['_id'],
+            'worker' => $this->id,
+            'status' => JobInterface::STATUS_CANCELED,
+            'timestamp' => new UTCDateTime(),
+        ]);
+
+        $options = $this->current_job['options'];
+        $options['at'] = 0;
+
+        $result = $this->scheduler->addJob($this->current_job['class'], $this->current_job['data'], $options)->getId();
+        $this->exit();
+
+        return $result;
+    }
+
+    /**
+     * This method may seem useless but is actually very useful to mock.
+     */
+    protected function exit()
+    {
+        exit();
+    }
+
+    /**
      * Save local queue.
      */
     protected function saveState(): self
@@ -226,11 +274,6 @@ class Worker
                 $options[Scheduler::OPTION_ID] = $job['_id'];
                 $this->scheduler->addJob($job['class'], $job['data'], $options);
                 unset($this->queue[$key]);
-            } catch (JobAlreadyExistsException $e) {
-                $this->logger->warning('do not reschedule locally queued job ['.$job['_id'].'] since it already exists', [
-                    'exception' => $e,
-                    'category' => get_class($this),
-                ]);
             } catch (\Exception $e) {
                 $this->logger->warning('failed reschedule locally queued job ['.$job['_id'].']', [
                     'exception' => $e,
@@ -261,42 +304,6 @@ class Worker
         pcntl_signal(SIGALRM, [$this, 'timeout']);
 
         return $this;
-    }
-
-    /**
-     * Cleanup and exit.
-     */
-    protected function terminate(int $sig): ?ObjectId
-    {
-        $this->saveState();
-
-        if (null === $this->current_job) {
-            $this->logger->debug('received signal ['.$sig.'], no job is currently processing, exit now', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
-
-            return null;
-        }
-
-        $this->logger->debug('received signal ['.$sig.'], reschedule current processing job ['.$this->current_job['_id'].']', [
-            'category' => get_class($this),
-            'pm' => $this->process,
-        ]);
-
-        $this->updateJob($this->current_job, JobInterface::STATUS_CANCELED);
-
-        $this->db->{$this->scheduler->getEventQueue()}->insertOne([
-            'job' => $this->current_job['_id'],
-            'worker' => $this->id,
-            'status' => JobInterface::STATUS_CANCELED,
-            'timestamp' => new UTCDateTime(),
-        ]);
-
-        $options = $this->current_job['options'];
-        $options['at'] = 0;
-
-        return $this->scheduler->addJob($this->current_job['class'], $this->current_job['data'], $options)->getId();
     }
 
     /**
@@ -451,7 +458,7 @@ class Worker
         } catch (\Exception $e) {
             pcntl_alarm(0);
 
-            $this->logger->error('failed execute job ['.$job['_id'].']', [
+            $this->logger->error('failed execute job ['.$job['_id'].'] of type ['.$job['class'].']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
                 'exception' => $e,
@@ -474,7 +481,7 @@ class Worker
                 ],
             ]);
 
-            if ($job['options']['retry'] >= 0) {
+            if (0 !== $job['options']['retry']) {
                 $this->logger->debug('failed job ['.$job['_id'].'] has a retry interval of ['.$job['options']['retry'].']', [
                     'category' => get_class($this),
                     'pm' => $this->process,
@@ -490,13 +497,24 @@ class Worker
 
         pcntl_alarm(0);
 
-        if ($job['options']['interval'] >= 0) {
+        if ($job['options']['interval'] > 0) {
             $this->logger->debug('job ['.$job['_id'].'] has an interval of ['.$job['options']['interval'].'s]', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);
 
             $job['options']['at'] = time() + $job['options']['interval'];
+            $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
+
+            return $job->getId();
+        }
+        if ($job['options']['interval'] <= -1) {
+            $this->logger->debug('job ['.$job['_id'].'] has an endless interval', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
+
+            unset($job['options']['at']);
             $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
             return $job->getId();

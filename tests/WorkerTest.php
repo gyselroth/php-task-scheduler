@@ -42,7 +42,7 @@ class WorkerTest extends TestCase
         $called = &$this->called;
         $this->worker = $this->getMockBuilder(Worker::class)
             ->setConstructorArgs([new ObjectId(), $this->scheduler, $this->mongodb, $this->createMock(LoggerInterface::class)])
-            ->setMethods(['loop'])
+            ->setMethods(['loop', 'exit'])
             ->getMock();
         $this->worker->method('loop')
             ->will(
@@ -54,6 +54,12 @@ class WorkerTest extends TestCase
                     }
 
                     return false;
+                })
+        );
+        $this->worker->method('exit')
+            ->will(
+                $this->returnCallback(function () {
+                    return true;
                 })
         );
     }
@@ -171,8 +177,7 @@ class WorkerTest extends TestCase
 
         $this->worker->start();
         $this->mongodb->{'taskscheduler.jobs'}->deleteOne(['_id' => $job->getId()]);
-        $method = self::getMethod('terminate');
-        $method->invokeArgs($this->worker, [SIGTERM]);
+        $this->worker->cleanup();
         $new = $this->scheduler->getJob($job->getId());
         $this->assertSame($new->getId(), $job->getId());
         $this->assertNotSame($new->toArray()['created'], $job->toArray()['created']);
@@ -263,7 +268,48 @@ class WorkerTest extends TestCase
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertSame(JobInterface::STATUS_WAITING, $retry_job->getStatus());
         $this->assertSame(0, $retry_job->getOptions()['retry']);
-        $this->assertTrue($retry_job->getOptions()['at'] === new UTCDateTime((time() + 300).'000'));
+        $this->assertSame($retry_job->getOptions()['at'], new UTCDateTime((time() + 300).'000'));
+    }
+
+    public function testProcessErrorJobRetryStopOnNull()
+    {
+        $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_RETRY => 2,
+            Scheduler::OPTION_RETRY_INTERVAL => 0,
+        ]);
+
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->start();
+        $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertSame(1, $retry_job->getOptions()['retry']);
+        $this->called = 0;
+        $this->worker->start();
+        $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertSame(0, $retry_job->getOptions()['retry']);
+        $this->called = 0;
+        $this->worker->start();
+        $this->assertCount(0, iterator_to_array($this->scheduler->getJobs()));
+    }
+
+    public function testProcessEndlessRetry()
+    {
+        $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_RETRY => -1,
+            Scheduler::OPTION_RETRY_INTERVAL => 0,
+        ]);
+
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->start();
+        $new_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertNotSame($job->getId(), $new_job->getId());
+        $this->called = 0;
+        $this->worker->start();
+        $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertNotSame($job->getId(), $new_job->getId());
+        $this->called = 0;
+        $this->worker->start();
+        $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertNotSame($job->getId(), $new_job->getId());
     }
 
     public function testProcessErrorJobRetryLowInterval()
@@ -278,7 +324,7 @@ class WorkerTest extends TestCase
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
-        $this->assertTrue($retry_job->getOptions()['at'] === new UTCDateTime((time() + 10).'000'));
+        $this->assertSame($retry_job->getOptions()['at'], new UTCDateTime((time() + 10).'000'));
     }
 
     public function testProcessJobInterval()
@@ -295,6 +341,26 @@ class WorkerTest extends TestCase
         $this->assertSame(JobInterface::STATUS_WAITING, $interval_job->getStatus());
         $this->assertSame(100, $interval_job->getOptions()['interval']);
         $this->assertTrue($interval_job->getOptions()['at'] > new UTCDateTime());
+    }
+
+    public function testProcessEndlessInterval()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_INTERVAL => -1,
+        ]);
+
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->start();
+        $new_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertNotSame($job->getId(), $new_job->getId());
+        $this->called = 0;
+        $this->worker->start();
+        $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertNotSame($job->getId(), $new_job->getId());
+        $this->called = 0;
+        $this->worker->start();
+        $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertNotSame($job->getId(), $new_job->getId());
     }
 
     public function testCollectJob()
@@ -337,8 +403,8 @@ class WorkerTest extends TestCase
 
     public function testCleanupViaSigtermNoJob()
     {
-        $method = self::getMethod('terminate');
-        $method->invokeArgs($this->worker, [SIGTERM]);
+        $result = $this->worker->cleanup();
+        $this->assertNull($result);
     }
 
     public function testCleanupViaSigtermScheduleJob()
@@ -346,9 +412,8 @@ class WorkerTest extends TestCase
         $job = $this->scheduler->addJob('test', ['foo' => 'bar']);
         $property = self::getProperty('current_job');
         $property->setValue($this->worker, $job->toArray());
+        $new = $this->worker->cleanup();
 
-        $method = self::getMethod('terminate');
-        $new = $method->invokeArgs($this->worker, [SIGTERM]);
         $this->assertInstanceOf(ObjectId::class, $new);
         $this->assertNotSame($job->getId(), $new);
     }

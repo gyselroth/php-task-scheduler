@@ -22,7 +22,6 @@ This brings a real world implementation for asynchronous process management to P
 * Sync tasks between each other
 * Abort running tasks
 * Timeout jobs
-* Perfectly suited for kubernetes and other container orchestration platforms
 * Retry and intervals
 * Schedule tasks at specific times
 * Signal management
@@ -69,6 +68,7 @@ A job may be rescheduled if it failed. There are lots of more features available
 * MongoDB server >= 2.2
 * PHP pcntl extension
 * PHP posix extension
+* PHP mongodb extension
 
 >**Note**: This library will only work on \*nix system. There is no windows support and there will most likely never be.
 
@@ -335,11 +335,13 @@ TaskScheduler\Scheduler::addJob() also accepts a third option (options) which le
 | Option  | Default | Type | Description |
 | --- | --- | --- | --- |
 | `at`  | `null`  | ?int | Accepts a specific unix time which let you specify the time at which the job should be executed. The default is immediatly or better saying as soon as there is a free slot. |
-| `interval`  | `-1`  | int | You may specify a job interval (in secconds) which is usefuly for jobs which need to be executed in a specific interval, for example cleaning a temporary directory. The default is `-1` which means no interval at all, `0` would mean execute the job immediatly again (But be careful with `0`, this could lead to huge cpu usage depending what job you're executing). Configuring `3600` would mean the job will be executed hourly. |
-| `retry`  | `0`  | int | Specifies a retry interval if the job fails to execute. The default is `0` which means do not retry. |
-| `retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. The default is `300` which is 5 minutes. |
+| `interval`  | `0`  | int | You may specify a job interval (in secconds) which is usefuly for jobs which need to be executed in a specific interval, for example cleaning a temporary directory. The default is `0` which means no interval at all, `-1` means execute the job immediatly again (But be careful with `-1`, this could lead to huge cpu usage depending what job you're executing). Configuring `3600` means the job will get executed hourly. |
+| `retry`  | `0`  | int | Specifies a retry interval if the job fails to execute. The default is `0` which means do not retry. `2` for example means 2 retries. You may set `-1` for endless retries. |
+| `retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. The default is `300` which is 5 minutes. Be careful with this option while `retry_interval` is `-1`, you may ending up with a failure loop.  |
 | `ignore_max_children`  | `false`  | bool | You may specify `true` for this option to spawn a new child process. This will ignore the configured max_children option for the queue node. The queue node will always fork a new child if job with this option is scheduled. Use this option wisely! It makes perfectly sense for jobs which make blocking calls, for example a listener which listens for local filesystem changes (inotify). A job with this enabled option should only consume as little cpu/memory as possible. |
 | `timeout`  | `0`  | int | Specify a timeout in secconds which will forcly terminate the job after the given time has passed. The default `0` means no timeout at all. A timeout job will get rescheduled if retry is not `0` and will marked as timed out.  |
+| `id`  | `null`  | `MongoDB\BSON\ObjectId` | Specify a job id manually.  |
+
 
 >**Note**: Be careful with timeouts since it will kill your running job by force. You have been warned.
 
@@ -404,12 +406,12 @@ $scheduler->setOptions([
 | Name  | Default | Type | Description |
 | --- | --- | --- | --- |
 | `job_queue`  | `taskscheduler.jobs`  | string | The MongoDB collection which acts as job message queue. |
-| `job_queue_size`  | `100000`  | int | The maximum size in bytes of the job collection, if reached the first jobs get overwritten by new ones. |
+| `job_queue_size`  | `1000000`  | int | The maximum size in bytes of the job collection, if reached the first jobs get overwritten by new ones. |
 | `event_queue`  | `taskscheduler.events`  | string | The MongoDB collection which acts as event message queue. |
-| `event_queue_size`  | `500000`  | int | The maximum size in bytes of the event collection, if reached the first events get overwritten by new ones. This value should usually be 5 times bigger than the value of `job_queue_size` since a job can have more events. |
+| `event_queue_size`  | `5000000`  | int | The maximum size in bytes of the event collection, if reached the first events get overwritten by new ones. This value should usually be 5 times bigger than the value of `job_queue_size` since a job can have more events. |
 | `default_at`  | `null`  | ?int | Define a default execution time for **all** jobs. This relates only for newly added jobs. The default is immediatly or better saying as soon as there is a free slot. |
-| `default_interval`  | `-1`  | int | Define a default interval for **all** jobs. This relates only for newly added jobs. The default is `-1` which means no interval at all. |
-| `default_retry`  | `0`  | int | Define a default retry interval for **all** jobs. This relates only for newly added jobs. There are now retries by default for failed jobs. |
+| `default_interval`  | `0`  | int | Define a default interval for **all** jobs. This relates only for newly added jobs. The default is `0` which means no interval at all. |
+| `default_retry`  | `0`  | int | Define a default retry interval for **all** jobs. This relates only for newly added jobs. There are no retries by default for failed jobs. |
 | `default_retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. This relates only for newly added jobs. The default is `300` which is 5 minutes. |
 | `default_timeout`  | `0`  | int | Specify a default timeout for all jobs. This relates only for newly added jobs. Per default there is no timeout at all. |
 

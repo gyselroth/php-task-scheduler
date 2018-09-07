@@ -101,14 +101,14 @@ class Scheduler
      *
      * @var int
      */
-    protected $default_interval = -1;
+    protected $default_interval = 0;
 
     /**
      * Default retry.
      *
      * @var int
      */
-    protected $default_retry = -1;
+    protected $default_retry = 0;
 
     /**
      * Default retry interval (secconds).
@@ -129,14 +129,14 @@ class Scheduler
      *
      * @var int
      */
-    protected $job_queue_size = 100000;
+    protected $job_queue_size = 1000000;
 
     /**
      * Event Queue size.
      *
      * @var int
      */
-    protected $event_queue_size = 500000;
+    protected $event_queue_size = 5000000;
 
     /**
      * Events queue.
@@ -283,41 +283,9 @@ class Scheduler
      */
     public function addJob(string $class, $data, array $options = []): Process
     {
-        $defaults = [
-            self::OPTION_AT => $this->default_at,
-            self::OPTION_INTERVAL => $this->default_interval,
-            self::OPTION_RETRY => $this->default_retry,
-            self::OPTION_RETRY_INTERVAL => $this->default_retry_interval,
-            self::OPTION_IGNORE_MAX_CHILDREN => false,
-            self::OPTION_TIMEOUT => $this->default_timeout,
-        ];
+        $document = $this->prepareInsert($class, $data, $options);
 
-        $options = array_merge($defaults, $options);
-        $options = SchedulerValidator::validateOptions($options);
-
-        $document = [
-            'class' => $class,
-            'status' => JobInterface::STATUS_WAITING,
-            'created' => new UTCDateTime(),
-            'started' => new UTCDateTime(0),
-            'ended' => new UTCDateTime(0),
-            'worker' => new ObjectId(),
-            'data' => $data,
-        ];
-
-        if (isset($options[self::OPTION_ID])) {
-            $id = $options[self::OPTION_ID];
-            unset($options[self::OPTION_ID]);
-            $document['_id'] = $id;
-        }
-
-        if (is_int($options[self::OPTION_AT]) && $options[self::OPTION_AT] > 0) {
-            $options[self::OPTION_AT] = new UTCDateTime($options[self::OPTION_AT] * 1000);
-        }
-
-        $document['options'] = $options;
-
-        $result = $this->db->{$this->job_queue}->insertOne($document, ['$isolated' => true]);
+        $result = $this->db->{$this->job_queue}->insertOne($document);
         $this->logger->debug('queue job ['.$result->getInsertedId().'] added to ['.$class.']', [
             'category' => get_class($this),
             'params' => $options,
@@ -350,33 +318,53 @@ class Scheduler
             '$or' => [
                 ['status' => JobInterface::STATUS_WAITING],
                 ['status' => JobInterface::STATUS_POSTPONED],
+                ['status' => JobInterface::STATUS_PROCESSING],
             ],
         ];
 
-        $result = $this->db->{$this->job_queue}->findOne($filter, [
-            'typeMap' => self::TYPE_MAP,
+        $document = $this->prepareInsert($class, $data, $options);
+
+        $result = $this->db->{$this->job_queue}->updateOne($filter, ['$setOnInsert' => $document], [
+            'upsert' => true,
+            '$isolated' => true,
         ]);
 
-        if (null !== $result && array_intersect_key($result, $options) !== $options) {
-            $this->logger->debug('job ['.$result['_id'].'] options changed, reschedule new job', [
-                'category' => get_class($this),
-                'data' => $data,
+        if ($result->getMatchedCount() > 0) {
+            $document = $this->db->{$this->job_queue}->findOne($filter, [
+                'typeMap' => self::TYPE_MAP,
             ]);
 
-            $this->cancelJob($result['_id']);
-            $result = null;
+            if (array_intersect_key($document['options'], $options) !== $options) {
+                $this->logger->debug('job ['.$document['_id'].'] options changed, reschedule new job', [
+                    'category' => get_class($this),
+                    'data' => $data,
+                ]);
+
+                $this->cancelJob($document['_id']);
+
+                return $this->addJobOnce($class, $data, $options);
+            }
+
+            return new Process($document, $this, $this->events);
         }
 
-        if (null === $result) {
-            return $this->addJob($class, $data, $options);
-        }
-
-        $this->logger->debug('queue job ['.$result['_id'].'] of type ['.$class.'] already exists', [
+        $this->logger->debug('queue job ['.$result->getUpsertedId().'] added to ['.$class.']', [
             'category' => get_class($this),
+            'params' => $options,
             'data' => $data,
         ]);
 
-        return new Process($result, $this, $this->events);
+        $this->db->{$this->event_queue}->insertOne([
+            'job' => $result->getUpsertedId(),
+            'status' => JobInterface::STATUS_WAITING,
+            'timestamp' => new UTCDateTime(),
+        ]);
+
+        $document = $this->db->{$this->job_queue}->findOne(['_id' => $result->getUpsertedId()], [
+            'typeMap' => self::TYPE_MAP,
+        ]);
+
+        return new Process($document, $this, $this->events);
     }
 
     /**
@@ -421,6 +409,48 @@ class Scheduler
                 return $this;
             }
         }
+    }
+
+    /**
+     * Prepare insert.
+     */
+    protected function prepareInsert(string $class, $data, array &$options = []): array
+    {
+        $defaults = [
+            self::OPTION_AT => $this->default_at,
+            self::OPTION_INTERVAL => $this->default_interval,
+            self::OPTION_RETRY => $this->default_retry,
+            self::OPTION_RETRY_INTERVAL => $this->default_retry_interval,
+            self::OPTION_IGNORE_MAX_CHILDREN => false,
+            self::OPTION_TIMEOUT => $this->default_timeout,
+        ];
+
+        $options = array_merge($defaults, $options);
+        $options = SchedulerValidator::validateOptions($options);
+
+        $document = [
+            'class' => $class,
+            'status' => JobInterface::STATUS_WAITING,
+            'created' => new UTCDateTime(),
+            'started' => new UTCDateTime(0),
+            'ended' => new UTCDateTime(0),
+            'worker' => new ObjectId(),
+            'data' => $data,
+        ];
+
+        if (isset($options[self::OPTION_ID])) {
+            $id = $options[self::OPTION_ID];
+            unset($options[self::OPTION_ID]);
+            $document['_id'] = $id;
+        }
+
+        if (is_int($options[self::OPTION_AT]) && $options[self::OPTION_AT] > 0) {
+            $options[self::OPTION_AT] = new UTCDateTime($options[self::OPTION_AT] * 1000);
+        }
+
+        $document['options'] = $options;
+
+        return $document;
     }
 
     /**

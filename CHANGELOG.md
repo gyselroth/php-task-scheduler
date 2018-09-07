@@ -1,3 +1,11 @@
+## 3.0.0-beta3
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Fri Sep 07 14:47:34 CEST 2018
+
+* [FIX] Fixed concurrent Scheduler::addJobOnce() requests
+* [CHANGE] 0 does now disable retry and interval, -1 sets both to endless
+
+
 ## 3.0.0-beta2
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Wed Sep 05 16:47:34 CEST 2018

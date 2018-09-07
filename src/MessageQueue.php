@@ -24,7 +24,7 @@ class MessageQueue
 {
     protected $db;
     protected $name;
-    protected $size = 100000;
+    protected $size = 1000000;
     protected $logger;
 
     /**
