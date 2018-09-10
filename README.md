@@ -26,6 +26,11 @@ This brings a real world implementation for asynchronous process management to P
 * Schedule tasks at specific times
 * Signal management
 
+## v3
+
+This is the documentation for the current major version v3. You may check the [upgrade guide](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/master/UPGRADE.md) if you want to upgrade from v2/v1.
+The documentation for v2 is available [here](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/2.x/README.md). 
+
 # Table of Contents
 * [Features](#features)
 * [Why?](#why)
@@ -48,14 +53,14 @@ This brings a real world implementation for asynchronous process management to P
         * [Modify jobs](#modify-jobs)
     * [Asynchronous programming](#asynchronous-programming)
     * [Listen for Events](#listen-for-events)
-    * [Advanced scheduler options](#advanced-scheduler-options)
+    * [Advanced job options](#advanced-job-options)
     * [Add job if not exists](#add-job-if-not-exists)
-    * [Advanced scheduler options](#advanced-scheduler-options-1)
+    * [Advanced scheduler options](#advanced-scheduler-options)
     * [Advanced queue node options](#advanced-queue-node-options)
     * [Using a DIC (dependeny injection container)](#using-a-dic-dependeny-injection-container)
 
 ## Why?
-PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronously. Sure there is pthreads and pcntl but those are only usable in cli mode (or are only usable in cli mode). Using this library you are able to write your code async, schedule tasks and let them execute behind the scenes. 
+PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronously. Sure there is pthreads and pcntl but those are only usable in cli mode (or should only be used there). Using this library you are able to write your code async, schedule tasks and let them execute behind the scenes. 
 
 ## How does it work (The short way please)?
 A job is scheduled via a task scheduler and gets written into a central message queue (MongoDB). All Queue nodes will get notified in (soft) realtime that a new job is available.
@@ -329,7 +334,7 @@ $jobs = $scheduler->listen(function(TaskScheduler\Process $process) {
 
 >**Note**: listen() is a blocking call, you may exit the listener and continue with main() if you return a boolean `true` in the listener callback.
 
-### Advanced scheduler options
+### Advanced job options
 TaskScheduler\Scheduler::addJob() also accepts a third option (options) which let you append more advanced options for the scheduler:
 
 | Option  | Default | Type | Description |
@@ -345,7 +350,8 @@ TaskScheduler\Scheduler::addJob() also accepts a third option (options) which le
 
 >**Note**: Be careful with timeouts since it will kill your running job by force. You have been warned.
 
-Let us add our mail job example again with some custom options:\
+Let us add our mail job example again with some custom options:
+
 >**Note:** We are using the OPTION_ constansts here, you may also just use the names documented above.
 
 ```php
@@ -390,8 +396,8 @@ Custom options and defaults can be set for jobs during initialization or by call
 $mongodb = new MongoDB\Client('mongodb://localhost:27017');
 $logger = new \A\Psr4\Compatible\Logger();
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger, null, [
-    TaskScheduler\Scheduler::OPTION_COLLECTION_NAME => 'jobs',
-    TaskScheduler\Scheduler::OPTION_QUEUE_SIZE => 10000000,
+    TaskScheduler\Scheduler::OPTION_JOB_QUEUE_SIZE => 1000000000,
+    TaskScheduler\Scheduler::OPTION_EVENT_QUEUE_SIZE => 5000000000,
     TaskScheduler\Scheduler::OPTION_DEFAULT_RETRY => 3
 ]);
 ```
@@ -402,6 +408,9 @@ $scheduler->setOptions([
     TaskScheduler\Scheduler::OPTION_DEFAULT_RETRY => 2
 ]);
 ```
+
+>**Note**: Changing default job options will not affect any existing jobs.
+
 
 | Name  | Default | Type | Description |
 | --- | --- | --- | --- |

@@ -4,6 +4,7 @@
 
 * [FIX] Fixed concurrent Scheduler::addJobOnce() requests
 * [CHANGE] 0 does now disable retry and interval, -1 sets both to endless
+* [CHANGE] Added upgrade guide
 
 
 ## 3.0.0-beta2

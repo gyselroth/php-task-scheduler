@@ -19,7 +19,7 @@ use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidJobException;
 
-class Worker
+class Worker extends AbstractHandler
 {
     /**
      * Scheduler.
@@ -256,14 +256,6 @@ class Worker
     }
 
     /**
-     * This method may seem useless but is actually very useful to mock.
-     */
-    protected function exit()
-    {
-        exit();
-    }
-
-    /**
      * Save local queue.
      */
     protected function saveState(): self
@@ -283,14 +275,6 @@ class Worker
         }
 
         return $this;
-    }
-
-    /**
-     * This method may seem useless but is actually very useful to mock the loop.
-     */
-    protected function loop(): bool
-    {
-        return true;
     }
 
     /**

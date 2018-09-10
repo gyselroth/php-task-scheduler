@@ -19,7 +19,7 @@ use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidArgumentException;
 use TaskScheduler\Exception\QueueRuntimeException;
 
-class Queue
+class Queue extends AbstractHandler
 {
     /**
      * Process identifier.
@@ -124,8 +124,6 @@ class Queue
      */
     protected $process;
 
-    protected $started;
-
     /**
      * Init queue.
      */
@@ -140,7 +138,6 @@ class Queue
 
         $this->jobs = new MessageQueue($db, $scheduler->getJobQueue(), $scheduler->getJobQueueSize(), $logger);
         $this->events = new MessageQueue($db, $scheduler->getEventQueue(), $scheduler->getEventQueueSize(), $logger);
-        $this->started = new UTCDateTime();
     }
 
     /**
@@ -202,15 +199,6 @@ class Queue
     }
 
     /**
-     * Cleanup and exit.
-     */
-    public function cleanup(int $sig)
-    {
-        $this->handleSignal($sig);
-        exit();
-    }
-
-    /**
      * Wait for child and terminate.
      */
     public function exitChild(int $sig, array $pid): self
@@ -241,6 +229,28 @@ class Queue
     public function count(): int
     {
         return count($this->forks);
+    }
+
+    /**
+     * Cleanup.
+     */
+    public function cleanup(int $sig): void
+    {
+        $this->logger->debug('received signal ['.$sig.']', [
+            'category' => get_class($this),
+            'pm' => $this->process,
+        ]);
+
+        foreach ($this->getForks() as $id => $pid) {
+            $this->logger->debug('forward signal ['.$sig.'] to worker ['.$id.'] running with pid ['.$pid.']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
+
+            posix_kill($pid, $sig);
+        }
+
+        $this->exit();
     }
 
     /**
@@ -301,14 +311,6 @@ class Queue
     }
 
     /**
-     * This method may seem useless but is actually very useful to mock the loop.
-     */
-    protected function loop(): bool
-    {
-        return true;
-    }
-
-    /**
      * Fork handling, blocking process.
      */
     protected function main(): void
@@ -325,7 +327,7 @@ class Queue
                 ['status' => JobInterface::STATUS_CANCELED],
                 ['status' => JobInterface::STATUS_PROCESSING],
             ],
-            'timestamp' => ['$gte' => $this->started],
+            'timestamp' => ['$gte' => new UTCDateTime()],
         ]);
 
         $this->catchSignal();
@@ -428,19 +430,24 @@ class Queue
             ]);
 
             $this->spawnWorker();
-        } elseif (true === $job['options'][Scheduler::OPTION_IGNORE_MAX_CHILDREN]) {
+
+            return $this;
+        }
+        if (true === $job['options'][Scheduler::OPTION_IGNORE_MAX_CHILDREN]) {
             $this->logger->debug('job ['.$job['_id'].'] deployed with ignore_max_children, spawn new worker', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);
 
             $this->spawnWorker();
-        } else {
-            $this->logger->debug('max children ['.$this->max_children.'] reached for job ['.$job['_id'].'], do not spawn new worker', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
+
+            return $this;
         }
+
+        $this->logger->debug('max children ['.$this->max_children.'] reached for job ['.$job['_id'].'], do not spawn new worker', [
+            'category' => get_class($this),
+            'pm' => $this->process,
+        ]);
 
         return $this;
     }
@@ -456,25 +463,5 @@ class Queue
         pcntl_signal(SIGCHLD, [$this, 'exitChild']);
 
         return $this;
-    }
-
-    /**
-     * Cleanup.
-     */
-    protected function handleSignal(int $sig): void
-    {
-        $this->logger->debug('received signal ['.$sig.']', [
-            'category' => get_class($this),
-            'pm' => $this->process,
-        ]);
-
-        foreach ($this->getForks() as $id => $pid) {
-            $this->logger->debug('forward signal ['.$sig.'] to worker ['.$id.'] running with pid ['.$pid.']', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
-
-            posix_kill($pid, $sig);
-        }
     }
 }

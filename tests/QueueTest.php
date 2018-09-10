@@ -91,8 +91,7 @@ class QueueTest extends TestCase
             $this->assertNotSame(false, posix_getpgid($pid));
         }
 
-        $method = self::getMethod('handleSignal');
-        $method->invokeArgs($this->queue, [SIGKILL]);
+        $this->queue->cleanup(SIGKILL);
 
         foreach ($forks as $pid) {
             pcntl_waitpid($pid, $status);
