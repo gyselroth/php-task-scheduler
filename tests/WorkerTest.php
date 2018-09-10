@@ -268,7 +268,7 @@ class WorkerTest extends TestCase
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertSame(JobInterface::STATUS_WAITING, $retry_job->getStatus());
         $this->assertSame(0, $retry_job->getOptions()['retry']);
-        $this->assertSame($retry_job->getOptions()['at'], new UTCDateTime((time() + 300).'000'));
+        $this->assertEquals($retry_job->getOptions()['at'], new UTCDateTime((time() + 300).'000'));
     }
 
     public function testProcessErrorJobRetryStopOnNull()
@@ -324,7 +324,7 @@ class WorkerTest extends TestCase
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
-        $this->assertSame($retry_job->getOptions()['at'], new UTCDateTime((time() + 10).'000'));
+        $this->assertEquals($retry_job->getOptions()['at'], new UTCDateTime((time() + 10).'000'));
     }
 
     public function testProcessJobInterval()
