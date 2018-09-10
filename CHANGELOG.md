@@ -1,3 +1,11 @@
+## 3.0.0-beta4
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Mon Sept 10 12:22:24 CEST 2018
+
+* [FIX] fix proper exit of queue nodes
+* [FIX] Do not log exception if a locally queued node is already queued during worker shutdown
+
+
 ## 3.0.0-beta3
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Fri Sep 07 14:47:34 CEST 2018

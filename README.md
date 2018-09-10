@@ -58,6 +58,8 @@ The documentation for v2 is available [here](https://github.com/gyselroth/mongod
     * [Advanced scheduler options](#advanced-scheduler-options)
     * [Advanced queue node options](#advanced-queue-node-options)
     * [Using a DIC (dependeny injection container)](#using-a-dic-dependeny-injection-container)
+    * [Data Persistency](#data-persistency)
+    * [Terminate queue nodes](#terminate-queue-nodes)
 
 ## Why?
 PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronously. Sure there is pthreads and pcntl but those are only usable in cli mode (or should only be used there). Using this library you are able to write your code async, schedule tasks and let them execute behind the scenes. 
@@ -500,6 +502,12 @@ $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
 $worker_factory = My\App\WorkerFactory();
 $queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger);
 ```
+
+### Data Persistency
+
+This library does not provide any data persistency! It is important to understand this fact. This library operates on a [MongoDB capped collection](https://docs.mongodb.com/manual/core/capped-collections) with 
+a fixed size limit by design. Meaning the newest job will overwrite the oldest job if the limit is reached. A side note here regarding postponed jobs (TaskScheduler\Scheduler::OPTION_AT), those jobs will get queued locally once received. If they fall out from the network queue, they will get executed anyway. If a worker dies they will get rescheduled if possible. **But** interval jobs are not meant to be persistent and there is no guarantee for that. It is best practice during bootstraping your queue node to schedule jobs if they are not already scheduled from a persitent data source (For example using [TaskScheduler\Scheduler::addJobOnce](##add-job-if-not-exists)).
+
 
 ### Terminate queue nodes
 

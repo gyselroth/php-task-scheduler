@@ -15,6 +15,7 @@ namespace TaskScheduler;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
+use MongoDB\Driver\Exception\BulkWriteException;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidJobException;
@@ -267,7 +268,11 @@ class Worker extends AbstractHandler
                 $this->scheduler->addJob($job['class'], $job['data'], $options);
                 unset($this->queue[$key]);
             } catch (\Exception $e) {
-                $this->logger->warning('failed reschedule locally queued job ['.$job['_id'].']', [
+                if ($e instanceof BulkWriteException && 11000 === $e->getCode()) {
+                    continue;
+                }
+
+                $this->logger->error('failed reschedule locally queued job ['.$job['_id'].']', [
                     'exception' => $e,
                     'category' => get_class($this),
                 ]);
