@@ -42,7 +42,7 @@ class QueueTest extends TestCase
         $called = &$this->called;
         $this->queue = $this->getMockBuilder(Queue::class)
             ->setConstructorArgs([$this->scheduler, $this->mongodb, $this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class)])
-            ->setMethods(['loop'])
+            ->setMethods(['loop', 'exit'])
             ->getMock();
         $this->queue->method('loop')
             ->will(
@@ -54,6 +54,12 @@ class QueueTest extends TestCase
                     }
 
                     return false;
+                })
+        );
+        $this->queue->method('exit')
+            ->will(
+                $this->returnCallback(function () {
+                    return true;
                 })
         );
     }

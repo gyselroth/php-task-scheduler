@@ -27,6 +27,6 @@ abstract class AbstractHandler
      */
     protected function exit(): bool
     {
-        return true;
+        exit();
     }
 }
