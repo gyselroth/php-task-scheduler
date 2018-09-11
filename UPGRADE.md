@@ -1,4 +1,6 @@
-## v1 => v3 / v2 => v3
+# Upgrade guide
+
+## v1/v2 => v3
 
 ### Implementationof TaskScheduler\Process
 
@@ -23,6 +25,9 @@ You may change the new queue names in the scheduler options.
 v3 requires the php pcntl dependency to handle forks. PHP must be compiled via (` --enable-pcntl`) which should be the case in most distributed php packages. 
 If your app runs on docker, you may easly add `docker-php-ext-install pcntl` to your php Dockerfile.
 
+### Run once (cron)
+
+If you did use TaskScheduler\Queue::processOnce before, this wont be possible anymore. There is no support for running jobs once anymore (via cron for example). You will likely need to migrate to TaskScheduler\Queue::process which acts as a daemon.
 
 ### Worker factory
 
