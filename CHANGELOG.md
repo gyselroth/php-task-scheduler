@@ -1,3 +1,10 @@
+## 3.0.0-beta5
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Wed Sept 10 12:22:24 CEST 2018
+
+* [FIX] fix proper exit of worker nodes
+
+
 ## 3.0.0-beta4
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Mon Sept 10 12:22:24 CEST 2018

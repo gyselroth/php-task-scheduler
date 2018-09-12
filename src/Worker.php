@@ -230,6 +230,8 @@ class Worker extends AbstractHandler
                 'pm' => $this->process,
             ]);
 
+            $this->exit();
+
             return null;
         }
 
