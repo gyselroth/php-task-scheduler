@@ -175,7 +175,7 @@ This factory gets called during a new fork is spawned. This means if it gets cal
 from scratch (Or just the things you need for a worker). In this simple example we will manually create a new MongoDB connection, create a new scheduler and logger instance and finally return a new TaskScheduler\Worker instance.
 
 For better understanding: if there is a configuration file where you have stored your configs like a MongoDB uri, in the factory you will need to parse this configuration again and create a new mongodb instance.
-Or you may be using a dic, the dic needs to be created from scratch in the factory (A new dependency tree). You may pass an instance of a dic (compatible to Psr\Container\ContainerInterface) as fith argument to TaskScheduler\Worker (See more at [Using a DIC](#using-a-dic-dependeny-injection-container)).
+Or you may be using a dic, the dic needs to be created from scratch in the factory (A new dependency tree). You may pass an instance of a dic (compatible to Psr\Container\ContainerInterface) as fifth argument to TaskScheduler\Worker (See more at [Using a DIC](#using-a-dic-dependeny-injection-container)).
 
 ```php
 class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
@@ -194,7 +194,7 @@ class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
 }
 ```
 
->**Note**: Theoretically you can use existing connections, objects and so on by setting those via the constructor of your worker factory since the factory gets initialized in main(). But this will likely lead to errors and strange app behaviours and is not supported.
+>**Note**: Theoretically you can reuse existing connections, objects and so on by setting those via the constructor of your worker factory since the factory gets initialized in main(). But this will likely lead to errors and strange app behaviours and is not supported.
 
 #### Create queue node
 
