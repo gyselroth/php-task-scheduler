@@ -1,6 +1,15 @@
+## 3.0.0-beta6
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Fri Sept 14 13:24:34 CEST 2018
+
+* [CHANGE] Scheduler::cancelJob() does not throw an exception of Type JobNotFoundException if the job is already canceled
+* [FEATURE] Added option Scheduler::OPTION_IGNORE_DATA to Scheduler::addJobOnce()
+* [CHANGE] Removed UTCDateTime conversion from unix ts for option TaskScheduler\Scheduler::OPTION_AT
+
+
 ## 3.0.0-beta5
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
-**Date**: Wed Sept 10 12:22:24 CEST 2018
+**Date**: Mon Sept 10 12:22:24 CEST 2018
 
 * [FIX] fix proper exit of worker nodes
 

@@ -394,7 +394,7 @@ class Worker extends AbstractHandler
      */
     protected function processLocalQueue(): bool
     {
-        $now = new UTCDateTime();
+        $now = time();
         foreach ($this->queue as $key => $job) {
             if ($job['options']['at'] <= $now) {
                 $this->logger->info('postponed job ['.$job['_id'].'] ['.$job['class'].'] can now be executed', [
@@ -403,7 +403,7 @@ class Worker extends AbstractHandler
                 ]);
 
                 unset($this->queue[$key]);
-                $job['options']['at'] = null;
+                $job['options']['at'] = 0;
 
                 if (true === $this->collectJob($job, JobInterface::STATUS_PROCESSING, JobInterface::STATUS_POSTPONED)) {
                     $this->processJob($job);
@@ -419,13 +419,13 @@ class Worker extends AbstractHandler
      */
     protected function processJob(array $job): ObjectId
     {
-        $now = new UTCDateTime();
+        $now = time();
 
-        if ($job['options']['at'] instanceof UTCDateTime && $job['options']['at'] > $now) {
+        if ($job['options']['at'] > $now) {
             $this->updateJob($job, JobInterface::STATUS_POSTPONED);
             $this->queue[(string) $job['_id']] = $job;
 
-            $this->logger->debug('execution of job ['.$job['_id'].'] ['.$job['class'].'] is postponed at ['.$job['options']['at']->toDateTime()->format('c').']', [
+            $this->logger->debug('execution of job ['.$job['_id'].'] ['.$job['class'].'] is postponed at ['.$job['options']['at'].']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);

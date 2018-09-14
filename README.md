@@ -337,17 +337,18 @@ $jobs = $scheduler->listen(function(TaskScheduler\Process $process) {
 >**Note**: listen() is a blocking call, you may exit the listener and continue with main() if you return a boolean `true` in the listener callback.
 
 ### Advanced job options
-TaskScheduler\Scheduler::addJob() also accepts a third option (options) which let you append more advanced options for the scheduler:
+TaskScheduler\Scheduler::addJob()/TaskScheduler\Scheduler::addJobOnce() also accept a third option (options) which let you set more advanced options for the job:
 
 | Option  | Default | Type | Description |
 | --- | --- | --- | --- |
-| `at`  | `null`  | ?int | Accepts a specific unix time which let you specify the time at which the job should be executed. The default is immediatly or better saying as soon as there is a free slot. |
+| `at`  | `0`  | int | Accepts a specific unix time which let you specify the time at which the job should be executed. The default (0) is immediatly or better saying as soon as there is a free slot. |
 | `interval`  | `0`  | int | You may specify a job interval (in secconds) which is usefuly for jobs which need to be executed in a specific interval, for example cleaning a temporary directory. The default is `0` which means no interval at all, `-1` means execute the job immediatly again (But be careful with `-1`, this could lead to huge cpu usage depending what job you're executing). Configuring `3600` means the job will get executed hourly. |
 | `retry`  | `0`  | int | Specifies a retry interval if the job fails to execute. The default is `0` which means do not retry. `2` for example means 2 retries. You may set `-1` for endless retries. |
 | `retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. The default is `300` which is 5 minutes. Be careful with this option while `retry_interval` is `-1`, you may ending up with a failure loop.  |
 | `ignore_max_children`  | `false`  | bool | You may specify `true` for this option to spawn a new child process. This will ignore the configured max_children option for the queue node. The queue node will always fork a new child if job with this option is scheduled. Use this option wisely! It makes perfectly sense for jobs which make blocking calls, for example a listener which listens for local filesystem changes (inotify). A job with this enabled option should only consume as little cpu/memory as possible. |
 | `timeout`  | `0`  | int | Specify a timeout in secconds which will forcly terminate the job after the given time has passed. The default `0` means no timeout at all. A timeout job will get rescheduled if retry is not `0` and will marked as timed out.  |
 | `id`  | `null`  | `MongoDB\BSON\ObjectId` | Specify a job id manually.  |
+| `ignore_data`  | `false`  | bool | Only useful if set in a addJobOnce() call. If `true` the scheduler does not compare the jobs data to decide if a job needs to get rescheduled.  |
 
 
 >**Note**: Be careful with timeouts since it will kill your running job by force. You have been warned.
@@ -380,12 +381,48 @@ What you also can do is adding the job only if it has not been queued yet.
 Instead using `addJob()` you can use `addJobOnce()`, the scheduler then verifies if it got the same job already queued. If not, the job gets added.
 The scheduler compares the type of job (`MailJob` in this case) and the data submitted (`$mail->toString()` in this case).
 
-**Note:** The job gets also re-added if advanced options changed (Or are not the same).
+**Note:** The job gets rescheduled if options get changed.
 
 ```php
 $scheduler->addJobOnce(MailJob::class, $mail->toString(), [
     TaskScheduler\Scheduler::OPTION_AT => time()+3600,
     TaskScheduler\Scheduler::OPTION_RETRY => 3,
+]);
+```
+By default `TaskScheduler\Scheduler::addJobOnce()` does compare the job class, the submitted data and the process status (either RUNNING, WAITING or POSTPONED).
+If you do not want to check the data, you may set `TaskScheduler\Scheduler::OPTION_IGNORE_DATA` to `true`. This will tell the scheduler to only reschedule the job of the given class
+if the data changed. This is quite useful if a job of the given class must only be queued once.
+
+
+>**Note**: This option does not make sense in the mail example we're using here. A mail can have different content. But it may happen that you have job which clears a temporary storage every 24h:
+```php
+$scheduler->addJobOnce(MyApp\CleanTemp::class, ['max_age' => 3600], [
+    TaskScheduler\Scheduler::OPTION_IGNORE_DATA => true,
+    TaskScheduler\Scheduler::OPTION_INTERVAL => 60*60*24,
+]);
+```
+
+If max_age changes, the old job gets canceled and a new one gets queued. If `TaskScheduler\Scheduler::OPTION_IGNORE_DATA` is not set here we will end up with two jobs of the type `MyApp\CleanTemp::class`.
+```php
+$scheduler->addJobOnce(MyApp\CleanTemp::class, ['max_age' => 1800], [
+    TaskScheduler\Scheduler::OPTION_IGNORE_DATA => true,
+    TaskScheduler\Scheduler::OPTION_INTERVAL => 60*60*24,
+]);
+```
+
+Of course it is also possile to query such job maually, cancel it and reschedule. This will achieve the same as above:
+```php
+$jobs = $scheduler->getJobs([
+    'class' => MyApp\CleanTemp::class,
+    'status' => ['$lte' => TaskScheduler\JobInterface::STATUS_RUNNING]
+]);
+
+foreach($jobs as $job) {
+    $scheduler->cancelJob($job->getId());
+}
+
+$scheduler->addJob(MyApp\CleanTemp::class, ['max_age' => 1800], [
+    TaskScheduler\Scheduler::OPTION_INTERVAL => 60*60*24,
 ]);
 ```
 
@@ -506,7 +543,7 @@ $queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger)
 ### Data Persistency
 
 This library does not provide any data persistency! It is important to understand this fact. This library operates on a [MongoDB capped collection](https://docs.mongodb.com/manual/core/capped-collections) with 
-a fixed size limit by design. Meaning the newest job will overwrite the oldest job if the limit is reached. A side note here regarding postponed jobs (TaskScheduler\Scheduler::OPTION_AT), those jobs will get queued locally once received. If they fall out from the network queue, they will get executed anyway. If a worker dies they will get rescheduled if possible. **But** interval jobs are not meant to be persistent and there is no guarantee for that. It is best practice during bootstraping your queue node to schedule jobs if they are not already scheduled from a persitent data source (For example using [TaskScheduler\Scheduler::addJobOnce](##add-job-if-not-exists)).
+a fixed size limit by design. Meaning the newest job will overwrite the oldest job if the limit is reached. A side note here regarding postponed jobs (TaskScheduler\Scheduler::OPTION_AT), those jobs will get queued locally once received. If they fall out from the network queue, they will get executed anyway. If a worker dies they will get rescheduled if possible. **But** interval jobs are not meant to be persistent and there is no guarantee for that. It is best practice during bootstraping your queue node to schedule jobs if they are not already scheduled from a persitent data source (For example using [TaskScheduler\Scheduler::addJobOnce](#add-job-if-not-exists)).
 
 
 ### Terminate queue nodes

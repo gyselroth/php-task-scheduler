@@ -131,6 +131,15 @@ class SchedulerTest extends TestCase
         $this->scheduler->cancelJob(new ObjectId());
     }
 
+    public function testCancelCanceledJob()
+    {
+        $job = $this->scheduler->addJob('test', ['foo' => 'bar']);
+        $this->scheduler->cancelJob($job->getId());
+        $this->scheduler->cancelJob($job->getId());
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_CANCELED, $job->getStatus());
+    }
+
     public function testAddJobAdvanced()
     {
         $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
@@ -167,7 +176,8 @@ class SchedulerTest extends TestCase
         $data = uniqid();
         $first = $this->scheduler->addJobOnce('test', $data);
         $seccond = $this->scheduler->addJobOnce('test', $data);
-        $this->assertSame($first->getId(), $seccond->getId());
+        $this->assertEquals($first->getId(), $seccond->getId());
+        $this->assertSame(JobInterface::STATUS_WAITING, $this->scheduler->getJob($seccond->getId())->getStatus());
         $jobs = $this->scheduler->getJobs();
         $this->assertSame(1, count(iterator_to_array($jobs)));
     }
@@ -183,11 +193,48 @@ class SchedulerTest extends TestCase
             Scheduler::OPTION_INTERVAL => 2,
         ]);
 
-        $this->assertNotSame($first->getId(), $seccond->getId());
+        $this->assertNotEquals($first->getId(), $seccond->getId());
 
         $this->assertSame(JobInterface::STATUS_CANCELED, $this->scheduler->getJob($first->getId())->getStatus());
         $jobs = $this->scheduler->getJobs();
         $this->assertSame(1, count(iterator_to_array($jobs)));
+    }
+
+    public function testAddOnceDifferentData()
+    {
+        $first = $this->scheduler->addJobOnce('test', 'foo');
+        $seccond = $this->scheduler->addJobOnce('test', 'bar');
+        $this->assertNotEquals($first->getId(), $seccond->getId());
+        $this->assertSame(JobInterface::STATUS_WAITING, $this->scheduler->getJob($first->getId())->getStatus());
+        $this->assertSame(JobInterface::STATUS_WAITING, $this->scheduler->getJob($seccond->getId())->getStatus());
+        $jobs = $this->scheduler->getJobs();
+        $this->assertSame(2, count(iterator_to_array($jobs)));
+    }
+
+    public function testAddOnceIgnoreData()
+    {
+        $first = $this->scheduler->addJobOnce('test', 'foo', [
+            Scheduler::OPTION_IGNORE_DATA => true,
+        ]);
+
+        $seccond = $this->scheduler->addJobOnce('test', 'bar', [
+            Scheduler::OPTION_IGNORE_DATA => true,
+        ]);
+
+        $this->assertNotEquals($first->getId(), $seccond->getId());
+
+        $this->assertSame(JobInterface::STATUS_CANCELED, $this->scheduler->getJob($first->getId())->getStatus());
+        $this->assertSame(JobInterface::STATUS_WAITING, $this->scheduler->getJob($seccond->getId())->getStatus());
+        $jobs = $this->scheduler->getJobs();
+        $this->assertSame(1, count(iterator_to_array($jobs)));
+    }
+
+    public function testAddJobWithIgnoreDataInvalidValue()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
+            Scheduler::OPTION_IGNORE_DATA => 'foobar',
+        ]);
     }
 
     public function testInitChangeDefaultJobOptions()
@@ -206,7 +253,7 @@ class SchedulerTest extends TestCase
 
         $job = $scheduler->addJob('test', ['foo' => 'bar'])->getOptions();
         $this->assertSame(1, $job['retry']);
-        $this->assertSame(1000000, (int) $job['at']->toDateTime()->format('U'));
+        $this->assertSame(1000000, $job['at']);
         $this->assertSame(1, $job['retry_interval']);
         $this->assertSame(300, $job['interval']);
     }
@@ -222,7 +269,7 @@ class SchedulerTest extends TestCase
 
         $job = $this->scheduler->addJob('test', ['foo' => 'bar'])->getOptions();
         $this->assertSame(1, $job['retry']);
-        $this->assertSame(1000000, (int) $job['at']->toDateTime()->format('U'));
+        $this->assertSame(1000000, $job['at']);
         $this->assertSame(1, $job['retry_interval']);
         $this->assertSame(300, $job['interval']);
     }

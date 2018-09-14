@@ -237,7 +237,7 @@ class WorkerTest extends TestCase
         $new = $this->worker->timeout();
         $this->assertInstanceOf(ObjectId::class, $new);
         $this->assertNotSame($job['_id'], $new);
-        $this->assertTrue($this->scheduler->getJob($new)->getOptions()['at'] > new UTCDateTime());
+        $this->assertTrue($this->scheduler->getJob($new)->getOptions()['at'] > time());
     }
 
     public function testTimeoutJobWithRetry()
@@ -268,7 +268,7 @@ class WorkerTest extends TestCase
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertSame(JobInterface::STATUS_WAITING, $retry_job->getStatus());
         $this->assertSame(0, $retry_job->getOptions()['retry']);
-        $this->assertEquals($retry_job->getOptions()['at'], new UTCDateTime((time() + 300).'000'));
+        $this->assertEquals($retry_job->getOptions()['at'], time() + 300);
     }
 
     public function testProcessErrorJobRetryStopOnNull()
@@ -324,7 +324,7 @@ class WorkerTest extends TestCase
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
-        $this->assertEquals($retry_job->getOptions()['at'], new UTCDateTime((time() + 10).'000'));
+        $this->assertEquals($retry_job->getOptions()['at'], time() + 10);
     }
 
     public function testProcessJobInterval()
@@ -340,7 +340,7 @@ class WorkerTest extends TestCase
         $interval_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertSame(JobInterface::STATUS_WAITING, $interval_job->getStatus());
         $this->assertSame(100, $interval_job->getOptions()['interval']);
-        $this->assertTrue($interval_job->getOptions()['at'] > new UTCDateTime());
+        $this->assertTrue($interval_job->getOptions()['at'] > time());
     }
 
     public function testProcessEndlessInterval()

@@ -34,6 +34,7 @@ class Scheduler
     public const OPTION_IGNORE_MAX_CHILDREN = 'ignore_max_children';
     public const OPTION_TIMEOUT = 'timeout';
     public const OPTION_ID = 'id';
+    public const OPTION_IGNORE_DATA = 'ignore_data';
 
     /**
      * Default job options.
@@ -90,7 +91,7 @@ class Scheduler
     protected $event_queue = 'taskscheduler.events';
 
     /**
-     * Default at (Secconds from now).
+     * Unix time.
      *
      * @var int
      */
@@ -243,7 +244,7 @@ class Scheduler
     {
         $result = $this->updateJob($id, JobInterface::STATUS_CANCELED);
 
-        if (1 !== $result->getModifiedCount()) {
+        if (1 !== $result->getMatchedCount()) {
             throw new JobNotFoundException('job '.$id.' was not found');
         }
 
@@ -314,7 +315,6 @@ class Scheduler
     {
         $filter = [
             'class' => $class,
-            'data' => $data,
             '$or' => [
                 ['status' => JobInterface::STATUS_WAITING],
                 ['status' => JobInterface::STATUS_POSTPONED],
@@ -323,6 +323,10 @@ class Scheduler
         ];
 
         $document = $this->prepareInsert($class, $data, $options);
+
+        if (true !== $options[self::OPTION_IGNORE_DATA]) {
+            $filter = ['data' => $data] + $filter;
+        }
 
         $result = $this->db->{$this->job_queue}->updateOne($filter, ['$setOnInsert' => $document], [
             'upsert' => true,
@@ -334,8 +338,8 @@ class Scheduler
                 'typeMap' => self::TYPE_MAP,
             ]);
 
-            if (array_intersect_key($document['options'], $options) !== $options) {
-                $this->logger->debug('job ['.$document['_id'].'] options changed, reschedule new job', [
+            if (array_intersect_key($document['options'], $options) !== $options || ($data !== $document['data'] && true === $options[self::OPTION_IGNORE_DATA])) {
+                $this->logger->debug('job ['.$document['_id'].'] options/data changed, reschedule new job', [
                     'category' => get_class($this),
                     'data' => $data,
                 ]);
@@ -423,6 +427,7 @@ class Scheduler
             self::OPTION_RETRY_INTERVAL => $this->default_retry_interval,
             self::OPTION_IGNORE_MAX_CHILDREN => false,
             self::OPTION_TIMEOUT => $this->default_timeout,
+            self::OPTION_IGNORE_DATA => false,
         ];
 
         $options = array_merge($defaults, $options);
@@ -442,10 +447,6 @@ class Scheduler
             $id = $options[self::OPTION_ID];
             unset($options[self::OPTION_ID]);
             $document['_id'] = $id;
-        }
-
-        if (is_int($options[self::OPTION_AT]) && $options[self::OPTION_AT] > 0) {
-            $options[self::OPTION_AT] = new UTCDateTime($options[self::OPTION_AT] * 1000);
         }
 
         $document['options'] = $options;

@@ -13,7 +13,6 @@ declare(strict_types=1);
 namespace TaskScheduler;
 
 use MongoDB\BSON\ObjectId;
-use MongoDB\BSON\UTCDateTime;
 use TaskScheduler\Exception\InvalidArgumentException;
 
 class SchedulerValidator
@@ -26,11 +25,6 @@ class SchedulerValidator
         foreach ($options as $option => $value) {
             switch ($option) {
                 case Scheduler::OPTION_AT:
-                    if (!is_int($value) && !($value instanceof UTCDateTime)) {
-                        throw new InvalidArgumentException('option '.$option.' must be an integer or an instance of '.UTCDateTime::class);
-                    }
-
-                break;
                 case Scheduler::OPTION_INTERVAL:
                 case Scheduler::OPTION_RETRY:
                 case Scheduler::OPTION_RETRY_INTERVAL:
@@ -40,6 +34,7 @@ class SchedulerValidator
                     }
 
                 break;
+                case Scheduler::OPTION_IGNORE_DATA:
                 case Scheduler::OPTION_IGNORE_MAX_CHILDREN:
                     if (!is_bool($value)) {
                         throw new InvalidArgumentException('option '.$option.' must be a boolean');
