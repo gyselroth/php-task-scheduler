@@ -62,7 +62,7 @@ The documentation for v2 is available [here](https://github.com/gyselroth/mongod
     * [Terminate queue nodes](#terminate-queue-nodes)
 
 ## Why?
-PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronously. Sure there is pthreads and pcntl but those are only usable in cli mode (or should only be used there). Using this library you are able to write your code async, schedule tasks and let them execute behind the scenes. 
+PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronous. Sure there is pthreads and pcntl but those are only usable in cli mode (or should only be used there). Using this library you are able to write your code async, schedule tasks and let them execute behind the scenes. 
 
 ## How does it work (The short way please)?
 A job is scheduled via a task scheduler and gets written into a central message queue (MongoDB). All Queue nodes will get notified in (soft) realtime that a new job is available.
@@ -315,7 +315,7 @@ foreach($jobs as $job) {
 ```
 
 ### Listen for events
-You may bind to the scheduler and listen for any changes which occur asynchrounly.
+You may bind to the scheduler and listen for any changes which occur asynchronous.
 
 ```php
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
