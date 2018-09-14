@@ -235,7 +235,7 @@ $scheduler->getJobs();
 ```
 
 By default you will receive all jobs with the status:
-* WAITING,
+* WAITING
 * PROCESSING
 * POSTPONED
 
