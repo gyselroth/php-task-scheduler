@@ -410,11 +410,11 @@ $scheduler->addJobOnce(MyApp\CleanTemp::class, ['max_age' => 1800], [
 ]);
 ```
 
-Of course it is also possile to query such job maually, cancel it and reschedule. This will achieve the same as above:
+Of course it is also possible to query such job manually, cancel them and reschedule. This will achieve the same as above:
 ```php
 $jobs = $scheduler->getJobs([
     'class' => MyApp\CleanTemp::class,
-    'status' => ['$lte' => TaskScheduler\JobInterface::STATUS_RUNNING]
+    'status' => ['$lte' => TaskScheduler\JobInterface::STATUS_PROCESSING]
 ]);
 
 foreach($jobs as $job) {
