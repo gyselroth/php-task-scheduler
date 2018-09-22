@@ -145,6 +145,23 @@ class WorkerTest extends TestCase
         $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
     }
 
+    public function testStartWorkerExecutePostponedOverwrittenJob()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_AT => time() + 1,
+        ]);
+
+        $this->worker->start();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_POSTPONED, $job->getStatus());
+        sleep(1);
+        $this->mongodb->selectCollection('taskscheduler.jobs')->deleteMany([]);
+        $this->called = 0;
+        $this->worker->start();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
+    }
+
     public function testStartWorkerPostponedJobFromPast()
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [

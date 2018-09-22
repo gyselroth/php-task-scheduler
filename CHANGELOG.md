@@ -1,3 +1,10 @@
+## 3.0.0
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**:
+
+* [FIX] Locally queued job gets rescheduled if was previously overwritten by the capped collection size limit
+
+
 ## 3.0.0-beta6
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Fri Sept 14 13:24:34 CEST 2018

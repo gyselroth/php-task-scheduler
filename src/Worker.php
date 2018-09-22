@@ -396,6 +396,12 @@ class Worker extends AbstractHandler
     {
         $now = time();
         foreach ($this->queue as $key => $job) {
+            $this->db->{$this->scheduler->getJobQueue()}->updateOne(
+                ['_id' => $job['_id'], '$isolated' => true],
+                ['$setOnInsert' => $job],
+                ['upsert' => true]
+            );
+
             if ($job['options']['at'] <= $now) {
                 $this->logger->info('postponed job ['.$job['_id'].'] ['.$job['class'].'] can now be executed', [
                     'category' => get_class($this),
@@ -423,6 +429,7 @@ class Worker extends AbstractHandler
 
         if ($job['options']['at'] > $now) {
             $this->updateJob($job, JobInterface::STATUS_POSTPONED);
+            $job['status'] = JobInterface::STATUS_POSTPONED;
             $this->queue[(string) $job['_id']] = $job;
 
             $this->logger->debug('execution of job ['.$job['_id'].'] ['.$job['class'].'] is postponed at ['.$job['options']['at'].']', [
