@@ -43,7 +43,7 @@ The documentation for v2 is available [here](https://github.com/gyselroth/mongod
 * [Documentation](#documentation)
     * [Create job](#create-job)
     * [Initialize scheduler](#initialize-scheduler)
-    * [Append job](#append-job)
+    * [Spool job](#spool-job)
     * [Execute jobs](#execute-jobs)
         * [Create worker factory](#create-worker-factory)
         * [Create queue node](#create-queue-node)
@@ -147,7 +147,7 @@ $logger = new \A\Psr4\Compatible\Logger();
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
 ```
 
-### Append job
+### Spool job
 
 Now let us create a mail and deploy it to the task scheduler which we have initialized right before:
 
@@ -286,7 +286,7 @@ class MailJob extends TaskScheduler\AbstractJob
         $transport = new Zend\Mail\Transport\Sendmail();
         $mail = Message::fromString($this->data);
         $this->transport->send($mail);
-        throw \Exception('i am an exception');
+        throw new \Exception('i am an exception');
         return true;
     }
 }
@@ -307,35 +307,6 @@ $scheduler->addJob(MailJob::class, $mail->toString(), [
 ```
 
 This will queue our mail to be executed in one hour from now and it will re-schedule the job up to three times if it fails with an interval of one minute.
-
-### Add job if not exists
-What you also can do is adding the job only if it has not been queued yet.
-Instead using `addJob()` you can use `addJobOnce()`, the scheduler then verifies if it got the same job already queued. If not, the job gets added.
-The scheduler compares the type of job (`MailJob` in this case) and the data submitted (`$mail->toString()` in this case).
-
->**Note**: The job gets rescheduled if options get changed.
-
-```php
-$scheduler->addJobOnce(MailJob::class, $mail->toString(), [
-    TaskScheduler\Scheduler::OPTION_AT => time()+3600,
-    TaskScheduler\Scheduler::OPTION_RETRY => 3,
-]);
-```
-By default `TaskScheduler\Scheduler::addJobOnce()` does compare the job class, the submitted data and the process status (either RUNNING, WAITING or POSTPONED).
-If you do not want to check the data, you may set `TaskScheduler\Scheduler::OPTION_IGNORE_DATA` to `true`. This will tell the scheduler to only reschedule the job of the given class
-if the data changed. This is quite useful if a job of the given class must only be queued once.
-
-
->**Note**: This option does not make sense in the mail example we're using here. A mail can have different content. But it may happen that you have job which clears a temporary storage every 24h:
-```php
-$scheduler->addJobOnce(MyApp\CleanTemp::class, ['max_age' => 3600], [
-    TaskScheduler\Scheduler::OPTION_IGNORE_DATA => true,
-
-
-### Initialize scheduler
-
-You need an instance of a MongoDB\Database and a Psr\Log\LoggerInterface compatible logger to initialize the scheduler.
-
 
 ### Asynchronous programming
 
