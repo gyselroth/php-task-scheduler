@@ -197,7 +197,7 @@ class WorkerTest extends TestCase
         $this->worker->cleanup();
         $new = $this->scheduler->getJob($job->getId());
         $this->assertSame($new->getId(), $job->getId());
-        $this->assertNotSame($new->toArray()['created'], $job->toArray()['created']);
+        $this->assertSame($new->toArray()['created'], $job->toArray()['created']);
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
         $this->assertSame($new->getOptions()['at'], $job->getOptions()['at']);
     }

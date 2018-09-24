@@ -51,6 +51,7 @@ The documentation for v2 is available [here](https://github.com/gyselroth/mongod
         * [Get jobs](#get-jobs)
         * [Cancel job](#cancel-job)
         * [Modify jobs](#modify-jobs)
+    * [Handling of failed jobs](#handling-of-failed-jobs)
     * [Asynchronous programming](#asynchronous-programming)
     * [Listen for Events](#listen-for-events)
     * [Advanced job options](#advanced-job-options)
@@ -59,7 +60,7 @@ The documentation for v2 is available [here](https://github.com/gyselroth/mongod
     * [Advanced queue node options](#advanced-queue-node-options)
     * [Using a DIC (dependeny injection container)](#using-a-dic-dependeny-injection-container)
     * [Data Persistency](#data-persistency)
-    * [Terminate queue nodes](#terminate-queue-nodes)
+    * [Signal handling](#signal-handling)
 
 ## Why?
 PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronous. Sure there is pthreads and pcntl but those are only usable in cli mode (or should only be used there). Using this library you are able to write your code async, schedule tasks and let them execute behind the scenes. 
@@ -269,6 +270,73 @@ A canceled job will not get rescheduled. You will need to create a new job manua
 #### Modify jobs
 It is **not** possible to modify a scheduled job by design. You need to cancel the job and append a new one.
 
+### Handling of failed jobs
+
+A job is acknowledged as failed if the job throws an exception of any kind. 
+If we have a look at our mail job again, but this time it will throw an exception:
+
+```php
+class MailJob extends TaskScheduler\AbstractJob
+{
+    /**
+     * {@inheritdoc}
+     */
+    public function start(): bool
+    {
+        $transport = new Zend\Mail\Transport\Sendmail();
+        $mail = Message::fromString($this->data);
+        $this->transport->send($mail);
+        throw \Exception('i am an exception');
+        return true;
+    }
+}
+```
+
+This will lead to a FAILED job as soon as this job gets executed.
+
+>**Note**: It does not matter if you return `true` or `false`, only an uncaught exception will result to a FAILED job, however you should always return `true`.
+
+The scheduler has an integreated handling of failed jobs. You may specify to automatically reschedule a job if it failed. 
+The following will reschedule the job up to 5 times (If it ended with status FAILED) with an interval of 30s.
+
+```php
+$scheduler->addJob(MailJob::class, $mail->toString(), [
+    TaskScheduler\Scheduler::OPTION_RETRY => 5,
+    TaskScheduler\Scheduler::OPTION_RETRY_INTERVAL => 30,
+]);
+```
+
+This will queue our mail to be executed in one hour from now and it will re-schedule the job up to three times if it fails with an interval of one minute.
+
+### Add job if not exists
+What you also can do is adding the job only if it has not been queued yet.
+Instead using `addJob()` you can use `addJobOnce()`, the scheduler then verifies if it got the same job already queued. If not, the job gets added.
+The scheduler compares the type of job (`MailJob` in this case) and the data submitted (`$mail->toString()` in this case).
+
+>**Note**: The job gets rescheduled if options get changed.
+
+```php
+$scheduler->addJobOnce(MailJob::class, $mail->toString(), [
+    TaskScheduler\Scheduler::OPTION_AT => time()+3600,
+    TaskScheduler\Scheduler::OPTION_RETRY => 3,
+]);
+```
+By default `TaskScheduler\Scheduler::addJobOnce()` does compare the job class, the submitted data and the process status (either RUNNING, WAITING or POSTPONED).
+If you do not want to check the data, you may set `TaskScheduler\Scheduler::OPTION_IGNORE_DATA` to `true`. This will tell the scheduler to only reschedule the job of the given class
+if the data changed. This is quite useful if a job of the given class must only be queued once.
+
+
+>**Note**: This option does not make sense in the mail example we're using here. A mail can have different content. But it may happen that you have job which clears a temporary storage every 24h:
+```php
+$scheduler->addJobOnce(MyApp\CleanTemp::class, ['max_age' => 3600], [
+    TaskScheduler\Scheduler::OPTION_IGNORE_DATA => true,
+
+
+### Initialize scheduler
+
+You need an instance of a MongoDB\Database and a Psr\Log\LoggerInterface compatible logger to initialize the scheduler.
+
+
 ### Asynchronous programming
 
 Have a look at this example:
@@ -351,11 +419,11 @@ TaskScheduler\Scheduler::addJob()/TaskScheduler\Scheduler::addJobOnce() also acc
 | `ignore_data`  | `false`  | bool | Only useful if set in a addJobOnce() call. If `true` the scheduler does not compare the jobs data to decide if a job needs to get rescheduled.  |
 
 
->**Note**: Be careful with timeouts since it will kill your running job by force. You have been warned.
+>**Note**: Be careful with timeouts since it will kill your running job by force. You have been warned. You shall always use a native timeout in a function if supported.
 
 Let us add our mail job example again with some custom options:
 
->**Note:** We are using the OPTION_ constansts here, you may also just use the names documented above.
+>**Note**: We are using the OPTION_ constansts here, you may also just use the names documented above.
 
 ```php
 $mongodb = new MongoDB\Client('mongodb://localhost:27017');
@@ -381,7 +449,7 @@ What you also can do is adding the job only if it has not been queued yet.
 Instead using `addJob()` you can use `addJobOnce()`, the scheduler then verifies if it got the same job already queued. If not, the job gets added.
 The scheduler compares the type of job (`MailJob` in this case) and the data submitted (`$mail->toString()` in this case).
 
-**Note:** The job gets rescheduled if options get changed.
+>**Note**: The job gets rescheduled if options get changed.
 
 ```php
 $scheduler->addJobOnce(MailJob::class, $mail->toString(), [
@@ -545,10 +613,13 @@ $queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger)
 This library does not provide any data persistency! It is important to understand this fact. This library operates on a [MongoDB capped collection](https://docs.mongodb.com/manual/core/capped-collections) with 
 a fixed size limit by design. Meaning the newest job will overwrite the oldest job if the limit is reached. A side note here regarding postponed jobs (TaskScheduler\Scheduler::OPTION_AT), those jobs will get queued locally once received. If they fall out from the network queue, they will get executed anyway. If a worker dies they will get rescheduled if possible. **But** interval jobs are not meant to be persistent and there is no guarantee for that. It is best practice during bootstraping your queue node to schedule jobs if they are not already scheduled from a persitent data source (For example using [TaskScheduler\Scheduler::addJobOnce](#add-job-if-not-exists)).
 
+>**Note**: This is planned to change in v4. v4 will feature persistency for jobs.
 
-### Terminate queue nodes
+### Signal handling
 
 Terminating queue nodes is possible of course. They even manage to reschedule running jobs. You just need to send a SIGTERM to the process. The queue node then will transmit this to all running workers and they 
 will save their state and nicely exit. A worker also saves its state if the worker process directly receives a SIGTERM.
 If a SIGKILL was used to terminate the queue node (or worker) the state can not be saved and you might get zombie jobs (Jobs with the state PROCESSING but no worker will actually process those jobs).
 No good sysadmin will terminate running jobs by using SIGKILL, it is not acceptable and may only be used if you know what you are doing.
+
+You should as well avoid using never ending blocking functions in your job, php can't handle signals if you do that. 

@@ -1,8 +1,9 @@
-## 3.0.0
+## 3.0.0-beta7
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
-**Date**:
+**Date**: Fri Sept 24 15:24:34 CEST 2018
 
 * [FIX] Locally queued job gets rescheduled if was previously overwritten by the capped collection size limit
+* [FIX] Fixed retry_interval with timeout jobs
 
 
 ## 3.0.0-beta6

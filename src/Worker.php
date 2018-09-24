@@ -15,7 +15,6 @@ namespace TaskScheduler;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
-use MongoDB\Driver\Exception\BulkWriteException;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidJobException;
@@ -136,7 +135,7 @@ class Worker extends AbstractHandler
             ]);
 
             --$job['options']['retry'];
-            $job['options']['at'] = time() + $job['options']['at'];
+            $job['options']['at'] = time() + $job['options']['retry_interval'];
             $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
             return $job->getId();
@@ -209,6 +208,11 @@ class Worker extends AbstractHandler
             }
 
             $job = $cursor->current();
+
+            $this->logger->debug('found job ['.$job['_id'].'] in queue with status ['.$job['status'].']', [
+                'category' => get_class($this),
+            ]);
+
             $this->jobs->next($cursor, function () {
                 $this->start();
             });
@@ -225,7 +229,7 @@ class Worker extends AbstractHandler
         $this->saveState();
 
         if (null === $this->current_job) {
-            $this->logger->debug('received cleanup call, no job is currently processing, exit now', [
+            $this->logger->debug('received cleanup call on worker ['.$this->id.'], no job is currently processing, exit now', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);
@@ -235,7 +239,7 @@ class Worker extends AbstractHandler
             return null;
         }
 
-        $this->logger->debug('received cleanup call, reschedule current processing job ['.$this->current_job['_id'].']', [
+        $this->logger->debug('received cleanup call on worker ['.$this->id.'], reschedule current processing job ['.$this->current_job['_id'].']', [
             'category' => get_class($this),
             'pm' => $this->process,
         ]);
@@ -264,21 +268,11 @@ class Worker extends AbstractHandler
     protected function saveState(): self
     {
         foreach ($this->queue as $key => $job) {
-            try {
-                $options = $job['options'];
-                $options[Scheduler::OPTION_ID] = $job['_id'];
-                $this->scheduler->addJob($job['class'], $job['data'], $options);
-                unset($this->queue[$key]);
-            } catch (\Exception $e) {
-                if ($e instanceof BulkWriteException && 11000 === $e->getCode()) {
-                    continue;
-                }
-
-                $this->logger->error('failed reschedule locally queued job ['.$job['_id'].']', [
-                    'exception' => $e,
-                    'category' => get_class($this),
-                ]);
-            }
+            $this->db->selectCollection($this->scheduler->getJobQueue())->updateOne(
+                ['_id' => $job['_id'], '$isolated' => true],
+                ['$setOnInsert' => $job],
+                ['upsert' => true]
+            );
         }
 
         return $this;
@@ -342,8 +336,13 @@ class Worker extends AbstractHandler
             '$set' => $set,
         ]);
 
+        $this->logger->debug('collect job ['.$job['_id'].'] with status ['.$from_status.']', [
+            'category' => get_class($this),
+            'pm' => $this->process,
+        ]);
+
         if (1 === $result->getModifiedCount()) {
-            $this->logger->debug('job ['.$job['_id'].'] updated to status ['.$status.']', [
+            $this->logger->debug('job ['.$job['_id'].'] collected; update status to ['.$status.']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);
@@ -440,7 +439,7 @@ class Worker extends AbstractHandler
             return $job['_id'];
         }
 
-        $this->logger->debug('execute job ['.$job['_id'].'] ['.$job['class'].']', [
+        $this->logger->debug('execute job ['.$job['_id'].'] ['.$job['class'].'] on worker ['.$this->id.']', [
             'category' => get_class($this),
             'pm' => $this->process,
             'options' => $job['options'],
@@ -456,7 +455,7 @@ class Worker extends AbstractHandler
         } catch (\Exception $e) {
             pcntl_alarm(0);
 
-            $this->logger->error('failed execute job ['.$job['_id'].'] of type ['.$job['class'].']', [
+            $this->logger->error('failed execute job ['.$job['_id'].'] of type ['.$job['class'].'] on worker ['.$this->id.']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
                 'exception' => $e,
