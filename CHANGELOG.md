@@ -1,3 +1,10 @@
+## 3.0.0-beta8
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Wed Sept 26 15:24:34 CEST 2018
+
+* [FIX] Fixed event handling in queue node
+
+
 ## 3.0.0-beta7
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Mon Sept 24 15:24:34 CEST 2018
@@ -48,7 +55,6 @@
 * [FIX] Cancelling a job which is out of the queue does now work as well
 
 
-* [FEATURE] Possibility to timeout jobs
 ## 3.0.0-beta1
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Thu Aug 30 11:47:34 CEST 2018

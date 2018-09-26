@@ -319,6 +319,7 @@ class Queue extends AbstractHandler
 
         $cursor_events = $this->events->getCursor([
             'timestamp' => ['$gte' => new UTCDateTime()],
+            'status' => ['$gt' => JobInterface::STATUS_POSTPONED],
         ]);
 
         $this->catchSignal();
@@ -386,9 +387,6 @@ class Queue extends AbstractHandler
         ]);
 
         switch ($event['status']) {
-            case JobInterface::STATUS_WAITING:
-            case JobInterface::STATUS_POSTPONED:
-            break;
             case JobInterface::STATUS_PROCESSING:
                 $this->job_map[(string) $event['worker']] = $event['job'];
 
