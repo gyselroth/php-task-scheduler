@@ -385,7 +385,7 @@ class Queue extends AbstractHandler
             'category' => get_class($this),
         ]);
 
-        switch ($event) {
+        switch ($event['status']) {
             case JobInterface::STATUS_WAITING:
             case JobInterface::STATUS_POSTPONED:
             break;

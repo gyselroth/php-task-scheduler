@@ -94,23 +94,45 @@ class MessageQueue
     {
         $options = [
             'typeMap' => Scheduler::TYPE_MAP,
-            'cursorType' => Find::TAILABLE_AWAIT,
+            'cursorType' => Find::TAILABLE,
             'noCursorTimeout' => true,
         ];
+        $this->logger->error('get cursor 0', [
+                'category' => get_class($this),
+            ]);
 
         try {
             $cursor = $this->db->{$this->name}->find($query, $options);
+            $this->logger->error('get cursor 1', [
+                'category' => get_class($this),
+            ]);
         } catch (ConnectionException | ServerException $e) {
+            $this->logger->error('get cursor 2', [
+                'category' => get_class($this),
+                'exception' => $e,
+            ]);
+
             if (2 === $e->getCode()) {
                 $this->convert();
+                $this->logger->error('get cursor 2', [
+                'category' => get_class($this),
+            ]);
 
                 return $this->getCursor($query);
             }
 
             throw $e;
         } catch (RuntimeException $e) {
+            $this->logger->error('get cursor 3', [
+                'category' => get_class($this),
+                'exception' => $e,
+            ]);
+
             return $this->getCursor($query);
         }
+        $this->logger->error('get cursor 4', [
+                'category' => get_class($this),
+            ]);
 
         $iterator = new IteratorIterator($cursor);
         $iterator->rewind();
