@@ -107,7 +107,7 @@ You may encounter the follwing terms in this readme or elsewhere:
 | Job | `TaskScheduler\JobInterface`  | A job implementation is the actual task you want to execute. |
 | Process | `TaskScheduler\Process` | You will receive a process after adding jobs, query jobs and so on, a process is basically an upperset of your job implementation. |
 | Queue Node | `TaskScheduler\Queue` | Queue nodes handle the available jobs and forward them to the worker manager. |
-| Worker Manager | `TaskScheduler\WorkerManager` | The worker managers job is to spawn workers which actually handle a job. Note: A worker manager itself is fork from the queue node process.
+| Worker Manager | `TaskScheduler\WorkerManager` | The worker managers job is to spawn workers which actually handle a job. Note: A worker manager itself is a fork from the queue node process.
 | Worker | `TaskScheduler\Worker` | Workers are the ones which process a job from the queue and actually do your submitted work. |
 | Worker Factory | `TaskScheduler\WorkerFactoryInterface` | A worker factory needs to be implemented by you, it will spawn the worker manager and new workers. |
 | Cluster | - | A cluster is a set of multiple queue nodes. A cluster does not need to be configured in any way, you may start as many queue nodes as you want. |
