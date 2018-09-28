@@ -651,8 +651,8 @@ You should as well avoid using never ending blocking functions in your job, php 
 
 ## Real world examples
 
-| Project  | Link | Description |
-| --- | --- | --- | --- |
+| Project  | Description |
+| --- | --- |
 | [balloon](https://github.com/gyselroth/balloon)  | balloon is a high performance cloud server. It makes use of this library to deploy all kind of jobs (create previews, scan files, upload to elasticsearch, sending mails, converting documents, clean temporary storage, clean trash, ...). |
 | [tubee](https://github.com/gyselroth/tubee)  | tubee is data management engine and makes use of this libaray to execute asynchronous data sync jobs. |
 
