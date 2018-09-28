@@ -56,27 +56,30 @@ The documentation for v2 is available [here](https://github.com/gyselroth/mongod
     * [Listen for Events](#listen-for-events)
     * [Advanced job options](#advanced-job-options)
     * [Add job if not exists](#add-job-if-not-exists)
-    * [Advanced scheduler options](#advanced-scheduler-options)
+    * [Advanced worker manager options](#advanced-worker-manager-options)
     * [Advanced queue node options](#advanced-queue-node-options)
-    * [Using a DIC (dependeny injection container)](#using-a-dic-dependeny-injection-container)
+    * [Using a PSR-11 DIC](#using-a-psr-11-dic)
     * [Data Persistency](#data-persistency)
     * [Signal handling](#signal-handling)
+* [Real world examples](#real-world-examples)
 
 ## Why?
 PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronous. Sure there is pthreads and pcntl but those are only usable in cli mode (or should only be used there). Using this library you are able to write your code async, schedule tasks and let them execute behind the scenes. 
 
 ## How does it work (The short way please)?
 A job is scheduled via a task scheduler and gets written into a central message queue (MongoDB). All Queue nodes will get notified in (soft) realtime that a new job is available.
-One node will execute the task according the principle first come first serves. If no free slots are available the job will wait in the queue and get executed as soon as there is a free slot.
+The queue node will forward the job via a internal systemv message queue to the worker manager. The worker manager decides if a new worker needs to be spawned.
+At last, one worker will execute the task according the principle first come first serves. If no free slots are available the job will wait in the queue and get executed as soon as there is a free slot.
 A job may be rescheduled if it failed. There are lots of more features available, continue reading. 
 
 ## Requirements
 * Posix system (Basically every linux)
-* PHP7.1 and newer 
 * MongoDB server >= 2.2
+* PHP >= 7.1
 * PHP pcntl extension
 * PHP posix extension
 * PHP mongodb extension
+* PHP sysvmsg extension
 
 >**Note**: This library will only work on \*nix system. There is no windows support and there will most likely never be.
 
@@ -100,13 +103,24 @@ You may encounter the follwing terms in this readme or elsewhere:
 
 | Term | Class | Description |
 | ------------------- | ------------------ | --- |
-| Scheduler | `TaskScheduler\Scheduler` | The Scheduler is used to add jobs, query jobs, delete jobs and listen for events, it is the only component besides Jobs which is actually used in your main application.  |
-| Job | `TaskScheduler\JobInterface`  | A job implementation is the actual asynchronous job you want to execute. |
+| Scheduler | `TaskScheduler\Scheduler` | The Scheduler is used to add jobs, query jobs, delete jobs and listen for events, it is the only component besides (different) jobs which is actually used in your main application.  |
+| Job | `TaskScheduler\JobInterface`  | A job implementation is the actual task you want to execute. |
 | Process | `TaskScheduler\Process` | You will receive a process after adding jobs, query jobs and so on, a process is basically an upperset of your job implementation. |
-| Queue Node | `TaskScheduler\Queue` | Queue nodes are the main processes which spawn new workers. |
-| Worker | `TaskScheduler\Worker` | Workers are the ones which process a job from the queue. |
-| Worker Factory | `TaskScheduler\WorkerFactoryInterface` | A worker factory needs to be implemented by you, it will spawn new workers. |
+| Queue Node | `TaskScheduler\Queue` | Queue nodes handle the available jobs and forward them to the worker manager. |
+| Worker Manager | `TaskScheduler\WorkerManager` | The worker managers job is to spawn workers which actually handle a job. Note: A worker manager itself is fork from the queue node process.
+| Worker | `TaskScheduler\Worker` | Workers are the ones which process a job from the queue and actually do your submitted work. |
+| Worker Factory | `TaskScheduler\WorkerFactoryInterface` | A worker factory needs to be implemented by you, it will spawn the worker manager and new workers. |
 | Cluster | - | A cluster is a set of multiple queue nodes. A cluster does not need to be configured in any way, you may start as many queue nodes as you want. |
+
+## Install
+
+If your app gets built using a docker container you must use at least the following build options:
+
+```Dockerfile
+FROM php:7.2
+RUN docker-php-ext-install pcntl sysvmsg
+RUN pecl install mongodb && docker-php-ext-enable mongodb pcntl sysvmsg
+```
 
 ## Documentation
 
@@ -173,10 +187,27 @@ Those nodes listen in (soft) realtime for new jobs and will load balance those j
 
 You will need to create your own worker node factory in your app namespace which gets called to spawn new child processes.
 This factory gets called during a new fork is spawned. This means if it gets called, you are in a new process and you will need to bootstrap your application 
-from scratch (Or just the things you need for a worker). In this simple example we will manually create a new MongoDB connection, create a new scheduler and logger instance and finally return a new TaskScheduler\Worker instance.
+from scratch (Or just the things you need for a worker). 
+
+>**Note**: Both a worker manager and a worker itself are spawned in own forks from the queue node process.
+
+```
+Queue node (TaskScheduler\Queue)
+|
+|-- Worker Manager (TaskScheduler\WorkerManager)
+    |
+    |-- Worker (TaskScheduler\Worker)
+    |-- Worker (TaskScheduler\Worker)
+    |-- Worker (TaskScheduler\Worker)
+    |-- ...
+```
+
+For both a worker manager and a worker a new fork means you will need to bootstrap the class from scratch.
+
+>**Note**: Theoretically you can reuse existing connections, objects and so on by setting those via the constructor of your worker factory since the factory gets initialized in main(). But this will likely lead to errors and strange app behaviours and is not supported.
 
 For better understanding: if there is a configuration file where you have stored your configs like a MongoDB uri, in the factory you will need to parse this configuration again and create a new mongodb instance.
-Or you may be using a dic, the dic needs to be created from scratch in the factory (A new dependency tree). You may pass an instance of a dic (compatible to Psr\Container\ContainerInterface) as fifth argument to TaskScheduler\Worker (See more at [Using a DIC](#using-a-dic-dependeny-injection-container)).
+Or you may be using a PSR-11 container, the container needs to be created from scratch in the factory (A new dependency tree). You may pass an instance of a dic (compatible to Psr\Container\ContainerInterface) as fifth argument to TaskScheduler\Worker (or advanced worker manager options as third argument for a TaskScheduler\WorkerManager ([Advanced worker manager options](#advaced)). See more at [Using a DIC](#using-a-psr-11-dic-dependeny-injection-container)).
 
 ```php
 class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
@@ -184,7 +215,7 @@ class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
     /**
      * {@inheritdoc}
      */
-    public function build(MongoDB\BSON\ObjectId $id): TaskScheduler\Worker
+    public function buildWorker(MongoDB\BSON\ObjectId $id): TaskScheduler\Worker
     {
         $mongodb = new MongoDB\Client('mongodb://localhost:27017');
         $logger = new \A\Psr4\Compatible\Logger();
@@ -192,10 +223,17 @@ class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
 
         return new TaskScheduler\Worker($id, $scheduler, $mongodb->mydb, $logger);
     }
+    
+    /**
+     * {@inheritdoc}
+     */
+    public function buildManager(): TaskScheduler\WorkerManager
+    {
+        $logger = new \A\Psr4\Compatible\Logger();
+        return new TaskScheduler\WorkerManager($this, $logger);
+    }
 }
 ```
-
->**Note**: Theoretically you can reuse existing connections, objects and so on by setting those via the constructor of your worker factory since the factory gets initialized in main(). But this will likely lead to errors and strange app behaviours and is not supported.
 
 #### Create queue node
 
@@ -269,6 +307,8 @@ A canceled job will not get rescheduled. You will need to create a new job manua
 
 #### Modify jobs
 It is **not** possible to modify a scheduled job by design. You need to cancel the job and append a new one.
+
+>**Note**: This is likely to be changed with v4 which will feature persistency for jobs.
 
 ### Handling of failed jobs
 
@@ -384,7 +424,7 @@ TaskScheduler\Scheduler::addJob()/TaskScheduler\Scheduler::addJobOnce() also acc
 | `interval`  | `0`  | int | You may specify a job interval (in secconds) which is usefuly for jobs which need to be executed in a specific interval, for example cleaning a temporary directory. The default is `0` which means no interval at all, `-1` means execute the job immediatly again (But be careful with `-1`, this could lead to huge cpu usage depending what job you're executing). Configuring `3600` means the job will get executed hourly. |
 | `retry`  | `0`  | int | Specifies a retry interval if the job fails to execute. The default is `0` which means do not retry. `2` for example means 2 retries. You may set `-1` for endless retries. |
 | `retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. The default is `300` which is 5 minutes. Be careful with this option while `retry_interval` is `-1`, you may ending up with a failure loop.  |
-| `ignore_max_children`  | `false`  | bool | You may specify `true` for this option to spawn a new child process. This will ignore the configured max_children option for the queue node. The queue node will always fork a new child if job with this option is scheduled. Use this option wisely! It makes perfectly sense for jobs which make blocking calls, for example a listener which listens for local filesystem changes (inotify). A job with this enabled option should only consume as little cpu/memory as possible. |
+| `force_spawn`  | `false`  | bool | You may specify `true` for this option to spawn a new worker only for this task. Note: This option ignores the max_children value of `TaskScheduler\WorkerManager`, which means this worker always gets spawned.  It makes perfectly sense for jobs which make blocking calls, for example a listener which listens for local filesystem changes (inotify). A job with this enabled option should only consume as little cpu/memory as possible! |
 | `timeout`  | `0`  | int | Specify a timeout in secconds which will forcly terminate the job after the given time has passed. The default `0` means no timeout at all. A timeout job will get rescheduled if retry is not `0` and will marked as timed out.  |
 | `id`  | `null`  | `MongoDB\BSON\ObjectId` | Specify a job id manually.  |
 | `ignore_data`  | `false`  | bool | Only useful if set in a addJobOnce() call. If `true` the scheduler does not compare the jobs data to decide if a job needs to get rescheduled.  |
@@ -428,7 +468,7 @@ $scheduler->addJobOnce(MailJob::class, $mail->toString(), [
     TaskScheduler\Scheduler::OPTION_RETRY => 3,
 ]);
 ```
-By default `TaskScheduler\Scheduler::addJobOnce()` does compare the job class, the submitted data and the process status (either RUNNING, WAITING or POSTPONED).
+By default `TaskScheduler\Scheduler::addJobOnce()` does compare the job class, the submitted data and the process status (either PROCESSING, WAITING or POSTPONED).
 If you do not want to check the data, you may set `TaskScheduler\Scheduler::OPTION_IGNORE_DATA` to `true`. This will tell the scheduler to only reschedule the job of the given class
 if the data changed. This is quite useful if a job of the given class must only be queued once.
 
@@ -506,32 +546,45 @@ $scheduler->setOptions([
 >**Note**: It is important to choose a queue size (job_queue_size and event_queue_size) which fits into your setup.
 
 
-### Advanced queue node options
+### Advanced worker manager options
 
-You may change process management related options for queue nodes.
-Custom options and defaults can be set for jobs during initialization or if you call Queue::setOptions().
- 
+While you already know, that you need a worker factory to spawn the worker manager, you may specify advanced options for it!
+Here is our worker [factory again](#create-worker-factory), but this time we specify some more options:
+
 ```php
-$mongodb = new MongoDB\Client('mongodb://localhost:27017');
-$logger = new \A\Psr4\Compatible\Logger();
-$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
-$worker_factory = My\App\WorkerFactory();
-$queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger, null, [
-    TaskScheduler\Scheduler::OPTION_MIN_CHILDREN => 10,
-    TaskScheduler\Scheduler::OPTION_PM => 'static' 
-]);
+class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
+{
+    /**
+     * {@inheritdoc}
+     */
+    public function buildWorker(MongoDB\BSON\ObjectId $id): TaskScheduler\Worker
+    {
+        $mongodb = new MongoDB\Client('mongodb://localhost:27017');
+        $logger = new \A\Psr4\Compatible\Logger();
+        $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+
+        return new TaskScheduler\Worker($id, $scheduler, $mongodb->mydb, $logger);
+    }
+    
+    /**
+     * {@inheritdoc}
+     */
+    public function buildManager(): TaskScheduler\WorkerManager
+    {
+        $logger = new \A\Psr4\Compatible\Logger();
+        return new TaskScheduler\WorkerManager($this, $logger, [
+            TaskScheduler\WorkerManager::OPTION_MIN_CHILDREN => 10,
+            TaskScheduler\WorkerManager::OPTION_PM => 'static' 
+        ]);
+    }
+}
 ```
 
-You may also change those options afterwards:
- ```php
-$scheduler->setOptions([
-     TaskScheduler\Scheduler::OPTION_MIN_CHILDREN => 20
-]);
-```
+Worker handling is done by specifying the option `pm` while dynamically spawning workers is the default mode.
 
 | Name  | Default | Type | Description |
 | --- | --- | --- | --- |
-| `pm`  | `dynamic`  | string | You may change the way how fork handling is done. There are three modes, see bellow this table. |
+| `pm`  | `dynamic`  | string | You may change the way how fork handling is done. There are three modes: dynamic, static, ondemand. |
 | `min_children`  | `1`  | int | The minimum number of child processes. |
 | `max_children`  | `2`  | int | The maximum number of child processes. |
 
@@ -539,16 +592,18 @@ Process management modes (`pm`):
 
 * dynamic (start min_children forks at startup and dynamically create new children if required until max_children is reached)
 * static (start min_children nodes, (max_children is ignored))
-* ondemand (Do not start any children at startup but spawn new children if required until max_children is reached (min_children is ignored))
+* ondemand (Do not start any children at startup (min_children is ignored), bootstrap a worker for each job but no more than max_children. After a job is done (Or failed, canceled, timeout), the worker dies.
 
 The default is `dynamic`. Usually `dynamic` makes sense. You may need `static` in a container provisioned world whereas the number of queue nodes is determined
-from the number of outstanding jobs. For example [Kubernetes autoscaling](https://cloud.google.com/kubernetes-engine/docs/tutorials/custom-metrics-autoscaling).
+from the number of outstanding jobs. For example you may be using [Kubernetes autoscaling](https://cloud.google.com/kubernetes-engine/docs/tutorials/custom-metrics-autoscaling).
 
->**Note**: The number of actual child processes can be higher if jobs are scheduled with the option Scheduler::OPTION_IGNORE_MAX_CHILDREN.
+>**Note**: The number of actual child processes can be higher if jobs are scheduled with the option Scheduler::OPTION_FORCE_SPAWN.
 
-### Using a DIC (dependeny injection container)
+### Using a PSR-11 DIC
 Optionally one can pass a Psr\Container\ContainerInterface to the worker nodes which then get called to create job instances.
-Here is our WorkerFactory from before but this time it passes an instance of a PSR-11 container to worker nodes.
+You probably already get it, but here is the worker [factory again](#create-worker-factory). This time it passes an instance of a PSR-11 container to worker nodes.
+And if you already using a container it makes perfectly sense to request the manager from it. (Of course you may also request a worker instances from it if your container implementation supports 
+parameters at runtime (The worker id). Note: This will be an incompatible container implementation from the [PSR-11 specification](https://github.com/php-fig/fig-standards/blob/master/accepted/PSR-11-container.md).)
 
 ```php
 class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
@@ -565,18 +620,16 @@ class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
 
         return new TaskScheduler\Worker($id, $scheduler, $mongodb->mydb, $logger, $dic);
     }
+    
+    /**
+     * {@inheritdoc}
+     */
+    public function buildManager(): TaskScheduler\WorkerManager
+    {
+        $dic = new \A\Psr11\Compatible\Dic();
+        return $dic->get(TaskScheduler\WorkerManager::class);
+    }
 }
-```
-
-If a container is passed, the scheduler will request job instances through the dic.
-
-```php
-$mongodb = new MongoDB\Client('mongodb://localhost:27017');
-$logger = new \A\Psr4\Compatible\Logger();
-$dic = new \A\Psr11\Compatible\Container();
-$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
-$worker_factory = My\App\WorkerFactory();
-$queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger);
 ```
 
 ### Data Persistency
@@ -588,9 +641,19 @@ a fixed size limit by design. Meaning the newest job will overwrite the oldest j
 
 ### Signal handling
 
-Terminating queue nodes is possible of course. They even manage to reschedule running jobs. You just need to send a SIGTERM to the process. The queue node then will transmit this to all running workers and they 
+Terminating queue nodes is possible of course. They even manage to reschedule running jobs. You just need to send a SIGTERM to the process. The queue node then will transmit this the worker manager while the worker manager will send it to all running workers and they 
 will save their state and nicely exit. A worker also saves its state if the worker process directly receives a SIGTERM.
 If a SIGKILL was used to terminate the queue node (or worker) the state can not be saved and you might get zombie jobs (Jobs with the state PROCESSING but no worker will actually process those jobs).
 No good sysadmin will terminate running jobs by using SIGKILL, it is not acceptable and may only be used if you know what you are doing.
 
 You should as well avoid using never ending blocking functions in your job, php can't handle signals if you do that. 
+
+
+## Real world examples
+
+| Project  | Link | Description |
+| --- | --- | --- | --- |
+| [balloon](https://github.com/gyselroth/balloon)  | balloon is a high performance cloud server. It makes use of this library to deploy all kind of jobs (create previews, scan files, upload to elasticsearch, sending mails, converting documents, clean temporary storage, clean trash, ...). |
+| [tubee](https://github.com/gyselroth/tubee)  | tubee is data management engine and makes use of this libaray to execute asynchronous data sync jobs. |
+
+Add your project here, a PR will be most welcome.

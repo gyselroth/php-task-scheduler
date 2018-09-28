@@ -23,7 +23,8 @@
         "ext-mongodb": "*",
         "ext-pcntl": "*",
         "ext-posix": "*",
-        "mongodb/mongodb": "*"
+        "ext-sysvmsg": "*",
+        "mongodb/mongodb": "^1.4.0"
     },
     "repositories": [
          {

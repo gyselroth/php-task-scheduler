@@ -35,7 +35,7 @@ class SchedulerValidator
 
                 break;
                 case Scheduler::OPTION_IGNORE_DATA:
-                case Scheduler::OPTION_IGNORE_MAX_CHILDREN:
+                case Scheduler::OPTION_FORCE_SPAWN:
                     if (!is_bool($value)) {
                         throw new InvalidArgumentException('option '.$option.' must be a boolean');
                     }

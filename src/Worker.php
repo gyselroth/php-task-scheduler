@@ -19,8 +19,10 @@ use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidJobException;
 
-class Worker extends AbstractHandler
+class Worker
 {
+    use InjectTrait;
+
     /**
      * Scheduler.
      *
@@ -172,9 +174,14 @@ class Worker extends AbstractHandler
     /**
      * Start worker.
      */
-    public function start(): void
+    public function processAll(): void
     {
+        $this->logger->info('start job listener', [
+            'category' => get_class($this),
+        ]);
+
         $cursor = $this->jobs->getCursor([
+            'options.force_spawn' => false,
             '$or' => [
                 ['status' => JobInterface::STATUS_WAITING],
                 ['status' => JobInterface::STATUS_POSTPONED],
@@ -195,13 +202,13 @@ class Worker extends AbstractHandler
 
                     $this->jobs->create();
 
-                    $this->start();
+                    $this->processAll();
 
                     break;
                 }
 
                 $this->jobs->next($cursor, function () {
-                    $this->start();
+                    $this->processAll();
                 });
 
                 continue;
@@ -214,10 +221,32 @@ class Worker extends AbstractHandler
             ]);
 
             $this->jobs->next($cursor, function () {
-                $this->start();
+                $this->processAll();
             });
 
             $this->queueJob($job);
+        }
+    }
+
+    /**
+     * Process one.
+     */
+    public function processOne(ObjectId $id): void
+    {
+        $this->catchSignal();
+
+        $this->logger->debug('process job ['.$id.'] and exit', [
+            'category' => get_class($this),
+        ]);
+
+        try {
+            $job = $this->scheduler->getJob($id)->toArray();
+            $this->queueJob($job);
+        } catch (\Exception $e) {
+            $this->logger->error('failed process job ['.$id.']', [
+                'category' => get_class($this),
+                'exception' => $e,
+            ]);
         }
     }
 
@@ -357,7 +386,7 @@ class Worker extends AbstractHandler
             return true;
         }
 
-        $this->logger->debug('job ['.$job['_id'].'] is already collected with status ['.$status.']', [
+        $this->logger->debug('job ['.$job['_id'].'] is already collected with status ['.$job['status'].']', [
             'category' => get_class($this),
             'pm' => $this->process,
         ]);

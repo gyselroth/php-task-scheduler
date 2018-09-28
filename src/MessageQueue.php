@@ -22,15 +22,36 @@ use Psr\Log\LoggerInterface;
 
 class MessageQueue
 {
+    /**
+     * Database.
+     *
+     * @var Database
+     */
     protected $db;
+
+    /**
+     * Queue name.
+     *
+     * @var string
+     */
     protected $name;
+
+    /**
+     *  Queue size in bytes.
+     *
+     * @var int
+     */
     protected $size = 1000000;
+
+    /**
+     * Logger.
+     *
+     * @var LoggerInterface
+     */
     protected $logger;
 
     /**
      * Message queue.
-     *
-     * @var Database
      */
     public function __construct(Database $db, string $name, int $size, LoggerInterface $logger)
     {

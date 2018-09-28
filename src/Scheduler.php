@@ -31,7 +31,7 @@ class Scheduler
     public const OPTION_INTERVAL = 'interval';
     public const OPTION_RETRY = 'retry';
     public const OPTION_RETRY_INTERVAL = 'retry_interval';
-    public const OPTION_IGNORE_MAX_CHILDREN = 'ignore_max_children';
+    public const OPTION_FORCE_SPAWN = 'force_spawn';
     public const OPTION_TIMEOUT = 'timeout';
     public const OPTION_ID = 'id';
     public const OPTION_IGNORE_DATA = 'ignore_data';
@@ -322,6 +322,7 @@ class Scheduler
             ],
         ];
 
+        $requested = $options;
         $document = $this->prepareInsert($class, $data, $options);
 
         if (true !== $options[self::OPTION_IGNORE_DATA]) {
@@ -338,7 +339,7 @@ class Scheduler
                 'typeMap' => self::TYPE_MAP,
             ]);
 
-            if (array_intersect_key($document['options'], $options) !== $options || ($data !== $document['data'] && true === $options[self::OPTION_IGNORE_DATA])) {
+            if (array_intersect_key($document['options'], $requested) !== $requested || ($data !== $document['data'] && true === $options[self::OPTION_IGNORE_DATA])) {
                 $this->logger->debug('job ['.$document['_id'].'] options/data changed, reschedule new job', [
                     'category' => get_class($this),
                     'data' => $data,
@@ -425,7 +426,7 @@ class Scheduler
             self::OPTION_INTERVAL => $this->default_interval,
             self::OPTION_RETRY => $this->default_retry,
             self::OPTION_RETRY_INTERVAL => $this->default_retry_interval,
-            self::OPTION_IGNORE_MAX_CHILDREN => false,
+            self::OPTION_FORCE_SPAWN => false,
             self::OPTION_TIMEOUT => $this->default_timeout,
             self::OPTION_IGNORE_DATA => false,
         ];

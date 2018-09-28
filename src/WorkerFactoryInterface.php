@@ -16,5 +16,13 @@ use MongoDB\BSON\ObjectId;
 
 interface WorkerFactoryInterface
 {
-    public function build(ObjectId $id): Worker;
+    /**
+     * Build worker.
+     */
+    public function buildWorker(ObjectId $id): Worker;
+
+    /**
+     * Build manager.
+     */
+    public function buildManager(): WorkerManager;
 }

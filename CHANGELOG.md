@@ -1,8 +1,20 @@
+## 3.0.0-beta9
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Tue Sept 25 14:24:34 CEST 2018
+
+* [CHANGE] Implement a systemv message queue to bootstrap workers from a separate fork #6
+* [CHANGE] Since #6 is implemented, a the TaskScheduler\WorkerFactoryInterface requires a buildWorker() and a buildManager() implementation
+* [CHANGE] Removed Scheduler::OPTION_MAX_CHILDREN, replaced it with Scheduler::OPTION_FORCE_SPAWN
+* [CHANGE] A worker manager configured as ondemand will no spawn a worker for each task
+
+
 ## 3.0.0-beta8
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
-**Date**: Wed Sept 26 15:24:34 CEST 2018
+**Date**: Tue Sept 25 14:24:34 CEST 2018
 
-* [FIX] Fixed event handling in queue node
+* [FIX] fixed addJobOnce compare submited options
+* [FIX] do not spawn new worker if queue is only aware of fewer jobs than the current number of forks and OPTION_IGNORE_MAX_CHILDREN is requested
+* [FIX] added safety zombie job check after a worker exits
 
 
 ## 3.0.0-beta7
@@ -55,6 +67,7 @@
 * [FIX] Cancelling a job which is out of the queue does now work as well
 
 
+* [FEATURE] Possibility to timeout jobs
 ## 3.0.0-beta1
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Thu Aug 30 11:47:34 CEST 2018

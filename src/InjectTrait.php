@@ -12,7 +12,7 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
-abstract class AbstractHandler
+trait InjectTrait
 {
     /**
      * This method may seem useless but is actually very useful to mock the loop.

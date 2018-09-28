@@ -12,47 +12,14 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
-use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use Psr\Log\LoggerInterface;
-use TaskScheduler\Exception\InvalidArgumentException;
-use TaskScheduler\Exception\QueueRuntimeException;
+use TaskScheduler\Exception\SpawnForkException;
 
-class Queue extends AbstractHandler
+class Queue
 {
-    /**
-     * Process identifier.
-     */
-    public const MAIN_PROCESS = 'main';
-
-    /**
-     * Queue options.
-     */
-    public const OPTION_PM = 'pm';
-    public const OPTION_MAX_CHILDREN = 'max_children';
-    public const OPTION_MIN_CHILDREN = 'min_children';
-
-    /**
-     * Process handling.
-     */
-    public const PM_DYNAMIC = 'dynamic';
-    public const PM_STATIC = 'static';
-    public const PM_ONDEMAND = 'ondemand';
-
-    /**
-     * Process management.
-     *
-     * @var string
-     */
-    protected $pm = self::PM_DYNAMIC;
-
-    /**
-     * Scheduler.
-     *
-     * @var Scheduler
-     */
-    protected $scheduler;
+    use InjectTrait;
 
     /**
      * Database.
@@ -67,34 +34,6 @@ class Queue extends AbstractHandler
      * @var LoggerInterface
      */
     protected $logger;
-
-    /**
-     * Max children.
-     *
-     * @var int
-     */
-    protected $max_children = 2;
-
-    /**
-     * Min children.
-     *
-     * @var int
-     */
-    protected $min_children = 1;
-
-    /**
-     * Forks.
-     *
-     * @var array
-     */
-    protected $forks = [];
-
-    /**
-     * Worker/Job mapping.
-     *
-     * @var array
-     */
-    protected $job_map = [];
 
     /**
      * Worker factory.
@@ -118,62 +57,22 @@ class Queue extends AbstractHandler
     protected $events;
 
     /**
-     * Main process name.
+     * Worker manager pid.
      *
-     * @var string
+     * @var int
      */
-    protected $process;
+    protected $manager_pid;
 
     /**
      * Init queue.
      */
-    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, array $config = [])
+    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger)
     {
-        $this->scheduler = $scheduler;
         $this->db = $db;
         $this->logger = $logger;
-        $this->setOptions($config);
-        $this->process = self::MAIN_PROCESS;
         $this->factory = $factory;
-
         $this->jobs = new MessageQueue($db, $scheduler->getJobQueue(), $scheduler->getJobQueueSize(), $logger);
         $this->events = new MessageQueue($db, $scheduler->getEventQueue(), $scheduler->getEventQueueSize(), $logger);
-    }
-
-    /**
-     * Set options.
-     */
-    public function setOptions(array $config = []): self
-    {
-        foreach ($config as $option => $value) {
-            switch ($option) {
-                case self::OPTION_MAX_CHILDREN:
-                case self::OPTION_MIN_CHILDREN:
-                    if (!is_int($value)) {
-                        throw new InvalidArgumentException($option.' needs to be an integer');
-                    }
-
-                    $this->{$option} = $value;
-
-                break;
-                case self::OPTION_PM:
-                    if (!defined('self::PM_'.strtoupper($value))) {
-                        throw new InvalidArgumentException($value.' is not a valid process handling type (static, dynamic, ondemand)');
-                    }
-
-                    $this->{$option} = $value;
-
-                break;
-                default:
-                    throw new InvalidArgumentException('invalid option '.$option.' given');
-            }
-        }
-
-        if ($this->min_children > $this->max_children) {
-            throw new InvalidArgumentException('option min_children must not be greater than option max_children');
-        }
-
-        return $this;
     }
 
     /**
@@ -182,13 +81,14 @@ class Queue extends AbstractHandler
     public function process(): void
     {
         try {
-            $this->spawnInitialWorkers();
+            $this->queue = msg_get_queue(ftok(__FILE__, 't'));
+            $this->catchSignal();
+            $this->initWorkerManager();
             $this->main();
         } catch (\Exception $e) {
             $this->logger->error('main() throw an exception, cleanup and exit', [
                 'class' => get_class($this),
                 'exception' => $e,
-                'pm' => $this->process,
             ]);
 
             $this->cleanup(SIGTERM);
@@ -196,36 +96,16 @@ class Queue extends AbstractHandler
     }
 
     /**
-     * Wait for child and terminate.
+     * Wait for worker manager.
      */
-    public function exitChild(int $sig, array $pid): self
+    public function exitWorkerManager(int $sig, array $pid): void
     {
-        $this->logger->debug('worker ['.$pid['pid'].'] exit with ['.$sig.']', [
+        $this->logger->debug('fork manager ['.$pid['pid'].'] exit with ['.$sig.']', [
             'category' => get_class($this),
-            'pm' => $this->process,
         ]);
 
         pcntl_waitpid($pid['pid'], $status, WNOHANG | WUNTRACED);
-
-        foreach ($this->forks as $id => $pid) {
-            if ($pid === $pid['pi']) {
-                unset($this->forks[$id]);
-
-                if (isset($this->job_map[$id])) {
-                    unset($this->job_map[$id]);
-                }
-            }
-        }
-
-        return $this;
-    }
-
-    /**
-     * Count children.
-     */
-    public function count(): int
-    {
-        return count($this->forks);
+        $this->cleanup(SIGTERM);
     }
 
     /**
@@ -233,76 +113,34 @@ class Queue extends AbstractHandler
      */
     public function cleanup(int $sig): void
     {
-        $this->logger->debug('received signal ['.$sig.']', [
-            'category' => get_class($this),
-            'pm' => $this->process,
-        ]);
-
-        foreach ($this->getForks() as $id => $pid) {
-            $this->logger->debug('forward signal ['.$sig.'] to worker ['.$id.'] running with pid ['.$pid.']', [
+        if (null !== $this->manager_pid) {
+            $this->logger->debug('received exit signal ['.$sig.'], forward signal to the fork manager ['.$sig.']', [
                 'category' => get_class($this),
-                'pm' => $this->process,
             ]);
 
-            posix_kill($pid, $sig);
+            posix_kill($this->manager_pid, $sig);
         }
 
         $this->exit();
     }
 
     /**
-     * Start initial workers.
+     * Fork a worker manager.
      */
-    protected function spawnInitialWorkers()
+    protected function initWorkerManager()
     {
-        $this->logger->debug('spawn initial ['.$this->min_children.'] workers', [
-            'category' => get_class($this),
-            'pm' => $this->process,
-        ]);
-
-        if (self::PM_DYNAMIC === $this->pm || self::PM_STATIC === $this->pm) {
-            for ($i = $this->count(); $i < $this->min_children; ++$i) {
-                $this->spawnWorker();
-            }
-        }
-    }
-
-    /**
-     * Start worker.
-     *
-     * @see https://github.com/mongodb/mongo-php-driver/issues/828
-     * @see https://github.com/mongodb/mongo-php-driver/issues/174
-     */
-    protected function spawnWorker()
-    {
-        $id = new ObjectId();
         $pid = pcntl_fork();
+        $this->manager_pid = $pid;
 
         if (-1 === $pid) {
-            throw new QueueRuntimeException('failed to spawn new worker');
+            throw new SpawnForkException('failed to spawn fork manager');
         }
-
-        $this->forks[(string) $id] = $pid;
 
         if (!$pid) {
-            $this->factory->build($id)->start();
+            $manager = $this->factory->buildManager();
+            $manager->process();
             exit();
         }
-
-        $this->logger->debug('spawn worker ['.$id.'] with pid ['.$pid.']', [
-            'category' => get_class($this),
-            'pm' => $this->process,
-        ]);
-
-        return $pid;
-    }
-
-    /**
-     * Get forks (array of pid's).
-     */
-    protected function getForks(): array
-    {
-        return $this->forks;
     }
 
     /**
@@ -310,6 +148,10 @@ class Queue extends AbstractHandler
      */
     protected function main(): void
     {
+        $this->logger->info('start job listener', [
+            'category' => get_class($this),
+        ]);
+
         $cursor_jobs = $this->jobs->getCursor([
             '$or' => [
                 ['status' => JobInterface::STATUS_WAITING],
@@ -319,6 +161,7 @@ class Queue extends AbstractHandler
 
         $cursor_events = $this->events->getCursor([
             'timestamp' => ['$gte' => new UTCDateTime()],
+            'job' => ['$exists' => true],
             'status' => ['$gt' => JobInterface::STATUS_POSTPONED],
         ]);
 
@@ -329,12 +172,12 @@ class Queue extends AbstractHandler
             $this->events->next($cursor_events, function () {
                 $this->main();
             });
+            $cursor_events->next();
 
             if (null === $event) {
                 if ($cursor_events->getInnerIterator()->isDead()) {
                     $this->logger->error('event queue cursor is dead, is it a capped collection?', [
                         'category' => get_class($this),
-                        'pm' => $this->process,
                     ]);
 
                     $this->events->create();
@@ -351,11 +194,9 @@ class Queue extends AbstractHandler
                 if ($cursor_jobs->getInnerIterator()->isDead()) {
                     $this->logger->error('job queue cursor is dead, is it a capped collection?', [
                         'category' => get_class($this),
-                        'pm' => $this->process,
                     ]);
 
                     $this->jobs->create();
-
                     $this->main();
 
                     break;
@@ -369,11 +210,12 @@ class Queue extends AbstractHandler
             }
 
             $job = $cursor_jobs->current();
+
             $this->jobs->next($cursor_jobs, function () {
                 $this->main();
             });
 
-            $this->manageChildren($job);
+            $this->handleJob($job);
         }
     }
 
@@ -382,84 +224,27 @@ class Queue extends AbstractHandler
      */
     protected function handleEvent(array $event): self
     {
-        $this->logger->debug('handle event ['.$event['status'].'] for job ['.$event['job'].']', [
+        $this->logger->debug('received event ['.$event['status'].'] for job ['.$event['job'].'], write into systemv queue', [
             'category' => get_class($this),
         ]);
 
-        switch ($event['status']) {
-            case JobInterface::STATUS_PROCESSING:
-                $this->job_map[(string) $event['worker']] = $event['job'];
+        msg_send($this->queue, WorkerManager::TYPE_EVENT, $event);
 
-                return $this;
-            case JobInterface::STATUS_DONE:
-            case JobInterface::STATUS_FAILED:
-            case JobInterface::STATUS_TIMEOUT:
-                $worker = array_search((string) $event['job'], $this->job_map, true);
-
-                if (false === $worker) {
-                    return $this;
-                }
-
-                unset($this->job_map[$worker]);
-
-                return $this;
-
-            break;
-            case JobInterface::STATUS_CANCELED:
-                $worker = array_search((string) $event['job'], $this->job_map, true);
-
-                if (false === $worker) {
-                    return $this;
-                }
-
-                $this->logger->debug('received cancel event for job ['.$event['job'].'] running on worker ['.$worker.']', [
-                    'category' => get_class($this),
-                ]);
-
-                if (isset($this->forks[(string) $worker])) {
-                    $this->logger->debug('found running worker ['.$worker.'] on this queue node, terminate it now', [
-                        'category' => get_class($this),
-                    ]);
-
-                    unset($this->job_map[(string) $event['job']]);
-                    posix_kill($this->forks[(string) $worker], SIGKILL);
-                }
-
-                return $this;
-            default:
-                return $this;
-        }
+        return $this;
     }
 
     /**
-     * Manage children.
+     * Handle job.
      */
-    protected function manageChildren(array $job): self
+    protected function handleJob(array $job): self
     {
-        if ($this->count() < $this->max_children && self::PM_STATIC !== $this->pm) {
-            $this->logger->debug('max_children ['.$this->max_children.'] workers not reached ['.$this->count().'], spawn new worker', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
-
-            $this->spawnWorker();
-
-            return $this;
-        }
-        if (true === $job['options'][Scheduler::OPTION_IGNORE_MAX_CHILDREN]) {
-            $this->logger->debug('job ['.$job['_id'].'] deployed with ignore_max_children, spawn new worker', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
-
-            $this->spawnWorker();
-
-            return $this;
-        }
-
-        $this->logger->debug('max children ['.$this->max_children.'] reached for job ['.$job['_id'].'], do not spawn new worker', [
+        $this->logger->debug('received job ['.$job['_id'].'], write in systemv message queue', [
             'category' => get_class($this),
-            'pm' => $this->process,
+        ]);
+
+        msg_send($this->queue, WorkerManager::TYPE_JOB, [
+            '_id' => $job['_id'],
+            'options' => $job['options'],
         ]);
 
         return $this;
@@ -473,7 +258,7 @@ class Queue extends AbstractHandler
         pcntl_async_signals(true);
         pcntl_signal(SIGTERM, [$this, 'cleanup']);
         pcntl_signal(SIGINT, [$this, 'cleanup']);
-        pcntl_signal(SIGCHLD, [$this, 'exitChild']);
+        pcntl_signal(SIGCHLD, [$this, 'exitWorkerManager']);
 
         return $this;
     }
