@@ -200,6 +200,21 @@ class SchedulerTest extends TestCase
         $this->assertSame(1, count(iterator_to_array($jobs)));
     }
 
+    public function testAddJobOnlyOnceNotRescheduleIfOptionsChangeOnlyCompareSubmited()
+    {
+        $data = uniqid();
+        $first = $this->scheduler->addJobOnce('test', $data, [
+            Scheduler::OPTION_INTERVAL => 1,
+            Scheduler::OPTION_AT => time() + 3600,
+        ]);
+
+        $seccond = $this->scheduler->addJobOnce('test', $data, [
+            Scheduler::OPTION_INTERVAL => 1,
+        ]);
+
+        $this->assertEquals($first->getId(), $seccond->getId());
+    }
+
     public function testAddOnceDifferentData()
     {
         $first = $this->scheduler->addJobOnce('test', 'foo');

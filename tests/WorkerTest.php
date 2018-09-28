@@ -66,7 +66,7 @@ class WorkerTest extends TestCase
 
     public function testStartWorkerNoJob()
     {
-        $this->worker->start();
+        $this->worker->processAll();
     }
 
     public function testStartWorkerOneSuccessJob()
@@ -74,7 +74,7 @@ class WorkerTest extends TestCase
         $start = new UTCDateTime();
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
-        $this->worker->start();
+        $this->worker->processOne($job->getId());
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
         $this->assertTrue($job->toArray()['ended'] >= $start);
@@ -85,7 +85,7 @@ class WorkerTest extends TestCase
         $start = new UTCDateTime();
         $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar']);
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
-        $this->worker->start();
+        $this->worker->processOne($job->getId());
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
         $this->assertTrue($job->toArray()['ended'] >= $start);
@@ -103,7 +103,7 @@ class WorkerTest extends TestCase
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
-        $this->worker->start();
+        $this->worker->processOne($job->getId());
         $job->wait();
         $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
     }
@@ -113,7 +113,7 @@ class WorkerTest extends TestCase
         $this->expectException(\Exception::class);
         $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar']);
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
-        $this->worker->start();
+        $this->worker->processOne($job->getId());
         $job->wait();
         $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
     }
@@ -124,7 +124,7 @@ class WorkerTest extends TestCase
             Scheduler::OPTION_AT => time() + 1,
         ]);
 
-        $this->worker->start();
+        $this->worker->processOne($job->getId());
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_POSTPONED, $job->getStatus());
     }
@@ -135,12 +135,12 @@ class WorkerTest extends TestCase
             Scheduler::OPTION_AT => time() + 1,
         ]);
 
-        $this->worker->start();
+        $this->worker->processAll();
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_POSTPONED, $job->getStatus());
         sleep(1);
         $this->called = 0;
-        $this->worker->start();
+        $this->worker->processAll();
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
     }
@@ -151,13 +151,13 @@ class WorkerTest extends TestCase
             Scheduler::OPTION_AT => time() + 1,
         ]);
 
-        $this->worker->start();
+        $this->worker->processAll();
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_POSTPONED, $job->getStatus());
         sleep(1);
         $this->mongodb->selectCollection('taskscheduler.jobs')->deleteMany([]);
         $this->called = 0;
-        $this->worker->start();
+        $this->worker->processAll();
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
     }
@@ -168,7 +168,7 @@ class WorkerTest extends TestCase
             Scheduler::OPTION_AT => time() - 1,
         ]);
 
-        $this->worker->start();
+        $this->worker->processOne($job->getId());
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
     }
@@ -179,7 +179,7 @@ class WorkerTest extends TestCase
             Scheduler::OPTION_AT => time() + 1,
         ]);
 
-        $this->worker->start();
+        $this->worker->processOne($job->getId());
         $job = $this->scheduler->getJob($job->getId());
         $this->worker->timeout();
         $job = $this->scheduler->getJob($job->getId());
@@ -192,7 +192,8 @@ class WorkerTest extends TestCase
             Scheduler::OPTION_AT => time() + 1,
         ]);
 
-        $this->worker->start();
+        $this->worker->processAll();
+        $this->worker->processAll();
         $this->mongodb->{'taskscheduler.jobs'}->deleteOne(['_id' => $job->getId()]);
         $this->worker->cleanup();
         $new = $this->scheduler->getJob($job->getId());
@@ -279,7 +280,7 @@ class WorkerTest extends TestCase
         ]);
 
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
-        $this->worker->start();
+        $this->worker->processAll();
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
@@ -296,15 +297,15 @@ class WorkerTest extends TestCase
         ]);
 
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
-        $this->worker->start();
+        $this->worker->processAll();
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertSame(1, $retry_job->getOptions()['retry']);
         $this->called = 0;
-        $this->worker->start();
+        $this->worker->processAll();
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertSame(0, $retry_job->getOptions()['retry']);
         $this->called = 0;
-        $this->worker->start();
+        $this->worker->processAll();
         $this->assertCount(0, iterator_to_array($this->scheduler->getJobs()));
     }
 
@@ -316,15 +317,15 @@ class WorkerTest extends TestCase
         ]);
 
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
-        $this->worker->start();
+        $this->worker->processAll();
         $new_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertNotSame($job->getId(), $new_job->getId());
         $this->called = 0;
-        $this->worker->start();
+        $this->worker->processAll();
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertNotSame($job->getId(), $new_job->getId());
         $this->called = 0;
-        $this->worker->start();
+        $this->worker->processAll();
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertNotSame($job->getId(), $new_job->getId());
     }
@@ -337,7 +338,7 @@ class WorkerTest extends TestCase
         ]);
 
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
-        $this->worker->start();
+        $this->worker->processAll();
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_FAILED, $job->getStatus());
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
@@ -351,7 +352,7 @@ class WorkerTest extends TestCase
         ]);
 
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
-        $this->worker->start();
+        $this->worker->processAll();
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
         $interval_job = iterator_to_array($this->scheduler->getJobs())[0];
@@ -367,15 +368,15 @@ class WorkerTest extends TestCase
         ]);
 
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
-        $this->worker->start();
+        $this->worker->processAll();
         $new_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertNotSame($job->getId(), $new_job->getId());
         $this->called = 0;
-        $this->worker->start();
+        $this->worker->processAll();
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertNotSame($job->getId(), $new_job->getId());
         $this->called = 0;
-        $this->worker->start();
+        $this->worker->processAll();
         $retry_job = iterator_to_array($this->scheduler->getJobs())[0];
         $this->assertNotSame($job->getId(), $new_job->getId());
     }
@@ -407,7 +408,7 @@ class WorkerTest extends TestCase
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
         $worker = $this->getWorker();
-        $worker->start();
+        $worker->processAll();
     }
 
     public function testSignalHandlerAttached()
