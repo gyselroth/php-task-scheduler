@@ -18,10 +18,15 @@ By default v3 will create new queues (`taskscheudler.jobs` and `taskscheduler.ev
 has no job left before upgrade. (Those will not get upgraded automatically).
 You may change the new queue names in the scheduler options.
 
-### pcntl dependncy
+### pcntl dependency
 
-v3 requires the php pcntl dependency to handle forks. PHP must be compiled via (` --enable-pcntl`) which should be the case in most distributed php packages. 
-If your app runs on docker, you may easly add `docker-php-ext-install pcntl` to your php Dockerfile.
+v3 requires the php pcntl dependency to handle forks. PHP must be compiled with ` --enable-pcntl` which should be the case in most distributed php packages. 
+If your app runs on docker, you may easly add `docker-php-ext-install pcntl && docker-php-ext-enable pcntl` to your Dockerfile.
+
+### sysvmsg dependency
+
+v3 requires a systemv message queue besides the mongodb queue to communicate with forks. PHP must be compiled with `--enable-sysvmsg`.
+If you build your app on docker, you may easly add `docker-php-ext-install sysvmsg && docker-php-ext-enable sysvmsg` to Dockerfile.
 
 ### Run once (cron)
 
