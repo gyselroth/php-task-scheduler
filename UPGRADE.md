@@ -20,12 +20,12 @@ You may change the new queue names in the scheduler options.
 
 ### pcntl dependency
 
-v3 requires the php pcntl dependency to handle forks. PHP must be compiled with ` --enable-pcntl` which should be the case in most distributed php packages. 
+v3 requires the php pcntl dependency to handle forks. PHP must be compiled with ` --enable-pcntl` which should be the case for most distributed php packages. 
 If your app runs on docker, you may easly add `docker-php-ext-install pcntl && docker-php-ext-enable pcntl` to your Dockerfile.
 
 ### sysvmsg dependency
 
-v3 requires a systemv message queue besides the mongodb queue to communicate with forks. PHP must be compiled with `--enable-sysvmsg`.
+v3 requires a systemv message queue besides the mongodb queue to communicate with forks. PHP must be compiled with `--enable-sysvmsg` which should be the case for most distributed php packages.
 If you build your app on docker, you may easly add `docker-php-ext-install sysvmsg && docker-php-ext-enable sysvmsg` to Dockerfile.
 
 ### Run once (cron)
