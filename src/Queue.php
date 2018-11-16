@@ -168,13 +168,7 @@ class Queue
         $this->catchSignal();
 
         while ($this->loop()) {
-            $event = $cursor_events->current();
-            $this->events->next($cursor_events, function () {
-                $this->main();
-            });
-            $cursor_events->next();
-
-            if (null === $event) {
+            if (null === $cursor_events->current()) {
                 if ($cursor_events->getInnerIterator()->isDead()) {
                     $this->logger->error('event queue cursor is dead, is it a capped collection?', [
                         'category' => get_class($this),
@@ -186,7 +180,18 @@ class Queue
 
                     break;
                 }
-            } else {
+
+                $this->events->next($cursor_events, function () {
+                    $this->main();
+                });
+            }
+
+            $event = $cursor_events->current();
+            $this->events->next($cursor_events, function () {
+                $this->main();
+            });
+
+            if($event !== null) {
                 $this->handleEvent($event);
             }
 

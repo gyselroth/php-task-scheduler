@@ -26,6 +26,16 @@ interface JobInterface
     public const STATUS_FAILED = 4;
     public const STATUS_CANCELED = 5;
     public const STATUS_TIMEOUT = 6;
+    public const STATUS_MAP = [
+        self::STATUS_WAITING => 'waiting',
+        self::STATUS_POSTPONED => 'postponed',
+        self::STATUS_PROCESSING => 'processing',
+        self::STATUS_DONE => 'done',
+        self::STATUS_FAILED => 'failed',
+        self::STATUS_CANCELED => 'canceled',
+        self::STATUS_TIMEOUT => 'timeout',
+    ];
+
 
     /**
      * Get job data.
