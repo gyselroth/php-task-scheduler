@@ -1,4 +1,4 @@
-# Task Scheduler 
+# Asynchronous process management for PHP
 
 [![Build Status](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler.svg?branch=master)](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler)
 [![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/gyselroth/mongodb-php-task-scheduler/badges/quality-score.png?b=master)](https://scrutinizer-ci.com/g/gyselroth/mongodb-php-task-scheduler/?branch=master)
@@ -7,53 +7,82 @@
 [![GitHub release](https://img.shields.io/github/release/gyselroth/mongodb-php-task-scheduler.svg)](https://github.com/gyselroth/mongodb-php-task-scheduler/releases)
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/gyselroth/mongodb-php-task-scheduler/master/LICENSE)
 
-## Description
-Asynchronous task scheduler for PHP based on MongoDB. Execute asynchronous tasks such as sending mail, syncing stuff, generate documents and much more easily.
-You can implement a daemon which executes jobs and listens in real time for newly added jobs.
-This library has also in-built support for clustered systems. You can start up multiple worker nodes and they will split the available jobs with the principal first comes first serves. It is also possible to schedule jobs at a certain time or with an endless interval as well as rescheduling if a job fails.
+Asynchronous task scheduler for PHP using MongoDB as message queue. Execute asynchronous tasks the easy way.
+This library has built-in support for clustered systems and multi core cpu. You can start up multiple worker nodes and they will load balance the available jobs with the principal first comes first serves. Each node will also spawn a (dynamically) configurable number of child processes to use all available resources. Moreover it is possible to schedule jobs at certain times, endless intervals as well as rescheduling if jobs fail.
+This brings a real world implementation for asynchronous process management to PHP. You are also able to sync child tasks and much more nice stuff.
 
 ## Features
 
-* Schedule tasks at specific times
+* Asynchronous tasks
 * Cluster support
-* Load balancing & Failover
+* Multi core support
+* Load balancing
+* Failover
 * Scalable
-* Easy deployable on kubernets and other container orchestration platforms
+* Sync tasks between each other
+* Abort running tasks
+* Timeout jobs
 * Retry and intervals
-* Job management
-* Easy handling of asynchronous tasks
+* Schedule tasks at specific times
+* Signal management
+
+## v3
+
+This is the documentation for the current major version v3. You may check the [upgrade guide](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/master/UPGRADE.md) if you want to upgrade from v2/v1.
+The documentation for v2 is available [here](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/2.x/README.md). 
 
 # Table of Contents
-  * [Description](#description)
-  * [Features](#features)
-  * [Why?](#why)
-  * [Requirements](#requirements)
-  * [Download](#download)
-  * [Changelog](#changelog)
-  * [Contribute](#contribute)
-  * [Documentation](#documentation)
+* [Features](#features)
+* [Why?](#why)
+* [How does it work (The short way please)?](#how-does-it-work-the-short-way-please)
+* [Requirements](#requirements)
+* [Download](#download)
+* [Changelog](#changelog)
+* [Contribute](#contribute)
+* [Terms](#terms)
+* [Documentation](#documentation)
     * [Create job](#create-job)
     * [Initialize scheduler](#initialize-scheduler)
-    * [Create job queue](#create-job-queue)
-    * [Create a job (mail example)](#Create-a-job-mail-example)
+    * [Spool job](#spool-job)
     * [Execute jobs](#execute-jobs)
-    * [Create daemon](#create-daemon)
-    * [Alternative way via cron](#alternative-way-via-cron)
-    * [Advanced job options](#advanced-job-options)
-    * [Add job only once](#add-job-only-once)
-    * [Advanced default/initialization options](#advanced-defaultinitialization-options)
-    * [Using a DIC (dependeny injection container)](#using-a-dic-dependeny-injection-container)
+        * [Create worker factory](#create-worker-factory)
+        * [Create queue node](#create-queue-node)
     * [Manage jobs](#manage-jobs)
-    * [Get jobs](#get-jobs)
-    * [Cancel job](#cancel-job)
-    * [Modify job](#modify-job)
+        * [Get jobs](#get-jobs)
+        * [Cancel job](#cancel-job)
+        * [Modify jobs](#modify-jobs)
+    * [Handling of failed jobs](#handling-of-failed-jobs)
+    * [Asynchronous programming](#asynchronous-programming)
+    * [Listen for Events](#listen-for-events)
+    * [Advanced job options](#advanced-job-options)
+    * [Add job if not exists](#add-job-if-not-exists)
+    * [Advanced worker manager options](#advanced-worker-manager-options)
+    * [Advanced queue node options](#advanced-queue-node-options)
+    * [Using a PSR-11 DIC](#using-a-psr-11-dic)
+    * [Data Persistency](#data-persistency)
+    * [Signal handling](#signal-handling)
+* [Real world examples](#real-world-examples)
 
 ## Why?
-PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronously. Sure there is pthreads (Which is also planned to be implemented) but it is only usable in cli mode.
-This library helps you implementing jobs which are later (or as soon as there are free slots) executed by another process.
+PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronous. Sure there is pthreads and pcntl but those are only usable in cli mode (or should only be used there). Using this library you are able to write your code async, schedule tasks and let them execute behind the scenes. 
+
+## How does it work (The short way please)?
+A job is scheduled via a task scheduler and gets written into a central message queue (MongoDB). All Queue nodes will get notified in (soft) realtime that a new job is available.
+The queue node will forward the job via a internal systemv message queue to the worker manager. The worker manager decides if a new worker needs to be spawned.
+At last, one worker will execute the task according the principle first come first serves. If no free slots are available the job will wait in the queue and get executed as soon as there is a free slot.
+A job may be rescheduled if it failed. There are lots of more features available, continue reading. 
 
 ## Requirements
-The library is only >= PHP7.1 compatible and requires a MongoDB server >= 2.2.
+* Posix system (Basically every linux)
+* MongoDB server >= 2.2
+* PHP >= 7.1
+* PHP pcntl extension
+* PHP posix extension
+* PHP mongodb extension
+* PHP sysvmsg extension
+
+>**Note**: This library will only work on \*nix system. There is no windows support and there will most likely never be.
+
 
 ## Download
 The package is available at [packagist](https://packagist.org/packages/gyselroth/mongodb-php-task-scheduler)
@@ -69,21 +98,44 @@ A changelog is available [here](https://github.com/gyselroth/mongodb-php-task-sc
 ## Contribute
 We are glad that you would like to contribute to this project. Please follow the given [terms](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/master/CONTRIBUTING.md).
 
+## Terms
+You may encounter the follwing terms in this readme or elsewhere:
+
+| Term | Class | Description |
+| ------------------- | ------------------ | --- |
+| Scheduler | `TaskScheduler\Scheduler` | The Scheduler is used to add jobs, query jobs, delete jobs and listen for events, it is the only component besides (different) jobs which is actually used in your main application.  |
+| Job | `TaskScheduler\JobInterface`  | A job implementation is the actual task you want to execute. |
+| Process | `TaskScheduler\Process` | You will receive a process after adding jobs, query jobs and so on, a process is basically an upperset of your job implementation. |
+| Queue Node | `TaskScheduler\Queue` | Queue nodes handle the available jobs and forward them to the worker manager. |
+| Worker Manager | `TaskScheduler\WorkerManager` | The worker managers job is to spawn workers which actually handle a job. Note: A worker manager itself is a fork from the queue node process.
+| Worker | `TaskScheduler\Worker` | Workers are the ones which process a job from the queue and actually do your submitted work. |
+| Worker Factory | `TaskScheduler\WorkerFactoryInterface` | A worker factory needs to be implemented by you, it will spawn the worker manager and new workers. |
+| Cluster | - | A cluster is a set of multiple queue nodes. A cluster does not need to be configured in any way, you may start as many queue nodes as you want. |
+
+## Install
+
+If your app gets built using a docker container you must use at least the following build options:
+
+```Dockerfile
+FROM php:7.2
+RUN docker-php-ext-install pcntl sysvmsg
+RUN pecl install mongodb && docker-php-ext-enable mongodb pcntl sysvmsg
+```
+
 ## Documentation
 
-For a better understanding how this library works, we're going to implement a mail job. Of course you can implement any kind of jobs, multiple jobs, 
-multiple workers, whatever you like!
+For a better understanding how this library works, we're going to implement a mail job. Of course you can implement any kind of job.
 
 ### Create job
 
 It is quite easy to create as task, you just need to implement TaskScheduler\JobInterface. 
 In this example we're going to implement a job called MailJob which sends mail via zend-mail.
 
-**Note**: You can use TaskScheduler\AbstractJob to implement the required default methods by TaskScheduler\JobInterface.
+>**Note**: You can use TaskScheduler\AbstractJob to implement the required default methods by TaskScheduler\JobInterface.
 The only thing then you need to implement is start() which does the actual job (sending mail).
 
 ```php
-class MailJob extends AbstractJob
+class MailJob extends TaskScheduler\AbstractJob
 {
     /**
      * {@inheritdoc}
@@ -109,9 +161,9 @@ $logger = new \A\Psr4\Compatible\Logger();
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
 ```
 
-### Create a job (mail example)
+### Spool job
 
-Now let us create a mail and add it to our task scheduler which we have initialized right before:
+Now let us create a mail and deploy it to the task scheduler which we have initialized right before:
 
 ```php
 $mail = new Message();
@@ -127,24 +179,75 @@ This is the whole magic, our scheduler now got its first job, awesome!
 
 ### Execute jobs
 
-But now we need to execute those queued jobs. This can usualy be achieved in two ways, either add a cron job or the **recommended** way as 
-a unix daemon.
-The big advantage of this library comes into play if you execute job workers as daemons (The possibility to execute via cron is only to support legacy applications).
-The workers listen in real time for new jobs and they will load balance those jobs. 
-The only thing required to achieve that is to spin up multiple daemons (Of course you can also start just one).
+But now we need to execute those queued jobs.  
+That's where the queue nodes come into play.
+Those nodes listen in (soft) realtime for new jobs and will load balance those jobs. 
 
-To handle the job queue and execute task you need `TaskScheduler::Queue`.
+#### Create worker factory
 
-#### Create daemon
+You will need to create your own worker node factory in your app namespace which gets called to spawn new child processes.
+This factory gets called during a new fork is spawned. This means if it gets called, you are in a new process and you will need to bootstrap your application 
+from scratch (Or just the things you need for a worker). 
 
-A unix daemaeon, way too complicated. No actually not, it is quite easy. Let us create a **separate** script beside our main app.
-Again we first need to create an instance of our task scheduler:
+>**Note**: Both a worker manager and a worker itself are spawned in own forks from the queue node process.
+
+```
+Queue node (TaskScheduler\Queue)
+|
+|-- Worker Manager (TaskScheduler\WorkerManager)
+    |
+    |-- Worker (TaskScheduler\Worker)
+    |-- Worker (TaskScheduler\Worker)
+    |-- Worker (TaskScheduler\Worker)
+    |-- ...
+```
+
+For both a worker manager and a worker a new fork means you will need to bootstrap the class from scratch.
+
+>**Note**: Theoretically you can reuse existing connections, objects and so on by setting those via the constructor of your worker factory since the factory gets initialized in main(). But this will likely lead to errors and strange app behaviours and is not supported.
+
+For better understanding: if there is a configuration file where you have stored your configs like a MongoDB uri, in the factory you will need to parse this configuration again and create a new mongodb instance.
+Or you may be using a PSR-11 container, the container needs to be created from scratch in the factory (A new dependency tree). You may pass an instance of a dic (compatible to Psr\Container\ContainerInterface) as fifth argument to TaskScheduler\Worker (or advanced worker manager options as third argument for a TaskScheduler\WorkerManager ([Advanced worker manager options](#advaced)). See more at [Using a DIC](#using-a-psr-11-dic-dependeny-injection-container)).
+
+```php
+class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
+{
+    /**
+     * {@inheritdoc}
+     */
+    public function buildWorker(MongoDB\BSON\ObjectId $id): TaskScheduler\Worker
+    {
+        $mongodb = new MongoDB\Client('mongodb://localhost:27017');
+        $logger = new \A\Psr4\Compatible\Logger();
+        $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+
+        return new TaskScheduler\Worker($id, $scheduler, $mongodb->mydb, $logger);
+    }
+    
+    /**
+     * {@inheritdoc}
+     */
+    public function buildManager(): TaskScheduler\WorkerManager
+    {
+        $logger = new \A\Psr4\Compatible\Logger();
+        return new TaskScheduler\WorkerManager($this, $logger);
+    }
+}
+```
+
+#### Create queue node
+
+Let us write a new queue node. The queue node must be started as a separate process!
+You should provide an easy way to start such queue nodes, there are multiple ways to achieve this. The easiest way
+is to just create a single php script which can be started via cli.
+
 
 ```php
 $mongodb = new MongoDB\Client('mongodb://localhost:27017');
 $logger = new \A\Psr4\Compatible\Logger();
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
-$queue = new TaskScheduler\Queue($scheduler, $mongodb, $logger);
+$worker_factory = My\App\WorkerFactory(); #An instance of our previously created worker factory
+$queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger);
 ```
 
 And then start the magic:
@@ -153,54 +256,198 @@ And then start the magic:
 $queue->process();
 ```
 
-Let us call it daemon.php and start it:
-```bash
-php daemon.php &
-```
-
-Our daemon now executes the scheduled task and listens for new jobs in real time.
+>**Note**: TaskScheduler\Queue::process() is a blocking call.
 
 
-#### Alternative way via cron
+Our mail gets sent as soon as a queue node is running and started some workers. 
 
-It is recommended to execute tasks via a daemon but alternatively you can execute tasks via cron as well:
+Usually you want those nodes running at all times! They act like invisible execution nodes behind your app.
+
+### Manage jobs
+
+#### Get jobs
+You may want to retrieve all scheduled jobs:
 
 ```php
-$mongodb = new MongoDB\Client('mongodb://localhost:27017');
-$logger = new \A\Psr4\Compatible\Logger();
-$queue = new TaskScheduler\Queue($scheduler, $mongodb, $logger);
-$queue->processOnce();
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$scheduler->getJobs();
 ```
 
-Call it cron.php and add it to cron:
-```bash
-echo "* * * * * /usr/bin/php /path/to/cron.php" >> /var/spool/cron/crontabs/$USER
+By default you will receive all jobs with the status:
+* WAITING
+* PROCESSING
+* POSTPONED
+
+You may pass an optional query to query specific jobs.
+
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$jobs = $scheduler->getJobs([
+    'status' => TaskScheduler\JobInterface::STATUS_DONE,
+    '$or' => [
+        ['class' => 'MyApp\\MyTask1'],
+        ['class' => 'MyApp\\MyTask2'],
+    ]
+]);
+
+foreach($jobs as $job) {
+    echo $job->getId()." done\n";
+}
 ```
+
+#### Cancel job
+It is possible to cancel jobs waiting in the queue as well as kill jobs which are actually running.
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$scheduler->cancelJob(MongoDB\BSON\ObjectId $job_id);
+```
+If you cancel a job with the status PROCESSING, the job gets killed by force and my corrupt data. You have been warnend.
+(This is similar as the job ends with status TIMEOUT). The only difference is that a timeout job gets rescheduled if it has retry > 0 or has a configured interval.
+A canceled job will not get rescheduled. You will need to create a new job manually for that.
+
+#### Modify jobs
+It is **not** possible to modify a scheduled job by design. You need to cancel the job and append a new one.
+
+>**Note**: This is likely to be changed with v4 which will feature persistency for jobs.
+
+#### Flush queue
+
+While it is not possible to modify/remove jobs it is possible to flush the entire queue.
+>**Note**: This is not meant to be called regurarly. There may be a case where you need to flush all jobs because of an upgrade.
+Running queue nodes will detect this and will listen for newly spooled jobs.
+
+
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$scheduler->flush();
+```
+
+### Handling of failed jobs
+
+A job is acknowledged as failed if the job throws an exception of any kind. 
+If we have a look at our mail job again, but this time it will throw an exception:
+
+```php
+class MailJob extends TaskScheduler\AbstractJob
+{
+    /**
+     * {@inheritdoc}
+     */
+    public function start(): bool
+    {
+        $transport = new Zend\Mail\Transport\Sendmail();
+        $mail = Message::fromString($this->data);
+        $this->transport->send($mail);
+        throw new \Exception('i am an exception');
+        return true;
+    }
+}
+```
+
+This will lead to a FAILED job as soon as this job gets executed.
+
+>**Note**: It does not matter if you return `true` or `false`, only an uncaught exception will result to a FAILED job, however you should always return `true`.
+
+The scheduler has an integreated handling of failed jobs. You may specify to automatically reschedule a job if it failed. 
+The following will reschedule the job up to 5 times (If it ended with status FAILED) with an interval of 30s.
+
+```php
+$scheduler->addJob(MailJob::class, $mail->toString(), [
+    TaskScheduler\Scheduler::OPTION_RETRY => 5,
+    TaskScheduler\Scheduler::OPTION_RETRY_INTERVAL => 30,
+]);
+```
+
+This will queue our mail to be executed in one hour from now and it will re-schedule the job up to three times if it fails with an interval of one minute.
+
+### Asynchronous programming
+
+Have a look at this example:
+
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$scheduler->addJob(MyTask::class, 'foobar')
+  ->wait();
+```
+
+This will force main() (Your process) to wait until the task `MyTask::class` was executed. (Either with status DONE, FAILED, CANCELED, TIMEOUT).
+
+Here is more complex example:
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$jobs = [];
+$jobs[] = $scheduler->addJob(MyTask::class, 'foobar');
+$jobs[] = $scheduler->addJob(MyTask::class, 'barfoo');
+$jobs[] = $scheduler->addJob(OtherTask::class, 'barefoot');
+
+foreach($jobs as $job) {
+    $job->wait();
+}
+
+//some other important stuff here
+```
+
+This will wait for all three jobs to be finished before continuing.
+
+**Important note**:\
+If you are programming in http mode (incoming http requests) and your app needs to deploy tasks it is good practice not to wait!. 
+Best practics is to return a [HTTP 202 code](https://httpstatuses.com/202) instead. If the client needs to know the result of those jobs you may return 
+the process id's and send a 2nd reqeuest which then waits and returns the status of those jobs.
+
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$jobs = $scheduler->getJobs([
+    '_id' => ['$in' => $job_ids_from_http_request]
+]);
+
+foreach($jobs as $job) {
+    $job->wait();
+}
+```
+
+### Listen for events
+You may bind to the scheduler and listen for any changes which occur asynchronous.
+
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$jobs = $scheduler->listen(function(TaskScheduler\Process $process) {
+    echo "status of ".$process->getId().' change to '.$process->getStatus();
+});
+```
+
+It is also possible to filter such events, this example will only get notified for events occured in a specific job.
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$jobs = $scheduler->listen(function(TaskScheduler\Process $process) {
+    echo "status of ".$process->getId().' change to '.$process->getStatus();
+}, [
+    '_id' => new MongoDB\BSON\ObjectId('5b3cbc39e26cf26c6d0ede69')
+]);
+```
+
+>**Note**: listen() is a blocking call, you may exit the listener and continue with main() if you return a boolean `true` in the listener callback.
 
 ### Advanced job options
-TaskScheduler\Scheduler::addJob() also accepts a third option (options) which let you append more advanced options for the scheduler:
+TaskScheduler\Scheduler::addJob()/TaskScheduler\Scheduler::addJobOnce() also accept a third option (options) which let you set more advanced options for the job:
 
-**at**
-
-Accepts a specific unix time which let you specify the time at which the job should be executed.
-The default is immediatly or better saying as soon as there is a free slot.
-
-**interval**
-
-You can also specify a job interval (in secconds) which is usefuly for jobs which need to be executed in a specific interval, for example cleaning a temporary directory.
-The default is `-1` which means no interval at all, `0` would mean execute the job immediatly again (But be careful with `0`, this could lead to huge cpu usage depending what job you're executing).
-Configuring `3600` would mean the job will be executed hourly.
-
-**retry**
-
-You can configure a retry interval if the job fails to execute. The default is `0` which means do not retry.
-
-**retry_interval**
-
-This options specifies the time (in secconds) between job retries. The default is `300` which is 5 minutes.
+| Option  | Default | Type | Description |
+| --- | --- | --- | --- |
+| `at`  | `0`  | int | Accepts a specific unix time which let you specify the time at which the job should be executed. The default (0) is immediatly or better saying as soon as there is a free slot. |
+| `interval`  | `0`  | int | You may specify a job interval (in secconds) which is usefuly for jobs which need to be executed in a specific interval, for example cleaning a temporary directory. The default is `0` which means no interval at all, `-1` means execute the job immediatly again (But be careful with `-1`, this could lead to huge cpu usage depending what job you're executing). Configuring `3600` means the job will get executed hourly. |
+| `retry`  | `0`  | int | Specifies a retry interval if the job fails to execute. The default is `0` which means do not retry. `2` for example means 2 retries. You may set `-1` for endless retries. |
+| `retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. The default is `300` which is 5 minutes. Be careful with this option while `retry_interval` is `-1`, you may ending up with a failure loop.  |
+| `force_spawn`  | `false`  | bool | You may specify `true` for this option to spawn a new worker only for this task. Note: This option ignores the max_children value of `TaskScheduler\WorkerManager`, which means this worker always gets spawned.  It makes perfectly sense for jobs which make blocking calls, for example a listener which listens for local filesystem changes (inotify). A job with this enabled option should only consume as little cpu/memory as possible! |
+| `timeout`  | `0`  | int | Specify a timeout in secconds which will forcly terminate the job after the given time has passed. The default `0` means no timeout at all. A timeout job will get rescheduled if retry is not `0` and will marked as timed out.  |
+| `id`  | `null`  | `MongoDB\BSON\ObjectId` | Specify a job id manually.  |
+| `ignore_data`  | `false`  | bool | Only useful if set in a addJobOnce() call. If `true` the scheduler does not compare the jobs data to decide if a job needs to get rescheduled.  |
 
 
-Let us add our mail job example with some custom options:
+>**Note**: Be careful with timeouts since it will kill your running job by force. You have been warned. You shall always use a native timeout in a function if supported.
+
+Let us add our mail job example again with some custom options:
+
+>**Note**: We are using the OPTION_ constansts here, you may also just use the names documented above.
+
 ```php
 $mongodb = new MongoDB\Client('mongodb://localhost:27017');
 $logger = new \A\Psr4\Compatible\Logger();
@@ -218,12 +465,14 @@ $scheduler->addJob(MailJob::class, $mail->toString(), [
 ]);
 ```
 
-This will queue our mail to be executed in one hour from now and it will re-schedule the job up to three times if it fails.
+This will queue our mail to be executed in one hour from now and it will re-schedule the job up to three times if it fails with an interval of one minute.
 
-### Add job only once
+### Add job if not exists
 What you also can do is adding the job only if it has not been queued yet.
-Instead using `addJob()` you can use `addJobOnce()` the scheduler then checks if got the same job already queued, it not the job gets added.
+Instead using `addJob()` you can use `addJobOnce()`, the scheduler then verifies if it got the same job already queued. If not, the job gets added.
 The scheduler compares the type of job (`MailJob` in this case) and the data submitted (`$mail->toString()` in this case).
+
+>**Note**: The job gets rescheduled if options get changed.
 
 ```php
 $scheduler->addJobOnce(MailJob::class, $mail->toString(), [
@@ -231,90 +480,192 @@ $scheduler->addJobOnce(MailJob::class, $mail->toString(), [
     TaskScheduler\Scheduler::OPTION_RETRY => 3,
 ]);
 ```
+By default `TaskScheduler\Scheduler::addJobOnce()` does compare the job class, the submitted data and the process status (either PROCESSING, WAITING or POSTPONED).
+If you do not want to check the data, you may set `TaskScheduler\Scheduler::OPTION_IGNORE_DATA` to `true`. This will tell the scheduler to only reschedule the job of the given class
+if the data changed. This is quite useful if a job of the given class must only be queued once.
 
-### Advanced default/initialization options
 
-Custom options and defaults can be set for jobs during initialization or if you call setOptions().
+>**Note**: This option does not make sense in the mail example we're using here. A mail can have different content. But it may happen that you have job which clears a temporary storage every 24h:
+```php
+$scheduler->addJobOnce(MyApp\CleanTemp::class, ['max_age' => 3600], [
+    TaskScheduler\Scheduler::OPTION_IGNORE_DATA => true,
+    TaskScheduler\Scheduler::OPTION_INTERVAL => 60*60*24,
+]);
+```
+
+If max_age changes, the old job gets canceled and a new one gets queued. If `TaskScheduler\Scheduler::OPTION_IGNORE_DATA` is not set here we will end up with two jobs of the type `MyApp\CleanTemp::class`.
+```php
+$scheduler->addJobOnce(MyApp\CleanTemp::class, ['max_age' => 1800], [
+    TaskScheduler\Scheduler::OPTION_IGNORE_DATA => true,
+    TaskScheduler\Scheduler::OPTION_INTERVAL => 60*60*24,
+]);
+```
+
+Of course it is also possible to query such job manually, cancel them and reschedule. This will achieve the same as above:
+```php
+$jobs = $scheduler->getJobs([
+    'class' => MyApp\CleanTemp::class,
+    'status' => ['$lte' => TaskScheduler\JobInterface::STATUS_PROCESSING]
+]);
+
+foreach($jobs as $job) {
+    $scheduler->cancelJob($job->getId());
+}
+
+$scheduler->addJob(MyApp\CleanTemp::class, ['max_age' => 1800], [
+    TaskScheduler\Scheduler::OPTION_INTERVAL => 60*60*24,
+]);
+```
+
+### Advanced scheduler options
+
+You may set those job options as global defaults for the whole scheduler.
+Custom options and defaults can be set for jobs during initialization or by calling Scheduler::setOptions().
 
 ```php
 $mongodb = new MongoDB\Client('mongodb://localhost:27017');
 $logger = new \A\Psr4\Compatible\Logger();
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger, null, [
-    'collection_name' => 'jobs',
-    'queue_size' => 10000000,
-    'default_retry' => 3
+    TaskScheduler\Scheduler::OPTION_JOB_QUEUE_SIZE => 1000000000,
+    TaskScheduler\Scheduler::OPTION_EVENT_QUEUE_SIZE => 5000000000,
+    TaskScheduler\Scheduler::OPTION_DEFAULT_RETRY => 3
 ]);
+```
 
+You may also change those options afterwards:
+```php
 $scheduler->setOptions([
-    'default_retry' => 2
+    TaskScheduler\Scheduler::OPTION_DEFAULT_RETRY => 2
 ]);
 ```
 
-**collection_name**
+>**Note**: Changing default job options will not affect any existing jobs.
 
-You can specifiy a different collection for the job queue. The default is `queue`.
 
-**queu_size**
-The queue size. This is only used during creating the job queue and has no impact later. The default is `100000`.
+| Name  | Default | Type | Description |
+| --- | --- | --- | --- |
+| `job_queue`  | `taskscheduler.jobs`  | string | The MongoDB collection which acts as job message queue. |
+| `job_queue_size`  | `1000000`  | int | The maximum size in bytes of the job collection, if reached the first jobs get overwritten by new ones. |
+| `event_queue`  | `taskscheduler.events`  | string | The MongoDB collection which acts as event message queue. |
+| `event_queue_size`  | `5000000`  | int | The maximum size in bytes of the event collection, if reached the first events get overwritten by new ones. This value should usually be 5 times bigger than the value of `job_queue_size` since a job can have more events. |
+| `default_at`  | `null`  | ?int | Define a default execution time for **all** jobs. This relates only for newly added jobs. The default is immediatly or better saying as soon as there is a free slot. |
+| `default_interval`  | `0`  | int | Define a default interval for **all** jobs. This relates only for newly added jobs. The default is `0` which means no interval at all. |
+| `default_retry`  | `0`  | int | Define a default retry interval for **all** jobs. This relates only for newly added jobs. There are no retries by default for failed jobs. |
+| `default_retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. This relates only for newly added jobs. The default is `300` which is 5 minutes. |
+| `default_timeout`  | `0`  | int | Specify a default timeout for all jobs. This relates only for newly added jobs. Per default there is no timeout at all. |
 
-**default_at**
 
-Define a default execution time for **all** jobs. This relates only for newly added jobs.
-The default is immediatly or better saying as soon as there is a free slot.
+>**Note**: It is important to choose a queue size (job_queue_size and event_queue_size) which fits into your setup.
 
-**default_interval**
 
-Define a default interval for **all** jobs. This relates only for newly added jobs.
-The default is `-1` which means no interval at all.
+### Advanced worker manager options
 
-**default_retry**
-
-Define a default retry interval for **all** jobs. This relates only for newly added jobs.
-There are now retries by default for failed jobs (The default is `0`).
-
-**default_retry_interval**
-This options specifies the time (in secconds) between job retries. This relates only for newly added jobs.
-The default is `300` which is 5 minutes.
-
-### Using a DIC (dependeny injection container)
-Optionally one can pass a Psr\Container\ContainerInterface to the scheduler which gets used to create job instances.
+While you already know, that you need a worker factory to spawn the worker manager, you may specify advanced options for it!
+Here is our worker [factory again](#create-worker-factory), but this time we specify some more options:
 
 ```php
-$mongodb = new MongoDB\Client('mongodb://localhost:27017');
-$logger = new \A\Psr4\Compatible\Logger();
-$dic = new \A\Psr11\Compatible\Container();
-$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
-$queue = new TaskScheduler\Queue($scheduler, $mongodb, $logger, $dic);
+class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
+{
+    /**
+     * {@inheritdoc}
+     */
+    public function buildWorker(MongoDB\BSON\ObjectId $id): TaskScheduler\Worker
+    {
+        $mongodb = new MongoDB\Client('mongodb://localhost:27017');
+        $logger = new \A\Psr4\Compatible\Logger();
+        $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+
+        return new TaskScheduler\Worker($id, $scheduler, $mongodb->mydb, $logger);
+    }
+    
+    /**
+     * {@inheritdoc}
+     */
+    public function buildManager(): TaskScheduler\WorkerManager
+    {
+        $logger = new \A\Psr4\Compatible\Logger();
+        return new TaskScheduler\WorkerManager($this, $logger, [
+            TaskScheduler\WorkerManager::OPTION_MIN_CHILDREN => 10,
+            TaskScheduler\WorkerManager::OPTION_PM => 'static' 
+        ]);
+    }
+}
 ```
 
-If a container is set, the scheduler will request job instances through the dic.
+Worker handling is done by specifying the option `pm` while dynamically spawning workers is the default mode.
 
-### Manage jobs
+| Name  | Default | Type | Description |
+| --- | --- | --- | --- |
+| `pm`  | `dynamic`  | string | You may change the way how fork handling is done. There are three modes: dynamic, static, ondemand. |
+| `min_children`  | `1`  | int | The minimum number of child processes. |
+| `max_children`  | `2`  | int | The maximum number of child processes. |
 
-### Get jobs
-You may want to retrieve all scheduled jobs:
+Process management modes (`pm`):
+
+* dynamic (start min_children forks at startup and dynamically create new children if required until max_children is reached)
+* static (start min_children nodes, (max_children is ignored))
+* ondemand (Do not start any children at startup (min_children is ignored), bootstrap a worker for each job but no more than max_children. After a job is done (Or failed, canceled, timeout), the worker dies.
+
+The default is `dynamic`. Usually `dynamic` makes sense. You may need `static` in a container provisioned world whereas the number of queue nodes is determined
+from the number of outstanding jobs. For example you may be using [Kubernetes autoscaling](https://cloud.google.com/kubernetes-engine/docs/tutorials/custom-metrics-autoscaling).
+
+>**Note**: The number of actual child processes can be higher if jobs are scheduled with the option Scheduler::OPTION_FORCE_SPAWN.
+
+### Using a PSR-11 DIC
+Optionally one can pass a Psr\Container\ContainerInterface to the worker nodes which then get called to create job instances.
+You probably already get it, but here is the worker [factory again](#create-worker-factory). This time it passes an instance of a PSR-11 container to worker nodes.
+And if you already using a container it makes perfectly sense to request the manager from it. (Of course you may also request a worker instances from it if your container implementation supports 
+parameters at runtime (The worker id). Note: This will be an incompatible container implementation from the [PSR-11 specification](https://github.com/php-fig/fig-standards/blob/master/accepted/PSR-11-container.md).)
 
 ```php
-$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
-$scheduler->getJobs();
+class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
+{
+    /**
+     * {@inheritdoc}
+     */
+    public function build(MongoDB\BSON\ObjectId $id): TaskScheduler\Worker
+    {
+        $mongodb = new MongoDB\Client('mongodb://localhost:27017');
+        $logger = new \A\Psr4\Compatible\Logger();
+        $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+        $dic = new \A\Psr11\Compatible\Dic();
+
+        return new TaskScheduler\Worker($id, $scheduler, $mongodb->mydb, $logger, $dic);
+    }
+    
+    /**
+     * {@inheritdoc}
+     */
+    public function buildManager(): TaskScheduler\WorkerManager
+    {
+        $dic = new \A\Psr11\Compatible\Dic();
+        return $dic->get(TaskScheduler\WorkerManager::class);
+    }
+}
 ```
 
-By default you will receive all jobs with status:
-* Queue::STATUS_WAITING,
-* Queue::STATUS_PROCESSING
-* Queue::STATUS_POSTPONED
+### Data Persistency
 
-You may pass an optional argument filter as an array which contains all status you want to retrieve.
-You can also request a single job by calling `Scheduler::getJob(MongoDB\BSON\ObjectId $job_id)`.
+This library does not provide any data persistency! It is important to understand this fact. This library operates on a [MongoDB capped collection](https://docs.mongodb.com/manual/core/capped-collections) with 
+a fixed size limit by design. Meaning the newest job will overwrite the oldest job if the limit is reached. A side note here regarding postponed jobs (TaskScheduler\Scheduler::OPTION_AT), those jobs will get queued locally once received. If they fall out from the network queue, they will get executed anyway. If a worker dies they will get rescheduled if possible. **But** interval jobs are not meant to be persistent and there is no guarantee for that. It is best practice during bootstraping your queue node to schedule jobs if they are not already scheduled from a persitent data source (For example using [TaskScheduler\Scheduler::addJobOnce](#add-job-if-not-exists)).
 
-### Cancel job
-You are able to cancel a scheduled job by passing the job id to the scheduler:
-```php
-$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
-$scheduler->cancelJob(MongoDB\BSON\ObjectId $job_id);
-```
+>**Note**: This is planned to change in v4. v4 will feature persistency for jobs.
 
-It is **not** possible to cancel running jobs (jobs with status Queue::STATUS_PROCESSING).
+### Signal handling
 
-### Modify jobs
-It is **not** possible to modify a scheduled job by design. You need to cancel the job and append a new one.
+Terminating queue nodes is possible of course. They even manage to reschedule running jobs. You just need to send a SIGTERM to the process. The queue node then will transmit this the worker manager while the worker manager will send it to all running workers and they 
+will save their state and nicely exit. A worker also saves its state if the worker process directly receives a SIGTERM.
+If a SIGKILL was used to terminate the queue node (or worker) the state can not be saved and you might get zombie jobs (Jobs with the state PROCESSING but no worker will actually process those jobs).
+No good sysadmin will terminate running jobs by using SIGKILL, it is not acceptable and may only be used if you know what you are doing.
+
+You should as well avoid using never ending blocking functions in your job, php can't handle signals if you do that. 
+
+
+## Real world examples
+
+| Project  | Description |
+| --- | --- |
+| [balloon](https://github.com/gyselroth/balloon)  | balloon is a high performance cloud server. It makes use of this library to deploy all kind of jobs (create previews, scan files, upload to elasticsearch, sending mails, converting documents, clean temporary storage, clean trash, ...). |
+| [tubee](https://github.com/gyselroth/tubee)  | tubee is data management engine and makes use of this libaray to execute asynchronous data sync jobs. |
+
+Add your project here, a PR will be most welcome.

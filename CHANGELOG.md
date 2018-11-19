@@ -1,3 +1,102 @@
+## 3.0.0
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Mon Nov 19 17:24:34 CET 2018
+
+* [FEATURE] Added Scheduler::flush to flush the entire queue
+* [FIX] fixed event queue creation during queue init
+
+
+## 3.0.0-beta9
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Tue Sept 25 14:24:34 CEST 2018
+
+* [CHANGE] Implement a systemv message queue to bootstrap workers from a separate fork #6
+* [CHANGE] Since #6 is implemented, a the TaskScheduler\WorkerFactoryInterface requires a buildWorker() and a buildManager() implementation
+* [CHANGE] Removed Scheduler::OPTION_MAX_CHILDREN, replaced it with Scheduler::OPTION_FORCE_SPAWN
+* [CHANGE] A worker manager configured as ondemand will no spawn a worker for each task
+
+
+## 3.0.0-beta8
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Tue Sept 25 14:24:34 CEST 2018
+
+* [FIX] fixed addJobOnce compare submited options
+* [FIX] do not spawn new worker if queue is only aware of fewer jobs than the current number of forks and OPTION_IGNORE_MAX_CHILDREN is requested
+* [FIX] added safety zombie job check after a worker exits
+
+
+## 3.0.0-beta7
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Mon Sept 24 15:24:34 CEST 2018
+
+* [FIX] Locally queued job gets rescheduled if was previously overwritten by the capped collection size limit
+* [FIX] Fixed retry_interval with timeout jobs
+
+
+## 3.0.0-beta6
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Fri Sept 14 13:24:34 CEST 2018
+
+* [CHANGE] Scheduler::cancelJob() does not throw an exception of Type JobNotFoundException if the job is already canceled
+* [FEATURE] Added option Scheduler::OPTION_IGNORE_DATA to Scheduler::addJobOnce()
+* [CHANGE] Removed UTCDateTime conversion from unix ts for option TaskScheduler\Scheduler::OPTION_AT
+
+
+## 3.0.0-beta5
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Mon Sept 10 12:22:24 CEST 2018
+
+* [FIX] fix proper exit of worker nodes
+
+
+## 3.0.0-beta4
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Mon Sept 10 12:22:24 CEST 2018
+
+* [FIX] fix proper exit of queue nodes
+* [FIX] Do not log exception if a locally queued node is already queued during worker shutdown
+
+
+## 3.0.0-beta3
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Fri Sep 07 14:47:34 CEST 2018
+
+* [FIX] Fixed concurrent Scheduler::addJobOnce() requests
+* [CHANGE] 0 does now disable retry and interval, -1 sets both to endless
+* [CHANGE] Added upgrade guide
+
+
+## 3.0.0-beta2
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Wed Sep 05 16:47:34 CEST 2018
+
+* [FIX] Fixed naming of the collections
+* [CHANGE] Using awaitData cursors now instead just tailable which will have a big impact on cpu usage
+* [FIX] Cancelling a job which is out of the queue does now work as well
+
+
+* [FEATURE] Possibility to timeout jobs
+## 3.0.0-beta1
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Thu Aug 30 11:47:34 CEST 2018
+
+* [FEATURE] Possibility to timeout jobs
+* [CHANGE] Process handling changed (breaking!), new Process class which gets returned and can be called for options
+* [FEATURE] Possibility to wait for job execution
+* [FEATURE] Possibility to listen for any events
+* [FEATURE] Event (and exception) log
+* [FEATURE] Abort running jobs
+
+
+## 3.0.0-alpha1
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Mon Aug 13 16:50:34 CEST 2018
+
+* [FIX] Added pcntl requirement to composer.json
+* [FEATURE] Implemented forks, meaning a the main process (Queue::class) is the fork handler and will bootstrap new child processes (@see README.md to see how to use v3.0.0)
+* [CHANGE] Queue::processOnce() is not available anymore, Queue::process() is the only entrypoint and blocking process
+
+
 ## 2.0.5
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Thu Jul 19 11:02:34 CEST 2018

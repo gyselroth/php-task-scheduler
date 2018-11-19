@@ -12,28 +12,51 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
-use InvalidArgumentException;
+use Closure;
+use Generator;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use MongoDB\UpdateResult;
 use Psr\Log\LoggerInterface;
-use Traversable;
+use TaskScheduler\Exception\InvalidArgumentException;
+use TaskScheduler\Exception\JobNotFoundException;
 
 class Scheduler
 {
     /**
      * Job options.
      */
-    const OPTION_AT = 'at';
-    const OPTION_INTERVAL = 'interval';
-    const OPTION_RETRY = 'retry';
-    const OPTION_RETRY_INTERVAL = 'retry_interval';
+    public const OPTION_AT = 'at';
+    public const OPTION_INTERVAL = 'interval';
+    public const OPTION_RETRY = 'retry';
+    public const OPTION_RETRY_INTERVAL = 'retry_interval';
+    public const OPTION_FORCE_SPAWN = 'force_spawn';
+    public const OPTION_TIMEOUT = 'timeout';
+    public const OPTION_ID = 'id';
+    public const OPTION_IGNORE_DATA = 'ignore_data';
+
+    /**
+     * Default job options.
+     */
+    public const OPTION_DEFAULT_AT = 'default_at';
+    public const OPTION_DEFAULT_INTERVAL = 'default_interval';
+    public const OPTION_DEFAULT_RETRY = 'default_retry';
+    public const OPTION_DEFAULT_RETRY_INTERVAL = 'default_retry_interval';
+    public const OPTION_DEFAULT_TIMEOUT = 'default_timeout';
+
+    /**
+     * Queue options.
+     */
+    public const OPTION_JOB_QUEUE = 'job_queue';
+    public const OPTION_JOB_QUEUE_SIZE = 'job_queue_size';
+    public const OPTION_EVENT_QUEUE = 'event_queue';
+    public const OPTION_EVENT_QUEUE_SIZE = 'event_queue_size';
 
     /**
      * MongoDB type map.
      */
-    const TYPE_MAP = [
+    public const TYPE_MAP = [
         'document' => 'array',
         'root' => 'array',
         'array' => 'array',
@@ -54,14 +77,21 @@ class Scheduler
     protected $logger;
 
     /**
-     * Collection name.
+     * Job Collection name.
      *
      * @var string
      */
-    protected $collection_name = 'queue';
+    protected $job_queue = 'taskscheduler.jobs';
 
     /**
-     * Default at (Secconds from now).
+     * Event Collection name.
+     *
+     * @var string
+     */
+    protected $event_queue = 'taskscheduler.events';
+
+    /**
+     * Unix time.
      *
      * @var int
      */
@@ -72,14 +102,14 @@ class Scheduler
      *
      * @var int
      */
-    protected $default_interval = -1;
+    protected $default_interval = 0;
 
     /**
      * Default retry.
      *
      * @var int
      */
-    protected $default_retry = -1;
+    protected $default_retry = 0;
 
     /**
      * Default retry interval (secconds).
@@ -89,49 +119,63 @@ class Scheduler
     protected $default_retry_interval = 300;
 
     /**
-     * Queue size.
+     * Default timeout.
      *
      * @var int
      */
-    protected $queue_size = 100000;
+    protected $default_timeout = 0;
+
+    /**
+     * Job Queue size.
+     *
+     * @var int
+     */
+    protected $job_queue_size = 1000000;
+
+    /**
+     * Event Queue size.
+     *
+     * @var int
+     */
+    protected $event_queue_size = 5000000;
+
+    /**
+     * Events queue.
+     *
+     * @var MessageQueue
+     */
+    protected $events;
 
     /**
      * Init queue.
-     *
-     * @param Database        $db
-     * @param LoggerInterface $logger
-     * @param iterable        $config
      */
-    public function __construct(Database $db, LoggerInterface $logger, ?Iterable $config = null)
+    public function __construct(Database $db, LoggerInterface $logger, array $config = [])
     {
         $this->db = $db;
         $this->logger = $logger;
-
-        if (null !== $config) {
-            $this->setOptions($config);
-        }
+        $this->setOptions($config);
+        $this->events = new MessageQueue($db, $this->getEventQueue(), $this->getEventQueueSize(), $logger);
     }
 
     /**
      * Set options.
-     *
-     * @param iterable $config
-     *
-     * @return Async
      */
-    public function setOptions(Iterable $config = []): self
+    public function setOptions(array $config = []): self
     {
         foreach ($config as $option => $value) {
             switch ($option) {
-                case 'collection_name':
+                case self::OPTION_JOB_QUEUE:
+                case self::OPTION_EVENT_QUEUE:
                     $this->{$option} = (string) $value;
 
                 break;
-                case 'default_retry':
-                case 'default_at':
-                case 'default_retry_interval':
-                case 'default_interval':
-                case 'queue_size':
+                case self::OPTION_DEFAULT_AT:
+                case self::OPTION_DEFAULT_RETRY_INTERVAL:
+                case self::OPTION_DEFAULT_INTERVAL:
+                case self::OPTION_DEFAULT_RETRY:
+                case self::OPTION_DEFAULT_TIMEOUT:
+                case self::OPTION_JOB_QUEUE_SIZE:
+                case self::OPTION_EVENT_QUEUE_SIZE:
                     $this->{$option} = (int) $value;
 
                 break;
@@ -144,218 +188,289 @@ class Scheduler
     }
 
     /**
-     * Get Queue size.
-     *
-     * @return int
+     * Get job Queue size.
      */
-    public function getQueueSize(): int
+    public function getJobQueueSize(): int
     {
-        return $this->queue_size;
+        return $this->job_queue_size;
     }
 
     /**
-     * Get collection name.
-     *
-     * @return string
+     * Get event Queue size.
      */
-    public function getCollection(): string
+    public function getEventQueueSize(): int
     {
-        return $this->collection_name;
+        return $this->event_queue_size;
     }
 
     /**
-     * Get job by ID.
-     *
-     * @param ObjectId
-     *
-     * @return array
+     * Get job collection name.
      */
-    public function getJob(ObjectId $id): array
+    public function getJobQueue(): string
     {
-        $result = $this->db->{$this->collection_name}->findOne([
+        return $this->job_queue;
+    }
+
+    /**
+     * Get event collection name.
+     */
+    public function getEventQueue(): string
+    {
+        return $this->event_queue;
+    }
+
+    /**
+     * Get job by Id.
+     */
+    public function getJob(ObjectId $id): Process
+    {
+        $result = $this->db->{$this->job_queue}->findOne([
             '_id' => $id,
         ], [
             'typeMap' => self::TYPE_MAP,
         ]);
 
         if (null === $result) {
-            throw new Exception\JobNotFound('job '.$id.' was not found');
+            throw new JobNotFoundException('job '.$id.' was not found');
         }
 
-        return $result;
+        return new Process($result, $this, $this->events);
     }
 
     /**
      * Cancel job.
-     *
-     * @param ObjectId $id
-     *
-     * @return bool
      */
     public function cancelJob(ObjectId $id): bool
     {
-        $result = $this->updateJob($id, Queue::STATUS_CANCELED);
+        $result = $this->updateJob($id, JobInterface::STATUS_CANCELED);
 
-        if (1 !== $result->getModifiedCount()) {
-            throw new Exception\JobNotFound('job '.$id.' was not found');
+        if (1 !== $result->getMatchedCount()) {
+            throw new JobNotFoundException('job '.$id.' was not found');
         }
+
+        $this->db->{$this->event_queue}->insertOne([
+            'job' => $id,
+            'status' => JobInterface::STATUS_CANCELED,
+            'timestamp' => new UTCDateTime(),
+        ]);
 
         return true;
     }
 
     /**
-     * Get jobs (Pass a filter which contains job status, by default all active jobs get returned).
-     *
-     * @param array $filter
-     *
-     * @return Traversable
+     * Flush
      */
-    public function getJobs(array $filter = []): Traversable
+    public function flush(): Scheduler
     {
-        if (0 === count($filter)) {
-            $filter = [
-                Queue::STATUS_WAITING,
-                Queue::STATUS_PROCESSING,
-                Queue::STATUS_POSTPONED,
-            ];
+        $this->db->{$this->job_queue}->drop();
+        $this->db->{$this->event_queue}->drop();
+        return $this;
+    }
+
+    /**
+     * Get jobs (Pass a filter which contains job status, by default all active jobs get returned).
+     */
+    public function getJobs(array $query = []): Generator
+    {
+        if (0 === count($query)) {
+            $query = ['status' => ['$in' => [
+                JobInterface::STATUS_WAITING,
+                JobInterface::STATUS_PROCESSING,
+                JobInterface::STATUS_POSTPONED,
+            ]]];
         }
 
-        $result = $this->db->{$this->collection_name}->find([
-            'status' => [
-                '$in' => $filter,
-            ],
-        ], [
+        $result = $this->db->{$this->job_queue}->find($query, [
             'typeMap' => self::TYPE_MAP,
         ]);
 
-        return $result;
+        foreach ($result as $job) {
+            yield new Process($job, $this, $this->events);
+        }
     }
 
     /**
      * Add job to queue.
-     *
-     * @param string $class
-     * @param mixed  $data
-     * @param array  $options
-     *
-     * @return ObjectId
      */
-    public function addJob(string $class, $data, array $options = []): ObjectId
+    public function addJob(string $class, $data, array $options = []): Process
     {
-        $defaults = [
-            self::OPTION_AT => $this->default_at,
-            self::OPTION_INTERVAL => $this->default_interval,
-            self::OPTION_RETRY => $this->default_retry,
-            self::OPTION_RETRY_INTERVAL => $this->default_retry_interval,
-        ];
+        $document = $this->prepareInsert($class, $data, $options);
 
-        $options = array_merge($defaults, $options);
-        $this->validateOptions($options);
-        $at = null;
-
-        if ($options[self::OPTION_AT] > 0) {
-            $at = new UTCDateTime($options[self::OPTION_AT] * 1000);
-        }
-
-        $result = $this->db->{$this->collection_name}->insertOne([
-            'class' => $class,
-            'status' => Queue::STATUS_WAITING,
-            'created' => new UTCDateTime(),
-            'started' => new UTCDateTime(0),
-            'ended' => new UTCDateTime(0),
-            'at' => $at,
-            'retry' => $options[self::OPTION_RETRY],
-            'retry_interval' => $options[self::OPTION_RETRY_INTERVAL],
-            'interval' => $options[self::OPTION_INTERVAL],
-            'data' => $data,
-        ], ['$isolated' => true]);
-
+        $result = $this->db->{$this->job_queue}->insertOne($document);
         $this->logger->debug('queue job ['.$result->getInsertedId().'] added to ['.$class.']', [
             'category' => get_class($this),
             'params' => $options,
             'data' => $data,
         ]);
 
-        return $result->getInsertedId();
+        $this->db->{$this->event_queue}->insertOne([
+            'job' => $result->getInsertedId(),
+            'status' => JobInterface::STATUS_WAITING,
+            'timestamp' => new UTCDateTime(),
+        ]);
+
+        $document = $this->db->{$this->job_queue}->findOne(['_id' => $result->getInsertedId()], [
+            'typeMap' => self::TYPE_MAP,
+        ]);
+
+        $process = new Process($document, $this, $this->events);
+
+        return $process;
     }
 
     /**
      * Only add job if not in queue yet.
-     *
-     * @param string $class
-     * @param mixed  $data
-     * @param array  $options
-     *
-     * @return ObjectId
      */
-    public function addJobOnce(string $class, $data, array $options = []): ObjectId
+    public function addJobOnce(string $class, $data, array $options = []): Process
     {
         $filter = [
             'class' => $class,
-            'data' => $data,
             '$or' => [
-                ['status' => Queue::STATUS_WAITING],
-                ['status' => Queue::STATUS_POSTPONED],
+                ['status' => JobInterface::STATUS_WAITING],
+                ['status' => JobInterface::STATUS_POSTPONED],
+                ['status' => JobInterface::STATUS_PROCESSING],
             ],
         ];
 
-        $result = $this->db->{$this->collection_name}->findOne($filter, [
+        $requested = $options;
+        $document = $this->prepareInsert($class, $data, $options);
+
+        if (true !== $options[self::OPTION_IGNORE_DATA]) {
+            $filter = ['data' => $data] + $filter;
+        }
+
+        $result = $this->db->{$this->job_queue}->updateOne($filter, ['$setOnInsert' => $document], [
+            'upsert' => true,
+            '$isolated' => true,
+        ]);
+
+        if ($result->getMatchedCount() > 0) {
+            $document = $this->db->{$this->job_queue}->findOne($filter, [
+                'typeMap' => self::TYPE_MAP,
+            ]);
+
+            if (array_intersect_key($document['options'], $requested) !== $requested || ($data !== $document['data'] && true === $options[self::OPTION_IGNORE_DATA])) {
+                $this->logger->debug('job ['.$document['_id'].'] options/data changed, reschedule new job', [
+                    'category' => get_class($this),
+                    'data' => $data,
+                ]);
+
+                $this->cancelJob($document['_id']);
+
+                return $this->addJobOnce($class, $data, $options);
+            }
+
+            return new Process($document, $this, $this->events);
+        }
+
+        $this->logger->debug('queue job ['.$result->getUpsertedId().'] added to ['.$class.']', [
+            'category' => get_class($this),
+            'params' => $options,
+            'data' => $data,
+        ]);
+
+        $this->db->{$this->event_queue}->insertOne([
+            'job' => $result->getUpsertedId(),
+            'status' => JobInterface::STATUS_WAITING,
+            'timestamp' => new UTCDateTime(),
+        ]);
+
+        $document = $this->db->{$this->job_queue}->findOne(['_id' => $result->getUpsertedId()], [
             'typeMap' => self::TYPE_MAP,
         ]);
 
-        if (null !== $result && array_intersect_key($result, $options) !== $options) {
-            $this->logger->debug('job ['.$result['_id'].'] options changed, reschedule new job', [
-                'category' => get_class($this),
-                'data' => $data,
-            ]);
-
-            $this->cancelJob($result['_id']);
-            $result = null;
-        }
-
-        if (null === $result) {
-            return $this->addJob($class, $data, $options);
-        }
-
-        $this->logger->debug('queue job ['.$result['_id'].'] of type ['.$class.'] already exists', [
-                'category' => get_class($this),
-                'data' => $data,
-            ]);
-
-        return $result['_id'];
+        return new Process($document, $this, $this->events);
     }
 
     /**
-     * Validate given job options.
-     *
-     * @param array $options
-     *
-     * @return Async
+     * Listen for events.
      */
-    protected function validateOptions(array $options): self
+    public function listen(Closure $callback, array $query = []): self
     {
-        if (count($options) > 4) {
-            throw new InvalidArgumentException('invalid option given');
+        if (0 === count($query)) {
+            $query = [
+                'timestamp' => ['$gte' => new UTCDateTime()],
+            ];
         }
 
-        if (4 !== count(array_filter($options, 'is_int'))) {
-            throw new InvalidArgumentException('Only integers are allowed to passed');
+        $cursor = $this->events->getCursor($query);
+
+        while (true) {
+            if (null === $cursor->current()) {
+                if ($cursor->getInnerIterator()->isDead()) {
+                    $this->logger->error('events queue cursor is dead, is it a capped collection?', [
+                        'category' => get_class($this),
+                    ]);
+
+                    $this->events->create();
+
+                    return $this->listen($callback, $query);
+                }
+
+                $this->events->next($cursor, function () use ($callback, $query) {
+                    return $this->listen($callback, $query);
+                });
+
+                continue;
+            }
+
+            $result = $cursor->current();
+            $this->events->next($cursor, function () use ($callback, $query) {
+                $this->listen($callback, $query);
+            });
+
+            $process = new Process($result, $this, $this->events);
+            if (true === $callback($process)) {
+                return $this;
+            }
+        }
+    }
+
+    /**
+     * Prepare insert.
+     */
+    protected function prepareInsert(string $class, $data, array &$options = []): array
+    {
+        $defaults = [
+            self::OPTION_AT => $this->default_at,
+            self::OPTION_INTERVAL => $this->default_interval,
+            self::OPTION_RETRY => $this->default_retry,
+            self::OPTION_RETRY_INTERVAL => $this->default_retry_interval,
+            self::OPTION_FORCE_SPAWN => false,
+            self::OPTION_TIMEOUT => $this->default_timeout,
+            self::OPTION_IGNORE_DATA => false,
+        ];
+
+        $options = array_merge($defaults, $options);
+        $options = SchedulerValidator::validateOptions($options);
+
+        $document = [
+            'class' => $class,
+            'status' => JobInterface::STATUS_WAITING,
+            'created' => new UTCDateTime(),
+            'started' => new UTCDateTime(0),
+            'ended' => new UTCDateTime(0),
+            'worker' => new ObjectId(),
+            'data' => $data,
+        ];
+
+        if (isset($options[self::OPTION_ID])) {
+            $id = $options[self::OPTION_ID];
+            unset($options[self::OPTION_ID]);
+            $document['_id'] = $id;
         }
 
-        return $this;
+        $document['options'] = $options;
+
+        return $document;
     }
 
     /**
      * Update job status.
-     *
-     * @param ObjectId $id
-     * @param int      $status
-     *
-     * @return UpdateResult
      */
     protected function updateJob(ObjectId $id, int $status): UpdateResult
     {
-        $result = $this->db->{$this->collection_name}->updateMany([
+        $result = $this->db->{$this->job_queue}->updateMany([
             '_id' => $id,
             '$isolated' => true,
         ], [

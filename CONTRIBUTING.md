@@ -48,9 +48,10 @@ You need make to build this software. Following make targets are supported:
 Please make sure that you always specify the number of your issue starting with a hastag (#) within any git commits.
 
 ## Pull Request
-You are absolutely welcome to submit a pull request which references an open issue. Please make sure you're follwing coding standards 
-and be sure all your modifications pass the build.
+You are absolutely welcome to submit a pull request which references an open issue.
 [![Build Status](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler.svg)](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler)
+
+Send bug fixes PR to the master branch and new features to the dev branch.
 
 ## Code of Conduct
 Please note that this project is released with a [Contributor Code of Conduct](https://github.com/gyselroth/mongodb-php-task-scheduler/CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
