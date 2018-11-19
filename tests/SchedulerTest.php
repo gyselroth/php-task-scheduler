@@ -79,6 +79,14 @@ class SchedulerTest extends TestCase
         ]);
     }
 
+    public function testFlush()
+    {
+        $this->expectException(JobNotFoundException::class);
+        $job = $this->scheduler->addJob('test', ['foo' => 'bar']);
+        $this->scheduler->flush();
+        $this->scheduler->getJob($job->getId());
+    }
+
     public function testNewJobTimestamps()
     {
         $job = $this->scheduler->addJob('test', ['foo' => 'bar'])->toArray();

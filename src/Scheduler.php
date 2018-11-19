@@ -258,6 +258,16 @@ class Scheduler
     }
 
     /**
+     * Flush
+     */
+    public function flush(): Scheduler
+    {
+        $this->db->{$this->job_queue}->drop();
+        $this->db->{$this->event_queue}->drop();
+        return $this;
+    }
+
+    /**
      * Get jobs (Pass a filter which contains job status, by default all active jobs get returned).
      */
     public function getJobs(array $query = []): Generator

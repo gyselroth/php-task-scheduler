@@ -310,6 +310,18 @@ It is **not** possible to modify a scheduled job by design. You need to cancel t
 
 >**Note**: This is likely to be changed with v4 which will feature persistency for jobs.
 
+#### Flush queue
+
+While it is not possible to modify/remove jobs it is possible to flush the entire queue.
+>**Note**: This is not meant to be called regurarly. There may be a case where you need to flush all jobs because of an upgrade.
+Running queue nodes will detect this and will listen for newly spooled jobs.
+
+
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$scheduler->flush();
+```
+
 ### Handling of failed jobs
 
 A job is acknowledged as failed if the job throws an exception of any kind. 
