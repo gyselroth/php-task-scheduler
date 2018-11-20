@@ -64,6 +64,13 @@ class Queue
     protected $manager_pid;
 
     /**
+     * Sysmfsg queue
+     *
+     * @var resource
+     */
+    protected $queue;
+
+    /**
      * Init queue.
      */
     public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger)
