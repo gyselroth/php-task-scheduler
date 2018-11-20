@@ -1,3 +1,11 @@
+## 3.0.0
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Mon Nov 19 17:24:34 CET 2018
+
+* [FEATURE] Added Scheduler::flush to flush the entire queue
+* [FIX] fixed event queue creation during queue init
+
+
 ## 3.0.0-beta9
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Tue Sept 25 14:24:34 CEST 2018
