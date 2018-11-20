@@ -3,6 +3,6 @@ php:
   - '7.1'
   - '7.2'
 before_install:
-- pecl install mongodb
+- pecl install mongodb 2> /dev/null
 sudo: false
 script: make
