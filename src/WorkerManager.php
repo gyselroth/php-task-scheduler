@@ -113,6 +113,13 @@ class WorkerManager
     protected $onhold = [];
 
     /**
+     * Worker factory
+     *
+     * @var WorkerFactoryInterface
+     */
+    protected $factory;
+
+    /**
      * Init queue.
      */
     public function __construct(WorkerFactoryInterface $factory, LoggerInterface $logger, array $config = [])
