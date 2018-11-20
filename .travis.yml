@@ -1,8 +1,5 @@
 language: php
 php:
-  - '7.1'
   - '7.2'
-before_install:
-- pecl install mongodb
 sudo: false
 script: make
