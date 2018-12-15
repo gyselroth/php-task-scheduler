@@ -128,8 +128,8 @@ For a better understanding how this library works, we're going to implement a ma
 
 ### Create job
 
-It is quite easy to create as task, you just need to implement TaskScheduler\JobInterface. 
-In this example we're going to implement a job called MailJob which sends mail via zend-mail.
+It is quite easy to create a task, you just need to implement TaskScheduler\JobInterface. 
+In this example we're going to implement a job called MailJob which sends mail using zend-mail.
 
 >**Note**: You can use TaskScheduler\AbstractJob to implement the required default methods by TaskScheduler\JobInterface.
 The only thing then you need to implement is start() which does the actual job (sending mail).
