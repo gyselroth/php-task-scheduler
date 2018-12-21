@@ -301,19 +301,19 @@ It is possible to cancel jobs waiting in the queue as well as kill jobs which ar
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
 $scheduler->cancelJob(MongoDB\BSON\ObjectId $job_id);
 ```
-If you cancel a job with the status PROCESSING, the job gets killed by force and my corrupt data. You have been warnend.
+If you cancel a job with the status PROCESSING, the job gets killed by force and my corrupt data. You have been warned.
 (This is similar as the job ends with status TIMEOUT). The only difference is that a timeout job gets rescheduled if it has retry > 0 or has a configured interval.
 A canceled job will not get rescheduled. You will need to create a new job manually for that.
 
 #### Modify jobs
 It is **not** possible to modify a scheduled job by design. You need to cancel the job and append a new one.
 
->**Note**: This is likely to be changed with v4 which will feature persistency for jobs.
+>**Note**: This is likely to be changed with v4 which will feature persistence for jobs.
 
 #### Flush queue
 
 While it is not possible to modify/remove jobs it is possible to flush the entire queue.
->**Note**: This is not meant to be called regurarly. There may be a case where you need to flush all jobs because of an upgrade.
+>**Note**: This is not meant to be called regularly. There may be a case where you need to flush all jobs because of an upgrade.
 Running queue nodes will detect this and will listen for newly spooled jobs.
 
 
@@ -348,7 +348,7 @@ This will lead to a FAILED job as soon as this job gets executed.
 
 >**Note**: It does not matter if you return `true` or `false`, only an uncaught exception will result to a FAILED job, however you should always return `true`.
 
-The scheduler has an integreated handling of failed jobs. You may specify to automatically reschedule a job if it failed. 
+The scheduler has an integrated handling of failed jobs. You may specify to automatically reschedule a job if it failed. 
 The following will reschedule the job up to 5 times (If it ended with status FAILED) with an interval of 30s.
 
 ```php
@@ -391,8 +391,8 @@ This will wait for all three jobs to be finished before continuing.
 
 **Important note**:\
 If you are programming in http mode (incoming http requests) and your app needs to deploy tasks it is good practice not to wait!. 
-Best practics is to return a [HTTP 202 code](https://httpstatuses.com/202) instead. If the client needs to know the result of those jobs you may return 
-the process id's and send a 2nd reqeuest which then waits and returns the status of those jobs.
+Best practice is to return a [HTTP 202 code](https://httpstatuses.com/202) instead. If the client needs to know the result of those jobs you may return 
+the process id's and send a 2nd request which then waits and returns the status of those jobs.
 
 ```php
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
@@ -432,12 +432,12 @@ TaskScheduler\Scheduler::addJob()/TaskScheduler\Scheduler::addJobOnce() also acc
 
 | Option  | Default | Type | Description |
 | --- | --- | --- | --- |
-| `at`  | `0`  | int | Accepts a specific unix time which let you specify the time at which the job should be executed. The default (0) is immediatly or better saying as soon as there is a free slot. |
-| `interval`  | `0`  | int | You may specify a job interval (in secconds) which is usefuly for jobs which need to be executed in a specific interval, for example cleaning a temporary directory. The default is `0` which means no interval at all, `-1` means execute the job immediatly again (But be careful with `-1`, this could lead to huge cpu usage depending what job you're executing). Configuring `3600` means the job will get executed hourly. |
+| `at`  | `0`  | int | Accepts a specific unix time which let you specify the time at which the job should be executed. The default (0) is immediately or better saying as soon as there is a free slot. |
+| `interval`  | `0`  | int | You may specify a job interval (in seconds) which is usefully for jobs which need to be executed in a specific interval, for example cleaning a temporary directory. The default is `0` which means no interval at all, `-1` means execute the job immediately again (But be careful with `-1`, this could lead to huge cpu usage depending what job you're executing). Configuring `3600` means the job will get executed hourly. |
 | `retry`  | `0`  | int | Specifies a retry interval if the job fails to execute. The default is `0` which means do not retry. `2` for example means 2 retries. You may set `-1` for endless retries. |
-| `retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. The default is `300` which is 5 minutes. Be careful with this option while `retry_interval` is `-1`, you may ending up with a failure loop.  |
+| `retry_interval`  | `300`  | int | This options specifies the time (in seconds) between job retries. The default is `300` which is 5 minutes. Be careful with this option while `retry_interval` is `-1`, you may ending up with a failure loop.  |
 | `force_spawn`  | `false`  | bool | You may specify `true` for this option to spawn a new worker only for this task. Note: This option ignores the max_children value of `TaskScheduler\WorkerManager`, which means this worker always gets spawned.  It makes perfectly sense for jobs which make blocking calls, for example a listener which listens for local filesystem changes (inotify). A job with this enabled option should only consume as little cpu/memory as possible! |
-| `timeout`  | `0`  | int | Specify a timeout in secconds which will forcly terminate the job after the given time has passed. The default `0` means no timeout at all. A timeout job will get rescheduled if retry is not `0` and will marked as timed out.  |
+| `timeout`  | `0`  | int | Specify a timeout in seconds which will terminate the job after the given time has passed by force. The default `0` means no timeout at all. A timeout job will get rescheduled if retry is not `0` and will marked as timed out.  |
 | `id`  | `null`  | `MongoDB\BSON\ObjectId` | Specify a job id manually.  |
 | `ignore_data`  | `false`  | bool | Only useful if set in a addJobOnce() call. If `true` the scheduler does not compare the jobs data to decide if a job needs to get rescheduled.  |
 
@@ -548,10 +548,10 @@ $scheduler->setOptions([
 | `job_queue_size`  | `1000000`  | int | The maximum size in bytes of the job collection, if reached the first jobs get overwritten by new ones. |
 | `event_queue`  | `taskscheduler.events`  | string | The MongoDB collection which acts as event message queue. |
 | `event_queue_size`  | `5000000`  | int | The maximum size in bytes of the event collection, if reached the first events get overwritten by new ones. This value should usually be 5 times bigger than the value of `job_queue_size` since a job can have more events. |
-| `default_at`  | `null`  | ?int | Define a default execution time for **all** jobs. This relates only for newly added jobs. The default is immediatly or better saying as soon as there is a free slot. |
+| `default_at`  | `null`  | ?int | Define a default execution time for **all** jobs. This relates only for newly added jobs. The default is immediately or better saying as soon as there is a free slot. |
 | `default_interval`  | `0`  | int | Define a default interval for **all** jobs. This relates only for newly added jobs. The default is `0` which means no interval at all. |
 | `default_retry`  | `0`  | int | Define a default retry interval for **all** jobs. This relates only for newly added jobs. There are no retries by default for failed jobs. |
-| `default_retry_interval`  | `300`  | int | This options specifies the time (in secconds) between job retries. This relates only for newly added jobs. The default is `300` which is 5 minutes. |
+| `default_retry_interval`  | `300`  | int | This options specifies the time (in seconds) between job retries. This relates only for newly added jobs. The default is `300` which is 5 minutes. |
 | `default_timeout`  | `0`  | int | Specify a default timeout for all jobs. This relates only for newly added jobs. Per default there is no timeout at all. |
 
 
@@ -644,10 +644,10 @@ class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
 }
 ```
 
-### Data Persistency
+### Data Persistence
 
-This library does not provide any data persistency! It is important to understand this fact. This library operates on a [MongoDB capped collection](https://docs.mongodb.com/manual/core/capped-collections) with 
-a fixed size limit by design. Meaning the newest job will overwrite the oldest job if the limit is reached. A side note here regarding postponed jobs (TaskScheduler\Scheduler::OPTION_AT), those jobs will get queued locally once received. If they fall out from the network queue, they will get executed anyway. If a worker dies they will get rescheduled if possible. **But** interval jobs are not meant to be persistent and there is no guarantee for that. It is best practice during bootstraping your queue node to schedule jobs if they are not already scheduled from a persitent data source (For example using [TaskScheduler\Scheduler::addJobOnce](#add-job-if-not-exists)).
+This library does not provide any data persistence! It is important to understand this fact. This library operates on a [MongoDB capped collection](https://docs.mongodb.com/manual/core/capped-collections) with 
+a fixed size limit by design. Meaning the newest job will overwrite the oldest job if the limit is reached. A side note here regarding postponed jobs (TaskScheduler\Scheduler::OPTION_AT), those jobs will get queued locally once received. If they fall out from the network queue, they will get executed anyway. If a worker dies they will get rescheduled if possible. **But** interval jobs are not meant to be persistent and there is no guarantee for that. It is best practice during bootstraping your queue node to schedule jobs if they are not already scheduled from a persistent data source (For example using [TaskScheduler\Scheduler::addJobOnce](#add-job-if-not-exists)).
 
 >**Note**: This is planned to change in v4. v4 will feature persistency for jobs.
 
@@ -666,6 +666,6 @@ You should as well avoid using never ending blocking functions in your job, php 
 | Project  | Description |
 | --- | --- |
 | [balloon](https://github.com/gyselroth/balloon)  | balloon is a high performance cloud server. It makes use of this library to deploy all kind of jobs (create previews, scan files, upload to elasticsearch, sending mails, converting documents, clean temporary storage, clean trash, ...). |
-| [tubee](https://github.com/gyselroth/tubee)  | tubee is data management engine and makes use of this libaray to execute asynchronous data sync jobs. |
+| [tubee](https://github.com/gyselroth/tubee)  | tubee is data management engine and makes use of this library to execute asynchronous data sync jobs. |
 
 Add your project here, a PR will be most welcome.
