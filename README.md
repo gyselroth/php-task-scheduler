@@ -1,4 +1,4 @@
-# Asynchronous process management for PHP
+# Clustered process management for PHP
 
 [![Build Status](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler.svg?branch=master)](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler)
 [![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/gyselroth/mongodb-php-task-scheduler/badges/quality-score.png?b=master)](https://scrutinizer-ci.com/g/gyselroth/mongodb-php-task-scheduler/?branch=master)
@@ -7,13 +7,13 @@
 [![GitHub release](https://img.shields.io/github/release/gyselroth/mongodb-php-task-scheduler.svg)](https://github.com/gyselroth/mongodb-php-task-scheduler/releases)
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/gyselroth/mongodb-php-task-scheduler/master/LICENSE)
 
-Asynchronous task scheduler for PHP using MongoDB as message queue. Execute asynchronous tasks the easy way.
+Parallel task scheduler for PHP using MongoDB as distribution queue. Execute parallel tasks the easy way.
 This library has built-in support for clustered systems and multi core cpu. You can start up multiple worker nodes and they will load balance the available jobs with the principal first comes first serves. Each node will also spawn a (dynamically) configurable number of child processes to use all available resources. Moreover it is possible to schedule jobs at certain times, endless intervals as well as rescheduling if jobs fail.
-This brings a real world implementation for asynchronous process management to PHP. You are also able to sync child tasks and much more nice stuff.
+This brings a real world implementation for parallel process management to PHP. You are also able to sync child tasks and much more nice stuff.
 
 ## Features
 
-* Asynchronous tasks
+* Parallel tasks
 * Cluster support
 * Multi core support
 * Load balancing
@@ -64,7 +64,7 @@ The documentation for v2 is available [here](https://github.com/gyselroth/mongod
 * [Real world examples](#real-world-examples)
 
 ## Why?
-PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronous. Sure there is pthreads and pcntl but those are only usable in cli mode (or should only be used there). Using this library you are able to write your code async, schedule tasks and let them execute behind the scenes. 
+PHP isn't a multithreaded language and neither can it handle (most) tasks asynchronous. Sure there is pthreads and pcntl but those are only usable in cli mode (or should only be used there). Using this library you are able to write taks which can be executed in parallel by the same or any other system.
 
 ## How does it work (The short way please)?
 A job is scheduled via a task scheduler and gets written into a central message queue (MongoDB). All Queue nodes will get notified in (soft) realtime that a new job is available.
@@ -406,7 +406,7 @@ foreach($jobs as $job) {
 ```
 
 ### Listen for events
-You may bind to the scheduler and listen for any changes which occur asynchronous.
+You may bind to the scheduler and listen for any changes and do stuff :)
 
 ```php
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
@@ -666,6 +666,6 @@ You should as well avoid using never ending blocking functions in your job, php 
 | Project  | Description |
 | --- | --- |
 | [balloon](https://github.com/gyselroth/balloon)  | balloon is a high performance cloud server. It makes use of this library to deploy all kind of jobs (create previews, scan files, upload to elasticsearch, sending mails, converting documents, clean temporary storage, clean trash, ...). |
-| [tubee](https://github.com/gyselroth/tubee)  | tubee is data management engine and makes use of this library to execute asynchronous data sync jobs. |
+| [tubee](https://github.com/gyselroth/tubee)  | tubee is data management engine and makes use of this library to execute its  sync jobs. |
 
 Add your project here, a PR will be most welcome.
