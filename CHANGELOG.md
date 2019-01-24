@@ -1,3 +1,10 @@
+## 3.0.1
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Thu Jan 25 17:29:34 CET 2018
+
+* [FIX] Catch \Throwable insteadof \Exception #13
+
+
 ## 3.0.0
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Mon Nov 19 17:24:34 CET 2018

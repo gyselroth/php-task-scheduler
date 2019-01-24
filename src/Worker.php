@@ -481,7 +481,7 @@ class Worker
         try {
             $this->executeJob($job);
             $this->current_job = null;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             pcntl_alarm(0);
 
             $this->logger->error('failed execute job ['.$job['_id'].'] of type ['.$job['class'].'] on worker ['.$this->id.']', [
