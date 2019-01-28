@@ -448,8 +448,8 @@ class Scheduler
             'class' => $class,
             'status' => JobInterface::STATUS_WAITING,
             'created' => new UTCDateTime(),
-            'started' => new UTCDateTime(0),
-            'ended' => new UTCDateTime(0),
+            'started' => new UTCDateTime(),
+            'ended' => new UTCDateTime(),
             'worker' => new ObjectId(),
             'data' => $data,
         ];
