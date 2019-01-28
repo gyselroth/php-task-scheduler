@@ -345,7 +345,7 @@ class WorkerManager
             case JobInterface::STATUS_DONE:
             case JobInterface::STATUS_FAILED:
             case JobInterface::STATUS_TIMEOUT:
-                $worker = array_search((string) $event['job'], $this->job_map, true);
+                $worker = array_search((string) $event['job'], $this->job_map);
                 if (false === $worker) {
                     return $this;
                 }
@@ -356,7 +356,7 @@ class WorkerManager
 
             break;
             case JobInterface::STATUS_CANCELED:
-                $worker = array_search($event['job'], $this->job_map, true);
+                $worker = array_search($event['job'], $this->job_map);
                 if (false === $worker) {
                     return $this;
                 }

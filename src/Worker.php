@@ -101,16 +101,6 @@ class Worker
     }
 
     /**
-     * Set worker id.
-     */
-    public function setId(ObjectId $id): Worker
-    {
-        $this->id = $id;
-
-        return $this;
-    }
-
-    /**
      * Handle worker timeout.
      */
     public function timeout(): ?ObjectId
