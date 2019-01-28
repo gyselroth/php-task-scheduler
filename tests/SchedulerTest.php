@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2018 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -21,6 +21,7 @@ use TaskScheduler\Exception\JobNotFoundException;
 use TaskScheduler\JobInterface;
 use TaskScheduler\Process;
 use TaskScheduler\Scheduler;
+use MongoDB\BSON\UTCDateTime;
 
 class SchedulerTest extends TestCase
 {
@@ -89,10 +90,11 @@ class SchedulerTest extends TestCase
 
     public function testNewJobTimestamps()
     {
+        $ts = new UTCDateTime();
         $job = $this->scheduler->addJob('test', ['foo' => 'bar'])->toArray();
-        $this->assertTrue((string) $job['created'] > '0');
-        $this->assertSame((string) $job['started'], '0');
-        $this->assertSame((string) $job['ended'], '0');
+        $this->assertTrue($job['created'] >= $ts);
+        $this->assertTrue($job['started'] >= $ts);
+        $this->assertTrue($job['ended'] >= $ts);
     }
 
     public function testGetJob()
