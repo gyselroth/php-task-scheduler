@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2018 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -64,7 +64,7 @@ class Queue
     protected $manager_pid;
 
     /**
-     * Sysmfsg queue
+     * Sysmfsg queue.
      *
      * @var resource
      */
@@ -198,7 +198,7 @@ class Queue
                 $this->main();
             });
 
-            if($event !== null) {
+            if (null !== $event) {
                 $this->handleEvent($event);
             }
 

@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2018 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -35,7 +35,6 @@ interface JobInterface
         self::STATUS_CANCELED => 'canceled',
         self::STATUS_TIMEOUT => 'timeout',
     ];
-
 
     /**
      * Get job data.

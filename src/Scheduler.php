@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2018 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -258,12 +258,13 @@ class Scheduler
     }
 
     /**
-     * Flush
+     * Flush.
      */
     public function flush(): Scheduler
     {
         $this->db->{$this->job_queue}->drop();
         $this->db->{$this->event_queue}->drop();
+
         return $this;
     }
 
