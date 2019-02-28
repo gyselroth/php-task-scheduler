@@ -22,6 +22,8 @@ use TaskScheduler\Exception\InvalidArgumentException;
 use TaskScheduler\Queue;
 use TaskScheduler\WorkerFactoryInterface;
 use TaskScheduler\WorkerManager;
+use TaskScheduler\JobInterface;
+use TaskScheduler\Worker;
 
 class WorkerManagerTest extends TestCase
 {
@@ -30,10 +32,19 @@ class WorkerManagerTest extends TestCase
 
     public function setUp()
     {
+        $worker = $this->createMock(Worker::class);
+        $factory = $this->createMock(WorkerFactoryInterface::class);
+
+        //make sure we provide a worker process which is long enaugh alive to run tests
+        $factory->method('buildWorker')->will($this->returnCallback(function() use($worker) {
+            sleep(2);
+            return $worker;
+        }));
+
         msg_remove_queue(msg_get_queue(ftok(__DIR__.'/../src/Queue.php', 't')));
         $called = &$this->called;
         $this->manager = $this->getMockBuilder(WorkerManager::class)
-            ->setConstructorArgs([$this->createMock(WorkerFactoryInterface::class), $this->createMock(LoggerInterface::class)])
+            ->setConstructorArgs([$factory, $this->createMock(LoggerInterface::class)])
             ->setMethods(['loop', 'exit'])
             ->getMock();
 
@@ -123,6 +134,7 @@ class WorkerManagerTest extends TestCase
     {
         $this->manager->setOptions([
             WorkerManager::OPTION_PM => WorkerManager::PM_ONDEMAND,
+            WorkerManager::OPTION_MIN_CHILDREN => 0,
         ]);
 
         $queue = msg_get_queue(ftok(__DIR__.'/../src/Queue.php', 't'));
@@ -187,7 +199,47 @@ class WorkerManagerTest extends TestCase
         $this->assertSame(2, $this->manager->count());
     }
 
-    /*public function testForceSpawnPostponedWorker()
+    public function testCancelEvent()
+    {
+        $this->manager->setOptions([
+            WorkerManager::OPTION_MIN_CHILDREN => 1,
+            WorkerManager::OPTION_PM => WorkerManager::PM_DYNAMIC,
+        ]);
+
+        $job = new ObjectId();
+        $queue = msg_get_queue(ftok(__DIR__.'/../src/Queue.php', 't'));
+
+        $map = self::getProperty('job_map');
+        $forks = self::getProperty('forks');
+
+        $this->called = 1;
+        $this->manager->process();
+
+        msg_send($queue, WorkerManager::TYPE_EVENT, [
+            'status' => JobInterface::STATUS_CANCELED,
+            'job' => $job
+        ]);
+
+        $forks_property = self::getProperty('forks');
+        $forks = $forks_property->getValue($this->manager);
+        $this->assertSame(1, count($forks));
+        $key = key($forks);
+
+        $map_property = self::getProperty('job_map');
+        $map_property->setValue($this->manager, [
+            (string)$key => $job
+        ]);
+        $this->assertSame(1, count($map_property->getValue($this->manager)));
+
+        $this->called = 1;
+        $this->manager->process();
+
+        $map = $map_property->getValue($this->manager);
+        $this->assertSame(0, count($map));
+        $this->assertSame(1, count($forks));
+    }
+
+    public function testForceSpawnPostponedWorker()
     {
         $this->manager->setOptions([
             WorkerManager::OPTION_MIN_CHILDREN => 0,
@@ -199,17 +251,23 @@ class WorkerManagerTest extends TestCase
             '_id' => new ObjectId(),
             'options' => [
                 'force_spawn' => true,
-                'at' => time()+1,
+                'at' => time()+10,
             ]
         ]);
 
         $this->manager->process();
         $this->assertSame(0, $this->manager->count());
-        $this->called = 8;
-        sleep(1);
+        $this->called = 3;
+
+        //hook into the protected queue and reduce the time to wait
+        $jobs_property = self::getProperty('onhold');
+        $jobs = $jobs_property->getValue($this->manager);
+        $jobs[key($jobs)]['options']['at'] = time() - 15;
+        $jobs_property->setValue($this->manager, $jobs);
+
         $this->manager->process();
         $this->assertSame(1, $this->manager->count());
-    }*/
+    }
 
     public function testMinChildrenGreaterThanMaxChildren()
     {

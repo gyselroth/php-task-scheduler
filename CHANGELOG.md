@@ -1,3 +1,10 @@
+## 3.0.3
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Mon Jan 28 12:18:34 CET 2018
+
+* [FIX] Killed workers do not get restarted if no new jobs are added #21
+
+
 ## 3.0.2
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Mon Jan 28 12:18:34 CET 2018

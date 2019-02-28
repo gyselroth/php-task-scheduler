@@ -132,13 +132,19 @@ class WorkerTest extends TestCase
     public function testStartWorkerExecutePostponedJob()
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
-            Scheduler::OPTION_AT => time() + 1,
+            Scheduler::OPTION_AT => time() + 10,
         ]);
 
         $this->worker->processAll();
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_POSTPONED, $job->getStatus());
-        sleep(1);
+
+        //hook into the protected queue and reduce the time to wait
+        $jobs_property = self::getProperty('queue');
+        $jobs = $jobs_property->getValue($this->worker);
+        $jobs[key($jobs)]['options']['at'] = time() - 15;
+        $jobs_property->setValue($this->worker, $jobs);
+
         $this->called = 0;
         $this->worker->processAll();
         $job = $this->scheduler->getJob($job->getId());
@@ -154,8 +160,14 @@ class WorkerTest extends TestCase
         $this->worker->processAll();
         $job = $this->scheduler->getJob($job->getId());
         $this->assertSame(JobInterface::STATUS_POSTPONED, $job->getStatus());
-        sleep(1);
         $this->mongodb->selectCollection('taskscheduler.jobs')->deleteMany([]);
+
+        //hook into the protected queue and reduce the time to wait
+        $jobs_property = self::getProperty('queue');
+        $jobs = $jobs_property->getValue($this->worker);
+        $jobs[key($jobs)]['options']['at'] = time() - 15;
+        $jobs_property->setValue($this->worker, $jobs);
+
         $this->called = 0;
         $this->worker->processAll();
         $job = $this->scheduler->getJob($job->getId());
