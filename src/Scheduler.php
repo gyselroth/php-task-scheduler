@@ -417,19 +417,19 @@ class Scheduler
                 if ($cursor->getInnerIterator()->isDead()) {
                     $this->events->create();
 
-                    return $this->wait();
+                    return $this->waitFor($stack, $options);
                 }
 
-                $this->events->next($cursor, function () {
-                    $this->wait();
+                $this->events->next($cursor, function () use($stack, $options) {
+                    $this->waitFor($stack, $options);
                 });
 
                 continue;
             }
 
             $event = $cursor->current();
-            $this->events->next($cursor, function () {
-                $this->wait();
+            $this->events->next($cursor, function () use($stack, $options) {
+                $this->waitFor($stack, $options);
             });
 
             if (JobInterface::STATUS_FAILED === $event['status'] && isset($event['exception']) && $options & self::OPTION_THROW_EXCEPTION) {
