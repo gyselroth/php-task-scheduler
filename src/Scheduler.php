@@ -37,6 +37,11 @@ class Scheduler
     public const OPTION_IGNORE_DATA = 'ignore_data';
 
     /**
+     * Operation options:
+     */
+    public const OPTION_THROW_EXCEPTION = 1;
+
+    /**
      * Default job options.
      */
     public const OPTION_DEFAULT_AT = 'default_at';
@@ -381,6 +386,65 @@ class Scheduler
         ]);
 
         return new Process($document, $this, $this->events);
+    }
+
+
+    /**
+     * Wait for job beeing executed.
+     *
+     * @param Process[] $stack
+     */
+    public function waitFor(array $stack, int $options=0): Scheduler
+    {
+        $jobs = array_map(function($job) {
+            if(!($job instanceof Process)) {
+                throw new InvalidArgumentException('waitFor() requires a stack of Process[]');
+            }
+
+            return $job->getId();
+        }, $stack);
+
+        $cursor = $this->events->getCursor([
+            'job' => ['$in' => $jobs],
+            'status' => ['$gte' => JobInterface::STATUS_DONE],
+        ]);
+
+        $expected = count($stack);
+        $done = 0;
+
+        while (true) {
+            if (null === $cursor->current()) {
+                if ($cursor->getInnerIterator()->isDead()) {
+                    $this->events->create();
+
+                    return $this->waitFor($stack, $options);
+                }
+
+                $this->events->next($cursor, function () use($stack, $options) {
+                    $this->waitFor($stack, $options);
+                });
+
+                continue;
+            }
+
+            $event = $cursor->current();
+            $this->events->next($cursor, function () use($stack, $options) {
+                $this->waitFor($stack, $options);
+            });
+
+            if (JobInterface::STATUS_FAILED === $event['status'] && isset($event['exception']) && $options & self::OPTION_THROW_EXCEPTION) {
+                throw new $event['exception']['class'](
+                    $event['exception']['message'],
+                    $event['exception']['code']
+                );
+            }
+
+            $done++;
+
+            if($done >= $expected) {
+                return $this;
+            }
+        }
     }
 
     /**

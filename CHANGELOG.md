@@ -1,3 +1,12 @@
+## 3.1.0
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Mon Mar 25 16:14:33 CET 2018
+
+* [FIX] Killed workers do not get restarted if no new jobs are added #21
+* [CHANGE] Slow "Process::wait()" when dealing with many jobs (Scheduler::waitFor($stack)) #20
+* [CHANGE] Events are now completely processed before checking for any new jobs in the queue node
+
+
 ## 3.0.2
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Mon Jan 28 12:18:34 CET 2018

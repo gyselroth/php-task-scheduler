@@ -197,6 +197,7 @@ class WorkerManager
             }
         }
 
+        $this->spawnMinimumWorkers();
         return $this;
     }
 
@@ -243,6 +244,22 @@ class WorkerManager
             }
         }
     }
+
+
+    /**
+     * Start minumum number of workers.
+     */
+    protected function spawnMinimumWorkers()
+    {
+        $this->logger->debug('verify that the minimum number ['.$this->min_children.'] of workers are running', [
+            'category' => get_class($this),
+        ]);
+
+        for ($i = $this->count(); $i < $this->min_children; ++$i) {
+            $this->spawnWorker();
+        }
+    }
+
 
     /**
      * Start worker.
