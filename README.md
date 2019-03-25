@@ -375,14 +375,12 @@ This will force main() (Your process) to wait until the task `MyTask::class` was
 Here is more complex example:
 ```php
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
-$jobs = [];
-$jobs[] = $scheduler->addJob(MyTask::class, 'foobar');
-$jobs[] = $scheduler->addJob(MyTask::class, 'barfoo');
-$jobs[] = $scheduler->addJob(OtherTask::class, 'barefoot');
+$stack = [];
+$stack[] = $scheduler->addJob(MyTask::class, 'foobar');
+$stack[] = $scheduler->addJob(MyTask::class, 'barfoo');
+$stack[] = $scheduler->addJob(OtherTask::class, 'barefoot');
 
-foreach($jobs as $job) {
-    $job->wait();
-}
+$scheduler->waitFor($stack);
 
 //some other important stuff here
 ```
@@ -392,16 +390,31 @@ This will wait for all three jobs to be finished before continuing.
 **Important note**:\
 If you are programming in http mode (incoming http requests) and your app needs to deploy tasks it is good practice not to wait!. 
 Best practice is to return a [HTTP 202 code](https://httpstatuses.com/202) instead. If the client needs to know the result of those jobs you may return 
-the process id's and send a 2nd request which then waits and returns the status of those jobs.
+the process id's and send a 2nd request which then waits and returns the status of those jobs or the client may get its results via a persistent connection or websockets.
 
 ```php
 $scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
-$jobs = $scheduler->getJobs([
+$stack = $scheduler->getJobs([
     '_id' => ['$in' => $job_ids_from_http_request]
 ]);
 
-foreach($jobs as $job) {
-    $job->wait();
+$scheduler->waitFor(iterator_to_array($stack));
+
+//do stuff
+```
+
+You may also intercept the wait if any process results in an exception:
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$stack = [];
+$stack[] = $scheduler->addJob(MyTask::class, 'foobar');
+$stack[] = $scheduler->addJob(MyTask::class, 'barfoo');
+$stack[] = $scheduler->addJob(OtherTask::class, 'barefoot');
+
+try {
+    $scheduler->waitFor($stack, Scheduler::OPTION_THROW_EXCEPTION);
+} catch(\Exception $e) {
+    //error handling
 }
 ```
 

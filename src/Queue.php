@@ -175,30 +175,34 @@ class Queue
         $this->catchSignal();
 
         while ($this->loop()) {
-            if (null === $cursor_events->current()) {
-                if ($cursor_events->getInnerIterator()->isDead()) {
-                    $this->logger->error('event queue cursor is dead, is it a capped collection?', [
-                        'category' => get_class($this),
-                    ]);
+            while ($this->loop()) {
+                if (null === $cursor_events->current()) {
+                    if ($cursor_events->getInnerIterator()->isDead()) {
+                        $this->logger->error('event queue cursor is dead, is it a capped collection?', [
+                            'category' => get_class($this),
+                        ]);
 
-                    $this->events->create();
+                        $this->events->create();
 
-                    $this->main();
+                        $this->main();
 
-                    break;
+                        break;
+                    }
+
+                    $this->events->next($cursor_events, function () {
+                        $this->main();
+                    });
                 }
 
+                $event = $cursor_events->current();
                 $this->events->next($cursor_events, function () {
                     $this->main();
                 });
-            }
 
-            $event = $cursor_events->current();
-            $this->events->next($cursor_events, function () {
-                $this->main();
-            });
+                if($event === null) {
+                    break;
+                }
 
-            if (null !== $event) {
                 $this->handleEvent($event);
             }
 
