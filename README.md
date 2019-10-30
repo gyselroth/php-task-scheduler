@@ -29,7 +29,7 @@ This brings a real world implementation for parallel process management to PHP. 
 ## v3
 
 This is the documentation for the current major version v3. You may check the [upgrade guide](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/master/UPGRADE.md) if you want to upgrade from v2/v1.
-The documentation for v2 is available [here](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/2.x/README.md). 
+The documentation for v2 is available [here](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/v2.0.5/README.md). 
 
 # Table of Contents
 * [Features](#features)
