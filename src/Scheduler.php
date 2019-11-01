@@ -24,6 +24,8 @@ use TaskScheduler\Exception\JobNotFoundException;
 
 class Scheduler
 {
+    use EventsTrait;
+
     /**
      * Job options.
      */
@@ -406,7 +408,6 @@ class Scheduler
 
         $cursor = $this->events->getCursor([
             'job' => ['$in' => $jobs],
-            'status' => ['$gte' => JobInterface::STATUS_DONE],
         ]);
 
         $expected = count($stack);
@@ -432,7 +433,11 @@ class Scheduler
                 $this->waitFor($stack, $options);
             });
 
-            if (JobInterface::STATUS_FAILED === $event['status'] && isset($event['exception']) && $options & self::OPTION_THROW_EXCEPTION) {
+            $this->emit($this->getJob($event['job']));
+
+            if($event['status'] < JobInterface::STATUS_DONE) {
+                continue;
+            } elseif (JobInterface::STATUS_FAILED === $event['status'] && isset($event['exception']) && $options & self::OPTION_THROW_EXCEPTION) {
                 throw new $event['exception']['class'](
                     $event['exception']['message'],
                     $event['exception']['code']

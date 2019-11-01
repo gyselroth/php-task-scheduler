@@ -1,3 +1,11 @@
+## 3.2.0
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Mon Mar 25 16:14:33 CET 2018
+
+* [FEATURE] Add event bindings in the Process handler #26
+* [FEATURE] Add event callback bindings to wait(), waitFor() #28
+
+
 ## 3.1.0
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Mon Mar 25 16:14:33 CET 2018

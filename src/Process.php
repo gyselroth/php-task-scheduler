@@ -16,6 +16,8 @@ use MongoDB\BSON\ObjectId;
 
 class Process
 {
+    use EventsTrait;
+
     /**
      * Job.
      *
@@ -102,7 +104,6 @@ class Process
     {
         $cursor = $this->events->getCursor([
             'job' => $this->getId(),
-            'status' => ['$gte' => JobInterface::STATUS_DONE],
         ]);
 
         while (true) {
@@ -125,9 +126,12 @@ class Process
                 $this->wait();
             });
 
+            $this->emit($this);
             $this->job['status'] = $event['status'];
 
-            if (JobInterface::STATUS_FAILED === $this->job['status'] && isset($event['exception'])) {
+            if($event['status'] < JobInterface::STATUS_DONE) {
+                continue;
+            } elseif (JobInterface::STATUS_FAILED === $this->job['status'] && isset($event['exception'])) {
                 throw new $event['exception']['class'](
                     $event['exception']['message'],
                     $event['exception']['code']

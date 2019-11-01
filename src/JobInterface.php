@@ -37,7 +37,7 @@ interface JobInterface
     ];
 
     /**
-     * Get job data.
+     * Set job data.
      */
     public function setData($data): self;
 
