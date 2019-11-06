@@ -257,7 +257,7 @@ class Scheduler
             throw new JobNotFoundException('job '.$id.' was not found');
         }
 
-        return new Process($result, $this, $this->events);
+        return new Process($result, $this);
     }
 
     /**
@@ -309,7 +309,7 @@ class Scheduler
         ]);
 
         foreach ($result as $job) {
-            yield new Process($job, $this, $this->events);
+            yield new Process($job, $this);
         }
     }
 
@@ -337,7 +337,7 @@ class Scheduler
             'typeMap' => self::TYPE_MAP,
         ]);
 
-        $process = new Process($document, $this, $this->events);
+        $process = new Process($document, $this);
 
         return $process;
     }
@@ -384,7 +384,7 @@ class Scheduler
                 return $this->addJobOnce($class, $data, $options);
             }
 
-            return new Process($document, $this, $this->events);
+            return new Process($document, $this);
         }
 
         $this->logger->debug('queue job ['.$result->getUpsertedId().'] added to ['.$class.']', [
@@ -403,7 +403,7 @@ class Scheduler
             'typeMap' => self::TYPE_MAP,
         ]);
 
-        return new Process($document, $this, $this->events);
+        return new Process($document, $this);
     }
 
 
@@ -512,7 +512,7 @@ class Scheduler
                 $this->listen($callback, $query);
             });
 
-            $process = new Process($result, $this, $this->events);
+            $process = new Process($result, $this);
             $this->emit($process);
 
             if (true === $callback($process)) {

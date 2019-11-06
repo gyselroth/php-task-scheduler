@@ -73,10 +73,18 @@ class Queue
     protected $queue;
 
     /**
+     * Scheduler
+     *
+     * @var Scheduler
+     */
+    protected $scheduler;
+
+    /**
      * Init queue.
      */
     public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter=null)
     {
+        $this->scheduler = $scheduler;
         $this->db = $db;
         $this->logger = $logger;
         $this->factory = $factory;
@@ -244,7 +252,7 @@ class Queue
     {
         $this->emit($this->scheduler->getJob($event['job']));
 
-        if($event['status'] > self::STATUS_POSTPONED) {
+        if($event['status'] > JobInterface::STATUS_POSTPONED) {
             $this->logger->debug('received event ['.$event['status'].'] for job ['.$event['job'].'], write into systemv queue', [
                 'category' => get_class($this),
             ]);

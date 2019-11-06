@@ -13,9 +13,17 @@ declare(strict_types=1);
 namespace TaskScheduler;
 
 use Closure;
+use League\Event\Emitter;
 
 trait EventsTrait
 {
+    /**
+     * Emitter
+     *
+     * @var Emitter
+     */
+    protected $emitter;
+
     /**
      * Bind event listener
      */
