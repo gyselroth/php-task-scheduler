@@ -24,6 +24,13 @@ abstract class AbstractJob implements JobInterface
     protected $data;
 
     /**
+     * Scheduler
+     *
+     * @var Scheduler
+     */
+    protected $scheduler;
+
+    /**
      * Job ID.
      *
      * @var ObjectId
@@ -64,5 +71,23 @@ abstract class AbstractJob implements JobInterface
     public function getId(): ObjectId
     {
         return $this->id;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function setScheduler(Scheduler $scheduler): JobInterface
+    {
+        $this->scheduler = $scheduler;
+        return $this;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function updateProgress(float $progress): JobInterface
+    {
+        $this->scheduler->updateJobProgress($this, $progress);
+        return $this;
     }
 }

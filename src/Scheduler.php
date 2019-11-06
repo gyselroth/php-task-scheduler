@@ -20,8 +20,9 @@ use MongoDB\Database;
 use MongoDB\UpdateResult;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidArgumentException;
+use TaskScheduler\Exception\LogicException;
 use TaskScheduler\Exception\JobNotFoundException;
-use League\Events\Emitter;
+use League\Event\Emitter;
 
 class Scheduler
 {
@@ -68,6 +69,19 @@ class Scheduler
         'document' => 'array',
         'root' => 'array',
         'array' => 'array',
+    ];
+
+    /**
+     * Valid events
+     */
+    public const VALID_EVENTS = [
+        'taskscheduler.onStart',
+        'taskscheduler.onDone',
+        'taskscheduler.onPostponed',
+        'taskscheduler.onFailed',
+        'taskscheduler.onTimeout',
+        'taskscheduler.onCancel',
+        'taskscheduler.*',
     ];
 
     /**
@@ -400,11 +414,13 @@ class Scheduler
      */
     public function waitFor(array $stack, int $options=0): Scheduler
     {
-        $jobs = array_map(function($job) {
+        $orig = [];
+        $jobs = array_map(function($job) use(&$orig) {
             if(!($job instanceof Process)) {
                 throw new InvalidArgumentException('waitFor() requires a stack of Process[]');
             }
 
+            $orig[(string)$job->getId()] = $job;
             return $job->getId();
         }, $stack);
 
@@ -436,7 +452,11 @@ class Scheduler
                 $this->waitFor($stack, $options);
             });
 
-            $this->emit($this->getJob($event['job']));
+            $process = $orig[(string)$event['job']];
+            $data = $process->toArray();
+            $data['status'] = $event['status'];
+            $process->replace(new Process($data, $this));
+            $this->emit($process);
 
             if($event['status'] < JobInterface::STATUS_DONE) {
                 continue;
@@ -493,7 +513,7 @@ class Scheduler
             });
 
             $process = new Process($result, $this, $this->events);
-            $this->emit($this->getJob($process));
+            $this->emit($process);
 
             if (true === $callback($process)) {
                 return $this;
@@ -526,6 +546,7 @@ class Scheduler
             'started' => new UTCDateTime(),
             'ended' => new UTCDateTime(),
             'worker' => new ObjectId(),
+            'progress' => 0.0,
             'data' => $data,
         ];
 
@@ -555,5 +576,25 @@ class Scheduler
         ]);
 
         return $result;
+    }
+
+    /**
+     * Update job progress.
+     */
+    public function updateJobProgress(JobInterface $job, float $progress): self
+    {
+        if($progress < 0 || $progress > 100) {
+            throw new LogicException('progress may only be between 0 to 100');
+        }
+
+        $result = $this->db->{$this->job_queue}->updateOne([
+            '_id' => $id,
+        ], [
+            '$set' => [
+                'progress' => $progress,
+            ],
+        ]);
+
+        return $this;
     }
 }

@@ -40,6 +40,15 @@ class Process
     }
 
     /**
+     * Replace process data
+     */
+    public function replace(Process $process): self
+    {
+        $this->job = $process->toArray();
+        return $this;
+    }
+
+    /**
      * To array.
      */
     public function toArray(): array
@@ -85,6 +94,14 @@ class Process
     public function getWorker(): ObjectId
     {
         return $this->job['worker'];
+    }
+
+    /**
+     * Get current job progress
+     */
+    public function getProgress(): float
+    {
+        return $this->job['progress'] ?? 0.0;
     }
 
     /**

@@ -4,6 +4,7 @@
 
 * [FEATURE] Add event bindings in the Process handler #26
 * [FEATURE] Add event callback bindings to wait(), waitFor() #28
+* [FEATURE] Progress support #29
 
 
 ## 3.1.0

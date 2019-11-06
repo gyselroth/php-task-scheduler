@@ -54,8 +54,10 @@ The documentation for v2 is available [here](https://github.com/gyselroth/mongod
         * [Cancel job](#cancel-job)
         * [Modify jobs](#modify-jobs)
     * [Handling of failed jobs](#handling-of-failed-jobs)
+    * [Job progess](#job-progress)
     * [Asynchronous programming](#asynchronous-programming)
     * [Listen for Events](#listen-for-events)
+        * [Bind events](#bind-events)
     * [Advanced job options](#advanced-job-options)
     * [Add job if not exists](#add-job-if-not-exists)
     * [Advanced worker manager options](#advanced-worker-manager-options)
@@ -83,7 +85,7 @@ A job may be rescheduled if it failed. There are lots of more features available
 * PHP mongodb extension
 * PHP sysvmsg extension
 
->**Note**: This library will only work on \*nix system. There is no windows support and there will most likely never be.
+>**Note**: This library will only work on \*nix systems. There is no windows support and there will most likely never be.
 
 
 ## Download
@@ -362,6 +364,46 @@ $scheduler->addJob(MailJob::class, $mail->toString(), [
 
 This will queue our mail to be executed in one hour from now and it will re-schedule the job up to three times if it fails with an interval of one minute.
 
+### Job progress
+
+TaskScheduler has built-in support to update the progress of a job from your job implementation. 
+By default a job starts at `0` (%) and ends with progress `100` (%). Note that the progress is floating number.
+You may increase the progress made within your job.
+
+Let us have a look how this works with a job which copies a file from a to b.
+
+```php
+class CopyFileJob extends TaskScheduler\AbstractJob
+{
+    /**
+     * {@inheritdoc}
+     */
+    public function start(): bool
+    {
+        $source = $this->data['source'];
+        $dest = $this->data['destination'];
+
+        $size = filesize($source);
+        $f = fopen($source, 'r');
+        $t = fopen($dest, 'w');
+        $read = 0;
+
+        while($chunk = fread($f, 4096)) {
+            $read += fwrite($t, $chunk);
+            $this->updateProgress($read/$size*100);
+        }
+    }
+}
+```
+
+The current progress may be available using the process interface:
+
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$p = $scheduler->getJob(MongoDB\BSON\ObjectId('5b3cbc39e26cf26c6d0ede69'));
+$p->getProgress();
+```
+
 ### Asynchronous programming
 
 Have a look at this example:
@@ -453,11 +495,11 @@ $stack[] = $scheduler->addJob(MyTask::class, 'foobar');
 $stack[] = $scheduler->addJob(MyTask::class, 'barfoo');
 $stack[] = $scheduler->addJob(OtherTask::class, 'barefoot');
 
-$scheduler->on('waiting', function(\TaskScheduler\Process $p) {
+$scheduler->on('waiting', function(League\Event\Event $e, TaskScheduler\Process $p) {
     echo 'job '.$p->getId().' is waiting';
-})->on('done', function(\TaskScheduler\Process $p) {
+})->on('done', function(League\Event\Event $e, TaskScheduler\Process $p) {
     echo 'job '.$p->getId().' is finished';
-})->on('*', function(\TaskScheduler\Process $p) {
+})->on('*', function(League\Event\Event $e, TaskScheduler\Process $p) {
     echo 'job '.$p->getId().' is '.$p->getStats();
 });
 
@@ -472,9 +514,9 @@ You may bind listeneres to the same events in your queue nodes:
 ```php
 $queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger);
 
-$queue->on('timeout', function(\TaskScheduler\Process $p) {
+$queue->on('timeout', function(League\Event\Event $e, TaskScheduler\Process $p) {
     echo 'job '.$p->getId().' is timed out';
-})->on('*', function(\TaskScheduler\Process $p) {
+})->on('*', function(League\Event\Event $e, TaskScheduler\Process $p) {
     echo 'job '.$p->getId().' is '.$p->getStats();
 });
 
@@ -490,7 +532,7 @@ Under the hood both `TaskScheduler\Queue` and `TaskScheduler\Scheduler` use `Lea
 You may create both instances with your own Leage Event emitter instance:
 
 ```php
-$emitter = new \League\Event\Emitter();
+$emitter = new League\Event\Emitter();
 
 //Queue
 $queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger, $emitter);

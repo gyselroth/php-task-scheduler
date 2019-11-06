@@ -57,6 +57,16 @@ interface JobInterface
     public function getId(): ObjectId;
 
     /**
+     * Set scheduler.
+     */
+    public function setScheduler(Scheduler $scheduler): self;
+
+    /**
+     * Update job progress.
+     */
+    public function updateProgress(float $progress): self;
+
+    /**
      * Start job.
      */
     public function start(): bool;

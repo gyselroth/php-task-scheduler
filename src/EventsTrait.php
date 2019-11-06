@@ -17,28 +17,15 @@ use Closure;
 trait EventsTrait
 {
     /**
-     * Valid events
-     */
-    public const VALID_EVENTS = [
-        'taskscheduler.onStart',
-        'taskscheduler.onDone',
-        'taskscheduler.onPostponed',
-        'taskscheduler.onFailed',
-        'taskscheduler.onTimeout',
-        'taskscheduler.onCancel',
-        'taskscheduler.*',
-    ];
-
-    /**
      * Bind event listener
      */
     public function on(string $event, Closure $handler)
     {
-        if(!in_array($event, self::VALID_EVENTS)) {
+        if(!in_array($event, Scheduler::VALID_EVENTS)) {
             $name = 'taskscheduler.on'.ucfirst($event);
         }
 
-        $emitter->addListener($event, $handler);
+        $this->emitter->addListener($event, $handler);
         return $this;
     }
 
@@ -60,7 +47,7 @@ trait EventsTrait
              case JobInterface::STATUS_POSTPONED:
                 $this->emitter->emit('taskscheduler.onPostponed', $process);
                 return true;
-             case JobInterfce::STATUS_FAILED:
+             case JobInterface::STATUS_FAILED:
                 $this->emitter->emit('taskscheduler.onFailed', $process);
                 return true;
              case JobInterface::STATUS_TIMEOUT:
