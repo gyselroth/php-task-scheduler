@@ -43,6 +43,9 @@ PHP_UNITTEST_FILES = $(call macro_find_phpfiles,$(TESTS_DIR))
 .PHONY: all
 all: build
 
+init:
+	git config core.hooksPath .githooks
+
 .PHONY: clean
 clean: mostlyclean
 	@-test ! -d $(VENDOR_DIR) || rm -rfv $(VENDOR_DIR)/*
