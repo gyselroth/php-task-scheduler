@@ -75,14 +75,14 @@ class Queue
     /**
      * Init queue.
      */
-    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, Emitter $emitter)
+    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter=null)
     {
         $this->db = $db;
         $this->logger = $logger;
         $this->factory = $factory;
         $this->jobs = new MessageQueue($db, $scheduler->getJobQueue(), $scheduler->getJobQueueSize(), $logger);
         $this->events = new MessageQueue($db, $scheduler->getEventQueue(), $scheduler->getEventQueueSize(), $logger);
-        $this->emitter = $emitter;
+        $this->emitter = $emitter ?? new Emitter();
     }
 
     /**
@@ -172,7 +172,6 @@ class Queue
         $cursor_events = $this->events->getCursor([
             'timestamp' => ['$gte' => new UTCDateTime()],
             'job' => ['$exists' => true],
-            //'status' => ['$gt' => JobInterface::STATUS_POSTPONED],
         ]);
 
         $this->catchSignal();

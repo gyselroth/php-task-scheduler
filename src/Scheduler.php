@@ -21,6 +21,7 @@ use MongoDB\UpdateResult;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidArgumentException;
 use TaskScheduler\Exception\JobNotFoundException;
+use League\Events\Emitter;
 
 class Scheduler
 {
@@ -156,12 +157,13 @@ class Scheduler
     /**
      * Init queue.
      */
-    public function __construct(Database $db, LoggerInterface $logger, array $config = [])
+    public function __construct(Database $db, LoggerInterface $logger, array $config = [], ?Emitter $emitter=null)
     {
         $this->db = $db;
         $this->logger = $logger;
         $this->setOptions($config);
         $this->events = new MessageQueue($db, $this->getEventQueue(), $this->getEventQueueSize(), $logger);
+        $this->emitter = $emitter ?? new Emitter();
     }
 
     /**
@@ -410,6 +412,7 @@ class Scheduler
             'job' => ['$in' => $jobs],
         ]);
 
+        $start = time();
         $expected = count($stack);
         $done = 0;
 
@@ -490,6 +493,8 @@ class Scheduler
             });
 
             $process = new Process($result, $this, $this->events);
+            $this->emit($this->getJob($process));
+
             if (true === $callback($process)) {
                 return $this;
             }

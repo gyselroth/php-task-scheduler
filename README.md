@@ -25,6 +25,8 @@ This brings a real world implementation for parallel process management to PHP. 
 * Retry and intervals
 * Schedule tasks at specific times
 * Signal management
+* Intercept events
+* Progress support
 
 ## v3
 
@@ -439,6 +441,63 @@ $jobs = $scheduler->listen(function(TaskScheduler\Process $process) {
 ```
 
 >**Note**: listen() is a blocking call, you may exit the listener and continue with main() if you return a boolean `true` in the listener callback.
+
+### Bind events
+Besides the simple listener method for the Scheduler you may bind event listeneres to your `TaskScheduler\Queue` and/or `TaskScheduler\Scheduler`.
+
+For example:
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$stack = [];
+$stack[] = $scheduler->addJob(MyTask::class, 'foobar');
+$stack[] = $scheduler->addJob(MyTask::class, 'barfoo');
+$stack[] = $scheduler->addJob(OtherTask::class, 'barefoot');
+
+$scheduler->on('waiting', function(\TaskScheduler\Process $p) {
+    echo 'job '.$p->getId().' is waiting';
+})->on('done', function(\TaskScheduler\Process $p) {
+    echo 'job '.$p->getId().' is finished';
+})->on('*', function(\TaskScheduler\Process $p) {
+    echo 'job '.$p->getId().' is '.$p->getStats();
+});
+
+$scheduler->waitFor($stack);
+```
+
+>**Note**: You need to to bind your listeneres before calling `Scheduler::waitFor()` since that is a synchronous blocking call.
+
+
+You may bind listeneres to the same events in your queue nodes:
+
+```php
+$queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger);
+
+$queue->on('timeout', function(\TaskScheduler\Process $p) {
+    echo 'job '.$p->getId().' is timed out';
+})->on('*', function(\TaskScheduler\Process $p) {
+    echo 'job '.$p->getId().' is '.$p->getStats();
+});
+
+$queue->process();
+```
+
+>**Note**: You need to to bind your listeneres before calling `Queue::process()` since that is a synchronous blocking call.
+
+
+#### Custom event emitter
+
+Under the hood both `TaskScheduler\Queue` and `TaskScheduler\Scheduler` use `League\Event\Emitter` as event emitter.
+You may create both instances with your own Leage Event emitter instance:
+
+```php
+$emitter = new \League\Event\Emitter();
+
+//Queue
+$queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger, $emitter);
+
+//Scheduler
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger, [], $emitter);
+```
 
 ### Advanced job options
 TaskScheduler\Scheduler::addJob()/TaskScheduler\Scheduler::addJobOnce() also accept a third option (options) which let you set more advanced options for the job:

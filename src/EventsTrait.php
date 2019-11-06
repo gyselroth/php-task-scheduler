@@ -12,13 +12,45 @@ declare(strict_types=1);
 
 namespace TaskScheduler;
 
+use Closure;
+
 trait EventsTrait
 {
+    /**
+     * Valid events
+     */
+    public const VALID_EVENTS = [
+        'taskscheduler.onStart',
+        'taskscheduler.onDone',
+        'taskscheduler.onPostponed',
+        'taskscheduler.onFailed',
+        'taskscheduler.onTimeout',
+        'taskscheduler.onCancel',
+        'taskscheduler.*',
+    ];
+
+    /**
+     * Bind event listener
+     */
+    public function on(string $event, Closure $handler)
+    {
+        if(!in_array($event, self::VALID_EVENTS)) {
+            $name = 'taskscheduler.on'.ucfirst($event);
+        }
+
+        $emitter->addListener($event, $handler);
+        return $this;
+    }
+
+    /**
+     * Emit process event
+     */
     protected function emit(Process $process): bool
     {
-        $this->emitter->emit('taskscheduler.on', $process);
-
         switch ($process->getStatus()) {
+             case JobInterface::STATUS_WAITING:
+                $this->emitter->emit('taskscheduler.onWaiting', $process);
+                return true;
              case JobInterface::STATUS_PROCESSING:
                 $this->emitter->emit('taskscheduler.onStart', $process);
                 return true;
