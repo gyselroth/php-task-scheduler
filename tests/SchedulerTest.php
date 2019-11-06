@@ -17,6 +17,7 @@ use MongoDB\BSON\ObjectId;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidArgumentException;
+use TaskScheduler\Exception\LogicException;
 use TaskScheduler\Exception\JobNotFoundException;
 use TaskScheduler\JobInterface;
 use TaskScheduler\Process;
@@ -223,6 +224,31 @@ class SchedulerTest extends TestCase
         ]);
 
         $this->assertEquals($first->getId(), $seccond->getId());
+    }
+
+    public function testUpdateJobProgressTooLow()
+    {
+        $this->expectException(LogicException::class);
+        $job = $this->createMock(JobInterface::class);
+        $this->scheduler->updateJobProgress($job, -0.1);
+    }
+
+    public function testUpdateJobProgressTooHigh()
+    {
+        $this->expectException(LogicException::class);
+        $job = $this->createMock(JobInterface::class);
+        $this->scheduler->updateJobProgress($job, 101);
+    }
+
+    public function testUpdateJobProgress()
+    {
+        $process = $this->scheduler->addJob('test', ['foo' => 'bar']);
+        $job = $this->createMock(JobInterface::class);
+        $job->method('getId')->willReturn($process->getId());
+
+        $this->scheduler->updateJobProgress($job, 50.5);
+        $process = $this->scheduler->getJob($process->getId());
+        $this->assertSame(50.5, $process->getProgress());
     }
 
     public function testAddOnceDifferentData()

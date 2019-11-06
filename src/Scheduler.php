@@ -588,7 +588,7 @@ class Scheduler
         }
 
         $result = $this->db->{$this->job_queue}->updateOne([
-            '_id' => $id,
+            '_id' => $job->getId(),
         ], [
             '$set' => [
                 'progress' => $progress,
