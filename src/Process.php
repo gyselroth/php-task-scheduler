@@ -31,20 +31,21 @@ class Process
     protected $scheduler;
 
     /**
-     * Events queue.
-     *
-     * @var MessageQueue
-     */
-    protected $events;
-
-    /**
      * Initialize process.
      */
-    public function __construct(array $job, Scheduler $scheduler, MessageQueue $events)
+    public function __construct(array $job, Scheduler $scheduler)
     {
         $this->job = $job;
         $this->scheduler = $scheduler;
-        $this->events = $events;
+    }
+
+    /**
+     * Replace process data
+     */
+    public function replace(Process $process): self
+    {
+        $this->job = $process->toArray();
+        return $this;
     }
 
     /**
@@ -96,46 +97,20 @@ class Process
     }
 
     /**
+     * Get current job progress
+     */
+    public function getProgress(): float
+    {
+        return $this->job['progress'] ?? 0.0;
+    }
+
+    /**
      * Wait for job beeing executed.
      */
     public function wait(): Process
     {
-        $cursor = $this->events->getCursor([
-            'job' => $this->getId(),
-            'status' => ['$gte' => JobInterface::STATUS_DONE],
-        ]);
-
-        while (true) {
-            if (null === $cursor->current()) {
-                if ($cursor->getInnerIterator()->isDead()) {
-                    $this->events->create();
-
-                    return $this->wait();
-                }
-
-                $this->events->next($cursor, function () {
-                    $this->wait();
-                });
-
-                continue;
-            }
-
-            $event = $cursor->current();
-            $this->events->next($cursor, function () {
-                $this->wait();
-            });
-
-            $this->job['status'] = $event['status'];
-
-            if (JobInterface::STATUS_FAILED === $this->job['status'] && isset($event['exception'])) {
-                throw new $event['exception']['class'](
-                    $event['exception']['message'],
-                    $event['exception']['code']
-                );
-            }
-
-            return $this;
-        }
+        $this->scheduler->waitFor([$this], Scheduler::OPTION_THROW_EXCEPTION);
+        return $this;
     }
 
     /**

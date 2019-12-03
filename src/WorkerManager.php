@@ -41,6 +41,8 @@ class WorkerManager
      */
     public const TYPE_JOB = 1;
     public const TYPE_EVENT = 2;
+    public const TYPE_WORKER_SPAWN = 3;
+    public const TYPE_WORKER_KILL = 2;
 
     /**
      * Process management.
@@ -194,6 +196,12 @@ class WorkerManager
                 if (isset($this->job_map[$id])) {
                     unset($this->job_map[$id]);
                 }
+
+                msg_send($this->queue, WorkerManager::TYPE_WORKER_KILL, [
+                    '_id' => $id,
+                    'pid' => $pid['pid'],
+                    'sig' => $sig,
+                ]);
             }
         }
 
@@ -292,6 +300,11 @@ class WorkerManager
             exit();
         }
 
+        msg_send($this->queue, WorkerManager::TYPE_WORKER_SPAWN, [
+            '_id' => $id,
+            'pid' => $pid,
+        ]);
+
         $this->forks[(string) $id] = $pid;
         $this->logger->debug('spawned worker ['.$id.'] with pid ['.$pid.']', [
             'category' => get_class($this),
@@ -335,6 +348,10 @@ class WorkerManager
                     case self::TYPE_EVENT:
                         $this->handleEvent($msg);
 
+                    break;
+                    case self::TYPE_WORKER_SPAWN:
+                    case self::TYPE_WORKER_KILL:
+                        //events handled by queue node
                     break;
                     default:
                         $this->logger->warning('received unknown systemv message type ['.$type.']', [

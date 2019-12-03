@@ -571,6 +571,7 @@ class Worker
         $instance
             ->setData($job['data'])
             ->setId($job['_id'])
+            ->setScheduler($this->scheduler)
             ->start();
 
         $return = $this->updateJob($job, JobInterface::STATUS_DONE);

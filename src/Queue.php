@@ -16,10 +16,12 @@ use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\SpawnForkException;
+use League\Event\Emitter;
 
 class Queue
 {
     use InjectTrait;
+    use EventsTrait;
 
     /**
      * Database.
@@ -71,15 +73,24 @@ class Queue
     protected $queue;
 
     /**
+     * Scheduler
+     *
+     * @var Scheduler
+     */
+    protected $scheduler;
+
+    /**
      * Init queue.
      */
-    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger)
+    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter=null)
     {
+        $this->scheduler = $scheduler;
         $this->db = $db;
         $this->logger = $logger;
         $this->factory = $factory;
         $this->jobs = new MessageQueue($db, $scheduler->getJobQueue(), $scheduler->getJobQueueSize(), $logger);
         $this->events = new MessageQueue($db, $scheduler->getEventQueue(), $scheduler->getEventQueueSize(), $logger);
+        $this->emitter = $emitter ?? new Emitter();
     }
 
     /**
@@ -169,12 +180,38 @@ class Queue
         $cursor_events = $this->events->getCursor([
             'timestamp' => ['$gte' => new UTCDateTime()],
             'job' => ['$exists' => true],
-            'status' => ['$gt' => JobInterface::STATUS_POSTPONED],
         ]);
 
         $this->catchSignal();
 
         while ($this->loop()) {
+            while ($this->loop()) {
+                if (msg_receive($this->queue, 0, $type, 16384, $msg, true, 0)) {
+                    $this->logger->debug('received systemv message type ['.$type.']', [
+                        'category' => get_class($this),
+                    ]);
+
+                    switch ($type) {
+                        case WorkerManager::TYPE_JOB:
+                        case WorkerManager::TYPE_EVENT:
+                            //handled by worker manager
+                        break;
+                        case WorkerManager::TYPE_WORKER_SPAWN:
+                            $this->emitter->emit('taskscheduler.onWorkerSpawn', $msg['_id']);
+                        break;
+                        case WorkerManager::TYPE_WORKER_KILL:
+                            $this->emitter->emit('taskscheduler.onWorkerKill', $msg['_id']);
+                        break;
+                        default:
+                            $this->logger->warning('received unknown systemv message type ['.$type.']', [
+                                'category' => get_class($this),
+                            ]);
+                    }
+                } else {
+                    break;
+                }
+            }
+
             while ($this->loop()) {
                 if (null === $cursor_events->current()) {
                     if ($cursor_events->getInnerIterator()->isDead()) {
@@ -240,11 +277,15 @@ class Queue
      */
     protected function handleEvent(array $event): self
     {
-        $this->logger->debug('received event ['.$event['status'].'] for job ['.$event['job'].'], write into systemv queue', [
-            'category' => get_class($this),
-        ]);
+        $this->emit($this->scheduler->getJob($event['job']));
 
-        msg_send($this->queue, WorkerManager::TYPE_EVENT, $event);
+        if($event['status'] > JobInterface::STATUS_POSTPONED) {
+            $this->logger->debug('received event ['.$event['status'].'] for job ['.$event['job'].'], write into systemv queue', [
+                'category' => get_class($this),
+            ]);
+
+            msg_send($this->queue, WorkerManager::TYPE_EVENT, $event);
+        }
 
         return $this;
     }

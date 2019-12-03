@@ -20,10 +20,14 @@ use MongoDB\Database;
 use MongoDB\UpdateResult;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidArgumentException;
+use TaskScheduler\Exception\LogicException;
 use TaskScheduler\Exception\JobNotFoundException;
+use League\Event\Emitter;
 
 class Scheduler
 {
+    use EventsTrait;
+
     /**
      * Job options.
      */
@@ -53,6 +57,7 @@ class Scheduler
     /**
      * Queue options.
      */
+    public const OPTION_PROGRESS_RATE_LIMIT = 1;
     public const OPTION_JOB_QUEUE = 'job_queue';
     public const OPTION_JOB_QUEUE_SIZE = 'job_queue_size';
     public const OPTION_EVENT_QUEUE = 'event_queue';
@@ -65,6 +70,21 @@ class Scheduler
         'document' => 'array',
         'root' => 'array',
         'array' => 'array',
+    ];
+
+    /**
+     * Valid events
+     */
+    public const VALID_EVENTS = [
+        'taskscheduler.onWorkerSpawn',
+        'taskscheduler.onWorkerKill',
+        'taskscheduler.onWaiting',
+        'taskscheduler.onPostponed',
+        'taskscheduler.onProcessing',
+        'taskscheduler.onDone',
+        'taskscheduler.onFailed',
+        'taskscheduler.onTimeout',
+        'taskscheduler.onCancel',
     ];
 
     /**
@@ -145,6 +165,11 @@ class Scheduler
     protected $event_queue_size = 5000000;
 
     /**
+     * Progress rate limit (miliseconds)
+     */
+    protected $progress_rate_limit = 500;
+
+    /**
      * Events queue.
      *
      * @var MessageQueue
@@ -152,14 +177,22 @@ class Scheduler
     protected $events;
 
     /**
+     * Progress rate limit storage
+     *
+     * @var array
+     */
+    protected $progress_limit = [];
+
+    /**
      * Init queue.
      */
-    public function __construct(Database $db, LoggerInterface $logger, array $config = [])
+    public function __construct(Database $db, LoggerInterface $logger, array $config = [], ?Emitter $emitter=null)
     {
         $this->db = $db;
         $this->logger = $logger;
         $this->setOptions($config);
         $this->events = new MessageQueue($db, $this->getEventQueue(), $this->getEventQueueSize(), $logger);
+        $this->emitter = $emitter ?? new Emitter();
     }
 
     /**
@@ -181,6 +214,7 @@ class Scheduler
                 case self::OPTION_DEFAULT_TIMEOUT:
                 case self::OPTION_JOB_QUEUE_SIZE:
                 case self::OPTION_EVENT_QUEUE_SIZE:
+                case self::OPTION_PROGRESS_RATE_LIMIT:
                     $this->{$option} = (int) $value;
 
                 break;
@@ -239,7 +273,7 @@ class Scheduler
             throw new JobNotFoundException('job '.$id.' was not found');
         }
 
-        return new Process($result, $this, $this->events);
+        return new Process($result, $this);
     }
 
     /**
@@ -291,7 +325,7 @@ class Scheduler
         ]);
 
         foreach ($result as $job) {
-            yield new Process($job, $this, $this->events);
+            yield new Process($job, $this);
         }
     }
 
@@ -319,7 +353,7 @@ class Scheduler
             'typeMap' => self::TYPE_MAP,
         ]);
 
-        $process = new Process($document, $this, $this->events);
+        $process = new Process($document, $this);
 
         return $process;
     }
@@ -366,7 +400,7 @@ class Scheduler
                 return $this->addJobOnce($class, $data, $options);
             }
 
-            return new Process($document, $this, $this->events);
+            return new Process($document, $this);
         }
 
         $this->logger->debug('queue job ['.$result->getUpsertedId().'] added to ['.$class.']', [
@@ -385,7 +419,7 @@ class Scheduler
             'typeMap' => self::TYPE_MAP,
         ]);
 
-        return new Process($document, $this, $this->events);
+        return new Process($document, $this);
     }
 
 
@@ -396,19 +430,21 @@ class Scheduler
      */
     public function waitFor(array $stack, int $options=0): Scheduler
     {
-        $jobs = array_map(function($job) {
+        $orig = [];
+        $jobs = array_map(function($job) use(&$orig) {
             if(!($job instanceof Process)) {
                 throw new InvalidArgumentException('waitFor() requires a stack of Process[]');
             }
 
+            $orig[(string)$job->getId()] = $job;
             return $job->getId();
         }, $stack);
 
         $cursor = $this->events->getCursor([
             'job' => ['$in' => $jobs],
-            'status' => ['$gte' => JobInterface::STATUS_DONE],
         ]);
 
+        $start = time();
         $expected = count($stack);
         $done = 0;
 
@@ -432,7 +468,15 @@ class Scheduler
                 $this->waitFor($stack, $options);
             });
 
-            if (JobInterface::STATUS_FAILED === $event['status'] && isset($event['exception']) && $options & self::OPTION_THROW_EXCEPTION) {
+            $process = $orig[(string)$event['job']];
+            $data = $process->toArray();
+            $data['status'] = $event['status'];
+            $process->replace(new Process($data, $this));
+            $this->emit($process);
+
+            if($event['status'] < JobInterface::STATUS_DONE) {
+                continue;
+            } elseif (JobInterface::STATUS_FAILED === $event['status'] && isset($event['exception']) && $options & self::OPTION_THROW_EXCEPTION) {
                 throw new $event['exception']['class'](
                     $event['exception']['message'],
                     $event['exception']['code']
@@ -484,7 +528,9 @@ class Scheduler
                 $this->listen($callback, $query);
             });
 
-            $process = new Process($result, $this, $this->events);
+            $process = new Process($result, $this);
+            $this->emit($process);
+
             if (true === $callback($process)) {
                 return $this;
             }
@@ -516,6 +562,7 @@ class Scheduler
             'started' => new UTCDateTime(),
             'ended' => new UTCDateTime(),
             'worker' => new ObjectId(),
+            'progress' => 0.0,
             'data' => $data,
         ];
 
@@ -545,5 +592,32 @@ class Scheduler
         ]);
 
         return $result;
+    }
+
+    /**
+     * Update job progress.
+     */
+    public function updateJobProgress(JobInterface $job, float $progress): self
+    {
+        if($progress < 0 || $progress > 100) {
+            throw new LogicException('progress may only be between 0 to 100');
+        }
+
+        $current = microtime(true);
+
+        if(isset($this->progress_limit[(string)$job->getId()]) && $this->progress_limit[(string)$job->getId()] + $this->progress_rate_limit > $current) {
+            return $this;
+        }
+
+        $result = $this->db->{$this->job_queue}->updateOne([
+            '_id' => $job->getId(),
+        ], [
+            '$set' => [
+                'progress' => $progress,
+            ],
+        ]);
+
+        $this->progress_limit[(string)$job->getId()] = $current;
+        return $this;
     }
 }

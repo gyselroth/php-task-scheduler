@@ -25,6 +25,8 @@ This brings a real world implementation for parallel process management to PHP. 
 * Retry and intervals
 * Schedule tasks at specific times
 * Signal management
+* Intercept events
+* Progress support
 
 ## v3
 
@@ -52,8 +54,10 @@ The documentation for v2 is available [here](https://github.com/gyselroth/mongod
         * [Cancel job](#cancel-job)
         * [Modify jobs](#modify-jobs)
     * [Handling of failed jobs](#handling-of-failed-jobs)
+    * [Job progess](#job-progress)
     * [Asynchronous programming](#asynchronous-programming)
     * [Listen for Events](#listen-for-events)
+        * [Bind events](#bind-events)
     * [Advanced job options](#advanced-job-options)
     * [Add job if not exists](#add-job-if-not-exists)
     * [Advanced worker manager options](#advanced-worker-manager-options)
@@ -81,7 +85,7 @@ A job may be rescheduled if it failed. There are lots of more features available
 * PHP mongodb extension
 * PHP sysvmsg extension
 
->**Note**: This library will only work on \*nix system. There is no windows support and there will most likely never be.
+>**Note**: This library will only work on \*nix systems. There is no windows support and there will most likely never be.
 
 
 ## Download
@@ -360,6 +364,49 @@ $scheduler->addJob(MailJob::class, $mail->toString(), [
 
 This will queue our mail to be executed in one hour from now and it will re-schedule the job up to three times if it fails with an interval of one minute.
 
+### Job progress
+
+TaskScheduler has built-in support to update the progress of a job from your job implementation. 
+By default a job starts at `0` (%) and ends with progress `100` (%). Note that the progress is floating number.
+You may increase the progress made within your job.
+
+Let us have a look how this works with a job which copies a file from a to b.
+
+```php
+class CopyFileJob extends TaskScheduler\AbstractJob
+{
+    /**
+     * {@inheritdoc}
+     */
+    public function start(): bool
+    {
+        $source = $this->data['source'];
+        $dest = $this->data['destination'];
+
+        $size = filesize($source);
+        $f = fopen($source, 'r');
+        $t = fopen($dest, 'w');
+        $read = 0;
+
+        while($chunk = fread($f, 4096)) {
+            $read += fwrite($t, $chunk);
+            $this->updateProgress($read/$size*100);
+        }
+    }
+}
+```
+
+The current progress may be available using the process interface:
+
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$p = $scheduler->getJob(MongoDB\BSON\ObjectId('5b3cbc39e26cf26c6d0ede69'));
+$p->getProgress();
+```
+
+>**Note** There is a rate limit for the progress updates which is by default 500ms. You may change the rate limit by configuring the `TaskScheduler::OPTION_PROGRESS_RATE_LIMIT` to something else and to 0 
+if you do not want a rate limit at all.
+
 ### Asynchronous programming
 
 Have a look at this example:
@@ -439,6 +486,63 @@ $jobs = $scheduler->listen(function(TaskScheduler\Process $process) {
 ```
 
 >**Note**: listen() is a blocking call, you may exit the listener and continue with main() if you return a boolean `true` in the listener callback.
+
+### Bind events
+Besides the simple listener method for the Scheduler you may bind event listeneres to your `TaskScheduler\Queue` and/or `TaskScheduler\Scheduler`.
+
+For example:
+```php
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger);
+$stack = [];
+$stack[] = $scheduler->addJob(MyTask::class, 'foobar');
+$stack[] = $scheduler->addJob(MyTask::class, 'barfoo');
+$stack[] = $scheduler->addJob(OtherTask::class, 'barefoot');
+
+$scheduler->on('waiting', function(League\Event\Event $e, TaskScheduler\Process $p) {
+    echo 'job '.$p->getId().' is waiting';
+})->on('done', function(League\Event\Event $e, TaskScheduler\Process $p) {
+    echo 'job '.$p->getId().' is finished';
+})->on('*', function(League\Event\Event $e, TaskScheduler\Process $p) {
+    echo 'job '.$p->getId().' is '.$p->getStats();
+});
+
+$scheduler->waitFor($stack);
+```
+
+>**Note**: You need to to bind your listeneres before calling `Scheduler::waitFor()` since that is a synchronous blocking call.
+
+
+You may bind listeneres to the same events in your queue nodes:
+
+```php
+$queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger);
+
+$queue->on('timeout', function(League\Event\Event $e, TaskScheduler\Process $p) {
+    echo 'job '.$p->getId().' is timed out';
+})->on('*', function(League\Event\Event $e, TaskScheduler\Process $p) {
+    echo 'job '.$p->getId().' is '.$p->getStats();
+});
+
+$queue->process();
+```
+
+>**Note**: You need to to bind your listeneres before calling `Queue::process()` since that is a synchronous blocking call.
+
+
+#### Custom event emitter
+
+Under the hood both `TaskScheduler\Queue` and `TaskScheduler\Scheduler` use `League\Event\Emitter` as event emitter.
+You may create both instances with your own Leage Event emitter instance:
+
+```php
+$emitter = new League\Event\Emitter();
+
+//Queue
+$queue = new TaskScheduler\Queue($scheduler, $mongodb, $worker_factory, $logger, $emitter);
+
+//Scheduler
+$scheduler = new TaskScheduler\Scheduler($mongodb->mydb, $logger, [], $emitter);
+```
 
 ### Advanced job options
 TaskScheduler\Scheduler::addJob()/TaskScheduler\Scheduler::addJobOnce() also accept a third option (options) which let you set more advanced options for the job:

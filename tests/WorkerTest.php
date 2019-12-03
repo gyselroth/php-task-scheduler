@@ -99,6 +99,34 @@ class WorkerTest extends TestCase
         $method->invokeArgs($this->worker, [$job]);
     }
 
+    public function testEventHandler()
+    {
+        $called1 = false;
+        $this->scheduler->on('waiting', function($e, $p) use(&$called1) {
+            $this->assertSame(JobInterface::STATUS_WAITING, $p->getStatus());
+            $called1 = true;
+        });
+
+        $called2 = false;
+        $this->scheduler->on('processing', function($e, $p) use(&$called2) {
+            $this->assertSame(JobInterface::STATUS_PROCESSING, $p->getStatus());
+            $called2 = true;
+        });
+
+        $called3 = false;
+        $this->scheduler->on('done', function($e, $p) use(&$called3) {
+            $this->assertSame(JobInterface::STATUS_DONE, $p->getStatus());
+            $called3 = true;
+        });
+
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
+        $this->worker->processOne($job->getId());
+        $job->wait();
+        $this->assertTrue($called1);
+        $this->assertTrue($called2);
+        $this->assertTrue($called3);
+    }
+
     public function testExecuteSuccessfulJobWaitFor()
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
