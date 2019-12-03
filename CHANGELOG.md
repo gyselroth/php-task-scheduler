@@ -1,10 +1,11 @@
 ## 3.2.0
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
-**Date**: Mon Mar 25 16:14:33 CET 2018
+**Date**: Tue Dec 03 16:50:33 CET 2019
 
-* [FEATURE] Add event bindings in the Process handler #26
-* [FEATURE] Add event callback bindings to wait(), waitFor() #28
-* [FEATURE] Progress support #29
+### Features
+* Add event bindings in the Process handler #26
+* Add event callback bindings to wait(), waitFor() #28
+* rogress support #29
 
 
 ## 3.1.0
