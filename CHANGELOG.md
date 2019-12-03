@@ -10,7 +10,7 @@
 
 ## 3.1.0
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
-**Date**: Mon Mar 25 16:14:33 CET 2018
+**Date**: Mon Mar 25 16:14:33 CET 2019
 
 * [FIX] Killed workers do not get restarted if no new jobs are added #21
 * [CHANGE] Slow "Process::wait()" when dealing with many jobs (Scheduler::waitFor($stack)) #20
@@ -19,14 +19,14 @@
 
 ## 3.0.2
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
-**Date**: Mon Jan 28 12:18:34 CET 2018
+**Date**: Mon Jan 28 12:18:34 CET 2019
 
 * [CHANGE] Set intial datetime (not 0), writer worker caught exception: 10003 Cannot change the size of a document in a capped collection #15
 
 
 ## 3.0.1
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
-**Date**: Thu Jan 25 17:29:34 CET 2018
+**Date**: Thu Jan 25 17:29:34 CET 2019
 
 * [FIX] Catch \Throwable insteadof \Exception #13
 
