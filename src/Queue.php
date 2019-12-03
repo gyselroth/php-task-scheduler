@@ -186,6 +186,33 @@ class Queue
 
         while ($this->loop()) {
             while ($this->loop()) {
+                if (msg_receive($this->queue, 0, $type, 16384, $msg, true, 0)) {
+                    $this->logger->debug('received systemv message type ['.$type.']', [
+                        'category' => get_class($this),
+                    ]);
+
+                    switch ($type) {
+                        case WorkerManager::TYPE_JOB:
+                        case WorkerManager::TYPE_EVENT:
+                            //handled by worker manager
+                        break;
+                        case WorkerManager::TYPE_WORKER_SPAWN:
+                            $this->emitter->emit('taskscheduler.onWorkerSpawn', $msg['_id']);
+                        break;
+                        case WorkerManager::TYPE_WORKER_KILL:
+                            $this->emitter->emit('taskscheduler.onWorkerKill', $msg['_id']);
+                        break;
+                        default:
+                            $this->logger->warning('received unknown systemv message type ['.$type.']', [
+                                'category' => get_class($this),
+                            ]);
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            while ($this->loop()) {
                 if (null === $cursor_events->current()) {
                     if ($cursor_events->getInnerIterator()->isDead()) {
                         $this->logger->error('event queue cursor is dead, is it a capped collection?', [

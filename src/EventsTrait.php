@@ -29,8 +29,8 @@ trait EventsTrait
      */
     public function on(string $event, Closure $handler)
     {
-        if(!in_array($event, Scheduler::VALID_EVENTS)) {
-            $name = 'taskscheduler.on'.ucfirst($event);
+        if(!in_array($event, Scheduler::VALID_EVENTS) || $event === '*') {
+            $event = 'taskscheduler.on'.ucfirst($event);
         }
 
         $this->emitter->addListener($event, $handler);
@@ -42,28 +42,7 @@ trait EventsTrait
      */
     protected function emit(Process $process): bool
     {
-        switch ($process->getStatus()) {
-             case JobInterface::STATUS_WAITING:
-                $this->emitter->emit('taskscheduler.onWaiting', $process);
-                return true;
-             case JobInterface::STATUS_PROCESSING:
-                $this->emitter->emit('taskscheduler.onStart', $process);
-                return true;
-             case JobInterface::STATUS_DONE:
-                $this->emitter->emit('taskscheduler.onDone', $process);
-                return true;
-             case JobInterface::STATUS_POSTPONED:
-                $this->emitter->emit('taskscheduler.onPostponed', $process);
-                return true;
-             case JobInterface::STATUS_FAILED:
-                $this->emitter->emit('taskscheduler.onFailed', $process);
-                return true;
-             case JobInterface::STATUS_TIMEOUT:
-                $this->emitter->emit('taskscheduler.onTimeout', $process);
-                return true;
-             case JobInterface::STATUS_CANCELED:
-                $this->emitter->emit('taskscheduler.onCancel', $process);
-                return true;
-        }
+        $this->emitter->emit(Scheduler::VALID_EVENTS[$process->getStatus()], $process);
+        return true;
     }
 }

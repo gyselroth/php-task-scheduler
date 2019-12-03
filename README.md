@@ -404,6 +404,9 @@ $p = $scheduler->getJob(MongoDB\BSON\ObjectId('5b3cbc39e26cf26c6d0ede69'));
 $p->getProgress();
 ```
 
+>**Note** There is a rate limit for the progress updates which is by default 500ms. You may change the rate limit by configuring the `TaskScheduler::OPTION_PROGRESS_RATE_LIMIT` to something else and to 0 
+if you do not want a rate limit at all.
+
 ### Asynchronous programming
 
 Have a look at this example:

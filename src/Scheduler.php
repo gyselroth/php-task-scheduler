@@ -57,6 +57,7 @@ class Scheduler
     /**
      * Queue options.
      */
+    public const OPTION_PROGRESS_RATE_LIMIT = 1;
     public const OPTION_JOB_QUEUE = 'job_queue';
     public const OPTION_JOB_QUEUE_SIZE = 'job_queue_size';
     public const OPTION_EVENT_QUEUE = 'event_queue';
@@ -75,13 +76,15 @@ class Scheduler
      * Valid events
      */
     public const VALID_EVENTS = [
-        'taskscheduler.onStart',
-        'taskscheduler.onDone',
+        'taskscheduler.onWorkerSpawn',
+        'taskscheduler.onWorkerKill',
+        'taskscheduler.onWaiting',
         'taskscheduler.onPostponed',
+        'taskscheduler.onProcessing',
+        'taskscheduler.onDone',
         'taskscheduler.onFailed',
         'taskscheduler.onTimeout',
         'taskscheduler.onCancel',
-        'taskscheduler.*',
     ];
 
     /**
@@ -162,11 +165,23 @@ class Scheduler
     protected $event_queue_size = 5000000;
 
     /**
+     * Progress rate limit (miliseconds)
+     */
+    protected $progress_rate_limit = 500;
+
+    /**
      * Events queue.
      *
      * @var MessageQueue
      */
     protected $events;
+
+    /**
+     * Progress rate limit storage
+     *
+     * @var array
+     */
+    protected $progress_limit = [];
 
     /**
      * Init queue.
@@ -199,6 +214,7 @@ class Scheduler
                 case self::OPTION_DEFAULT_TIMEOUT:
                 case self::OPTION_JOB_QUEUE_SIZE:
                 case self::OPTION_EVENT_QUEUE_SIZE:
+                case self::OPTION_PROGRESS_RATE_LIMIT:
                     $this->{$option} = (int) $value;
 
                 break;
@@ -587,6 +603,12 @@ class Scheduler
             throw new LogicException('progress may only be between 0 to 100');
         }
 
+        $current = microtime(true);
+
+        if(isset($this->progress_limit[(string)$job->getId()]) && $this->progress_limit[(string)$job->getId()] + $this->progress_rate_limit > $current) {
+            return $this;
+        }
+
         $result = $this->db->{$this->job_queue}->updateOne([
             '_id' => $job->getId(),
         ], [
@@ -595,6 +617,7 @@ class Scheduler
             ],
         ]);
 
+        $this->progress_limit[(string)$job->getId()] = $current;
         return $this;
     }
 }

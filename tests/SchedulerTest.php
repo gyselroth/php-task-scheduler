@@ -251,6 +251,18 @@ class SchedulerTest extends TestCase
         $this->assertSame(50.5, $process->getProgress());
     }
 
+    public function testUpdateJobProgressRateLimit()
+    {
+        $process = $this->scheduler->addJob('test', ['foo' => 'bar']);
+        $job = $this->createMock(JobInterface::class);
+        $job->method('getId')->willReturn($process->getId());
+
+        $this->scheduler->updateJobProgress($job, 50.5);
+        $this->scheduler->updateJobProgress($job, 50.6);
+        $process = $this->scheduler->getJob($process->getId());
+        $this->assertSame(50.5, $process->getProgress());
+    }
+
     public function testAddOnceDifferentData()
     {
         $first = $this->scheduler->addJobOnce('test', 'foo');
