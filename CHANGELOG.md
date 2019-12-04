@@ -4,6 +4,7 @@
 
 ### Bugfixes
 * Fixes event bindings via scheduler #26
+* Fixes progress rate limit seconds => miliseconds
 
 
 ## 3.2.0

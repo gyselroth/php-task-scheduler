@@ -57,7 +57,7 @@ class Scheduler
     /**
      * Queue options.
      */
-    public const OPTION_PROGRESS_RATE_LIMIT = 1;
+    public const OPTION_PROGRESS_RATE_LIMIT = 'progress_rate_limit';
     public const OPTION_JOB_QUEUE = 'job_queue';
     public const OPTION_JOB_QUEUE_SIZE = 'job_queue_size';
     public const OPTION_EVENT_QUEUE = 'event_queue';
@@ -166,8 +166,10 @@ class Scheduler
 
     /**
      * Progress rate limit (miliseconds)
+     *
+     * @var int
      */
-    protected $progress_rate_limit = 500;
+    protected $progress_rate_limit = 1000;
 
     /**
      * Events queue.
@@ -605,15 +607,16 @@ class Scheduler
 
         $current = microtime(true);
 
-        if(isset($this->progress_limit[(string)$job->getId()]) && $this->progress_limit[(string)$job->getId()] + $this->progress_rate_limit > $current) {
+        if(isset($this->progress_limit[(string)$job->getId()]) && $this->progress_limit[(string)$job->getId()] + $this->progress_rate_limit/1000 > $current) {
             return $this;
         }
 
         $result = $this->db->{$this->job_queue}->updateOne([
             '_id' => $job->getId(),
+            'progress' => ['$exists' => true],
         ], [
             '$set' => [
-                'progress' => $progress,
+                'progress' => round($progress, 2),
             ],
         ]);
 
