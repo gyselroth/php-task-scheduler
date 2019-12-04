@@ -1,11 +1,11 @@
 # Clustered process management for PHP
 
-[![Build Status](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler.svg?branch=master)](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler)
-[![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/gyselroth/mongodb-php-task-scheduler/badges/quality-score.png?b=master)](https://scrutinizer-ci.com/g/gyselroth/mongodb-php-task-scheduler/?branch=master)
-[![Code Coverage](https://scrutinizer-ci.com/g/gyselroth/mongodb-php-task-scheduler/badges/coverage.png?b=master)](https://scrutinizer-ci.com/g/gyselroth/mongodb-php-task-scheduler/?branch=master)
-[![Latest Stable Version](https://img.shields.io/packagist/v/gyselroth/mongodb-php-task-scheduler.svg)](https://packagist.org/packages/gyselroth/mongodb-php-task-scheduler)
-[![GitHub release](https://img.shields.io/github/release/gyselroth/mongodb-php-task-scheduler.svg)](https://github.com/gyselroth/mongodb-php-task-scheduler/releases)
-[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/gyselroth/mongodb-php-task-scheduler/master/LICENSE)
+[![Build Status](https://travis-ci.org/gyselroth/php-task-scheduler.svg?branch=master)](https://travis-ci.org/gyselroth/php-task-scheduler)
+[![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/gyselroth/php-task-scheduler/badges/quality-score.png?b=master)](https://scrutinizer-ci.com/g/gyselroth/php-task-scheduler/?branch=master)
+[![Code Coverage](https://scrutinizer-ci.com/g/gyselroth/php-task-scheduler/badges/coverage.png?b=master)](https://scrutinizer-ci.com/g/gyselroth/php-task-scheduler/?branch=master)
+[![Latest Stable Version](https://img.shields.io/packagist/v/gyselroth/php-task-scheduler.svg)](https://packagist.org/packages/gyselroth/php-task-scheduler)
+[![GitHub release](https://img.shields.io/github/release/gyselroth/php-task-scheduler.svg)](https://github.com/gyselroth/php-task-scheduler/releases)
+[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/gyselroth/php-task-scheduler/master/LICENSE)
 
 Parallel task scheduler for PHP using MongoDB as distribution queue. Execute parallel tasks the easy way.
 This library has built-in support for clustered systems and multi core cpu. You can start up multiple worker nodes and they will load balance the available jobs with the principal first comes first serves. Each node will also spawn a (dynamically) configurable number of child processes to use all available resources. Moreover it is possible to schedule jobs at certain times, endless intervals as well as rescheduling if jobs fail.
@@ -30,8 +30,8 @@ This brings a real world implementation for parallel process management to PHP. 
 
 ## v3
 
-This is the documentation for the current major version v3. You may check the [upgrade guide](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/master/UPGRADE.md) if you want to upgrade from v2/v1.
-The documentation for v2 is available [here](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/2.x/README.md). 
+This is the documentation for the current major version v3. You may check the [upgrade guide](https://github.com/gyselroth/php-task-scheduler/blob/master/UPGRADE.md) if you want to upgrade from v2/v1.
+The documentation for v2 is available [here](https://github.com/gyselroth/php-task-scheduler/blob/2.x/README.md). 
 
 # Table of Contents
 * [Features](#features)
@@ -89,18 +89,18 @@ A job may be rescheduled if it failed. There are lots of more features available
 
 
 ## Download
-The package is available at [packagist](https://packagist.org/packages/gyselroth/mongodb-php-task-scheduler)
+The package is available at [packagist](https://packagist.org/packages/gyselroth/php-task-scheduler)
 
 To install the package via composer execute:
 ```
-composer require gyselroth/mongodb-php-task-scheduler
+composer require gyselroth/php-task-scheduler
 ```
 
 ## Changelog
-A changelog is available [here](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/master/CHANGELOG.md).
+A changelog is available [here](https://github.com/gyselroth/php-task-scheduler/blob/master/CHANGELOG.md).
 
 ## Contribute
-We are glad that you would like to contribute to this project. Please follow the given [terms](https://github.com/gyselroth/mongodb-php-task-scheduler/blob/master/CONTRIBUTING.md).
+We are glad that you would like to contribute to this project. Please follow the given [terms](https://github.com/gyselroth/php-task-scheduler/blob/master/CONTRIBUTING.md).
 
 ## Terms
 You may encounter the follwing terms in this readme or elsewhere:
@@ -528,6 +528,21 @@ $queue->process();
 
 >**Note**: You need to to bind your listeneres before calling `Queue::process()` since that is a synchronous blocking call.
 
+#### Events
+
+You may bind for the following events:
+
+| Short  | Full | Scope | Description |
+| --- | --- | --- | --- |
+| `waiting`  | `taskscheduler.onWaiting`  | global | Triggers after a new job got added  |
+| `postponed`  | `taskscheduler.onPostponed`  | global | Triggers after a job has been postponed |
+| `processing`  | `taskscheduler.onProcessing`  | global | Triggers after a job started to execute  |
+| `done`  | `taskscheduler.onDone`  | global | Triggers after a job finished successfully  |
+| `failed`  | `taskscheduler.onFailed`  | global | Triggers after a job failed  |
+| `timeout`  | `taskscheduler.onTimeout`  | global | Triggers after a job timed out  |
+| `cancel`  | `taskscheduler.onCancel`  | global | Triggers after a job has been canceled  |
+| `workerSpawn`  | `taskscheduler.onWorkerSpawn`  | queue node only | Triggers after a queue node spawned a new worker  |
+| `workerKill`  | `taskscheduler.onWorkerKill`  | queue node only | Triggers after a worker stopped on a queue node  |
 
 #### Custom event emitter
 
