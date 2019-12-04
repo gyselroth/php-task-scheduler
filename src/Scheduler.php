@@ -76,8 +76,6 @@ class Scheduler
      * Valid events
      */
     public const VALID_EVENTS = [
-        'taskscheduler.onWorkerSpawn',
-        'taskscheduler.onWorkerKill',
         'taskscheduler.onWaiting',
         'taskscheduler.onPostponed',
         'taskscheduler.onProcessing',
@@ -85,6 +83,8 @@ class Scheduler
         'taskscheduler.onFailed',
         'taskscheduler.onTimeout',
         'taskscheduler.onCancel',
+        'taskscheduler.onWorkerSpawn',
+        'taskscheduler.onWorkerKill',
     ];
 
     /**

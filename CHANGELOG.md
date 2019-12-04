@@ -1,3 +1,11 @@
+## 3.2.1
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Wed Dec 04 09:38:31 CET 2019
+
+### Bugfixes
+* Fixes event bindings via scheduler #26
+
+
 ## 3.2.0
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Tue Dec 03 16:50:33 CET 2019
@@ -5,7 +13,7 @@
 ### Features
 * Add event bindings in the Process handler #26
 * Add event callback bindings to wait(), waitFor() #28
-* rogress support #29
+* Progress support #29
 
 
 ## 3.1.0
