@@ -42,7 +42,7 @@ class WorkerManager
     public const TYPE_JOB = 1;
     public const TYPE_EVENT = 2;
     public const TYPE_WORKER_SPAWN = 3;
-    public const TYPE_WORKER_KILL = 2;
+    public const TYPE_WORKER_KILL = 4;
 
     /**
      * Process management.
