@@ -28,7 +28,7 @@ class MessageQueueTest extends TestCase
     protected $mongodb;
     protected $queue;
 
-    public function setUp()
+    public function setUp(): void
     {
         $this->mongodb = new MockDatabase();
         $this->queue = new MessageQueue($this->mongodb, 'taskscheduler.queue', 100, $this->createMock(LoggerInterface::class));
@@ -125,6 +125,6 @@ class MessageQueueTest extends TestCase
 
     public function testConvertQueue()
     {
-        $this->queue->convert();
+        $this->assertSame($this->queue, $this->queue->convert());
     }
 }
