@@ -202,6 +202,17 @@ class WorkerTest extends TestCase
         $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
     }
 
+    public function testSetProgressTo100AfterFinish()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
+        $job = (new SuccessJobMock())->setId($job->getId());;
+
+        $this->scheduler->updateJobProgress($job, 50.1);
+        $this->worker->processOne($job->getId());
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame($job->getProgress(), 100.0);
+    }
+
     public function testStartWorkerPostponedJobFromPast()
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
