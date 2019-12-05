@@ -30,7 +30,7 @@ class WorkerManagerTest extends TestCase
     protected $manager;
     protected $called = 1;
 
-    public function setUp()
+    public function setUp(): void
     {
         $worker = $this->createMock(Worker::class);
         $factory = $this->createMock(WorkerFactoryInterface::class);

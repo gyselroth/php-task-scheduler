@@ -35,7 +35,7 @@ class WorkerTest extends TestCase
     protected $mongodb;
     protected $called = 0;
 
-    public function setUp()
+    public function setUp(): void
     {
         $this->mongodb = new MockDatabase();
         $this->scheduler = new Scheduler($this->mongodb, $this->createMock(LoggerInterface::class));

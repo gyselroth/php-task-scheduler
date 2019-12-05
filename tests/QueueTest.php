@@ -26,7 +26,7 @@ class QueueTest extends TestCase
     protected $called = 0;
     protected $mongodb;
 
-    public function setUp()
+    public function setUp(): void
     {
         $this->mongodb = new MockDatabase();
         $this->scheduler = new Scheduler($this->mongodb, $this->createMock(LoggerInterface::class));

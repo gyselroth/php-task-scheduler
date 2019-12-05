@@ -28,7 +28,7 @@ class SchedulerTest extends TestCase
 {
     protected $scheduler;
 
-    public function setUp()
+    public function setUp(): void
     {
         $mongodb = new MockDatabase();
         $this->scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
@@ -378,9 +378,13 @@ class SchedulerTest extends TestCase
 
     public function testListen()
     {
+        $called = false;
         $job = $this->scheduler->addJob('test', 'foobar');
-        $this->scheduler->listen(function (Process $process) {
+        $this->scheduler->listen(function (Process $process) use(&$called) {
+            $called = true;
             return true;
         }, ['job' => $job->getId()]);
+
+        $this->assertTrue($called);
     }
 }
