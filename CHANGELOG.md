@@ -1,3 +1,12 @@
+## 3.2.2
+**Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
+**Date**: Thu Dec 05 09:38:31 CET 2019
+
+### Bugfixes
+* Set progress always to 100.0 after a job has been finished
+* Fixes build exit worker
+
+
 ## 3.2.1
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Wed Dec 04 09:38:31 CET 2019

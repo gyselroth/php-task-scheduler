@@ -405,6 +405,10 @@ class Worker
 
         if ($status >= JobInterface::STATUS_DONE) {
             $set['ended'] = new UTCDateTime();
+
+            if(isset($job['progress'])) {
+                $set['progress'] = 100.0;
+            }
         }
 
         $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([

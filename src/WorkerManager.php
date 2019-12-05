@@ -197,7 +197,7 @@ class WorkerManager
                     unset($this->job_map[$id]);
                 }
 
-                msg_send($this->queue, WorkerManager::TYPE_WORKER_KILL, [
+                @msg_send($this->queue, WorkerManager::TYPE_WORKER_KILL, [
                     '_id' => $id,
                     'pid' => $pid['pid'],
                     'sig' => $sig,
