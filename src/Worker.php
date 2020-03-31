@@ -73,13 +73,6 @@ class Worker
     protected $process;
 
     /**
-     * Jobs queue.
-     *
-     * @var MessageQueue
-     */
-    protected $jobs;
-
-    /**
      * Worker ID.
      *
      * @var ObjectId

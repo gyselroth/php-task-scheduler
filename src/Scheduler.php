@@ -430,41 +430,24 @@ class Scheduler
      */
     public function listen(Closure $callback, array $query = []): self
     {
-        if (0 === count($query)) {
-            $query = [
-                'timestamp' => ['$gte' => new UTCDateTime()],
-            ];
-        }
-
-        $cursor = $this->events->watch([
-            '$match' => $query
-        ]);
+        $cursor = $this->db->{$this->getJobQueue()}->watch([
+            (count($query) > 0) ? ['$match' => $query] : [],
+        ], ['fullDocument' => 'lookupUpdate']);
 
         while (true) {
-            if (null === $cursor->current()) {
-                if ($cursor->getInnerIterator()->isDead()) {
-                    $this->logger->error('events queue cursor is dead, is it a capped collection?', [
-                        'category' => get_class($this),
-                    ]);
-
-                    #$this->events->create();
-
-                    return $this->listen($callback, $query);
-                }
-
-                #$this->events->next($cursor, function () use ($callback, $query) {
-                #    return $this->listen($callback, $query);
-                #});
-
+            if($cursor->valid()) {
+                $cursor->next();
                 continue;
             }
 
             $result = $cursor->current();
-            #$this->events->next($cursor, function () use ($callback, $query) {
-            #    $this->listen($callback, $query);
-            #});
+            $cursor->next();
 
-            $process = new Process($result, $this);
+            if($result === null) {
+                continue;
+            }
+
+            $process = new Process($result['fullDocument'], $this);
             $this->emit($process);
 
             if (true === $callback($process)) {
@@ -495,9 +478,10 @@ class Scheduler
             'class' => $class,
             'status' => JobInterface::STATUS_WAITING,
             'created' => new UTCDateTime(),
-            'started' => new UTCDateTime(),
-            'ended' => new UTCDateTime(),
-            'worker' => new ObjectId(),
+            'started' => null,
+            'ended' => null,
+            'alive' => new UTCDateTime(),
+            'worker' => null,
             'progress' => 0.0,
             'data' => $data,
         ];
