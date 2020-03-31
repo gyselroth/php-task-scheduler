@@ -64,7 +64,7 @@ interface JobInterface
     /**
      * Update job progress.
      */
-    public function updateProgress(float $progress): self;
+    public function updateProgress(float $progress=0): self;
 
     /**
      * Start job.

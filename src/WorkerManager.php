@@ -40,9 +40,8 @@ class WorkerManager
      * Fork handler actions.
      */
     public const TYPE_JOB = 1;
-    public const TYPE_EVENT = 2;
-    public const TYPE_WORKER_SPAWN = 3;
-    public const TYPE_WORKER_KILL = 4;
+    public const TYPE_WORKER_SPAWN = 2;
+    public const TYPE_WORKER_KILL = 3;
 
     /**
      * Process management.
@@ -345,8 +344,6 @@ class WorkerManager
                         $this->handleJob($msg);
 
                     break;
-                    case self::TYPE_EVENT:
-                        $this->handleEvent($msg);
 
                     break;
                     case self::TYPE_WORKER_SPAWN:
@@ -365,21 +362,25 @@ class WorkerManager
     /**
      * Handle events.
      */
-    protected function handleEvent(array $event): self
+    protected function handleJob(array $event): self
     {
-        $this->logger->debug('handle event ['.$event['status'].'] for job ['.$event['job'].']', [
+        $this->logger->debug('handle event ['.$event['status'].'] for job ['.$event['_id'].']', [
             'category' => get_class($this),
         ]);
 
         switch ($event['status']) {
+            case JobInterface::STATUS_WAITING:
+            case JobInterface::STATUS_POSTPONED:
+                return $this->handleNewJob($event);
+
             case JobInterface::STATUS_PROCESSING:
-                $this->job_map[(string) $event['worker']] = $event['job'];
+                $this->job_map[(string) $event['worker']] = $event['_id'];
 
                 return $this;
             case JobInterface::STATUS_DONE:
             case JobInterface::STATUS_FAILED:
             case JobInterface::STATUS_TIMEOUT:
-                $worker = array_search((string) $event['job'], $this->job_map);
+                $worker = array_search((string) $event['_id'], $this->job_map);
                 if (false === $worker) {
                     return $this;
                 }
@@ -390,12 +391,12 @@ class WorkerManager
 
             break;
             case JobInterface::STATUS_CANCELED:
-                $worker = array_search($event['job'], $this->job_map);
+                $worker = array_search($event['_id'], $this->job_map);
                 if (false === $worker) {
                     return $this;
                 }
 
-                $this->logger->debug('received cancel event for job ['.$event['job'].'] running on worker ['.$worker.']', [
+                $this->logger->debug('received cancel event for job ['.$event['_id'].'] running on worker ['.$worker.']', [
                     'category' => get_class($this),
                 ]);
 
@@ -440,7 +441,7 @@ class WorkerManager
     /**
      * Handle job.
      */
-    protected function handleJob(array $job): self
+    protected function handleNewJob(array $job): self
     {
         if (true === $job['options'][Scheduler::OPTION_FORCE_SPAWN]) {
             if ($job['options']['at'] > time()) {

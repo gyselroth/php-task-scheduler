@@ -27,11 +27,12 @@ This brings a real world implementation for parallel process management to PHP. 
 * Signal management
 * Intercept events
 * Progress support
+* Auto detection of orphaned jobs
 
-## v3
+## v4
 
-This is the documentation for the current major version v3. You may check the [upgrade guide](https://github.com/gyselroth/php-task-scheduler/blob/master/UPGRADE.md) if you want to upgrade from v2/v1.
-The documentation for v2 is available [here](https://github.com/gyselroth/php-task-scheduler/blob/2.x/README.md). 
+This is the documentation for the current major version v4. You may check the [upgrade guide](https://github.com/gyselroth/php-task-scheduler/blob/master/UPGRADE.md) if you want to upgrade from v3 or even an older version.
+The documentation for v3 is available [here](https://github.com/gyselroth/php-task-scheduler/blob/3.x/README.md). 
 
 # Table of Contents
 * [Features](#features)
@@ -78,7 +79,8 @@ A job may be rescheduled if it failed. There are lots of more features available
 
 ## Requirements
 * Posix system (Basically every linux)
-* MongoDB server >= 2.2
+* MongoDB server >= 3.6
+* MongoDB replication set (May also be just a single MongoDB node)
 * PHP >= 7.1
 * PHP pcntl extension
 * PHP posix extension
@@ -121,7 +123,7 @@ You may encounter the follwing terms in this readme or elsewhere:
 If your app gets built using a docker container you must use at least the following build options:
 
 ```Dockerfile
-FROM php:7.2
+FROM php:7.4
 RUN docker-php-ext-install pcntl sysvmsg
 RUN pecl install mongodb && docker-php-ext-enable mongodb pcntl sysvmsg
 ```
@@ -364,11 +366,18 @@ $scheduler->addJob(MailJob::class, $mail->toString(), [
 
 This will queue our mail to be executed in one hour from now and it will re-schedule the job up to three times if it fails with an interval of one minute.
 
-### Job progress
+### Alive ping and Job progress
 
 TaskScheduler has built-in support to update the progress of a job from your job implementation. 
 By default a job starts at `0` (%) and ends with progress `100` (%). Note that the progress is floating number.
 You may increase the progress made within your job.
+
+**Important**: 
+Note that by default the scheduler takes a job after 30s as orphaned and reschedules it.
+You may change the 30s globally during the Scheduler initialization or keep calling `->updateProgress()` within your task implementation.
+Calling `updateProgress` with or without a progress acts like a keep alive ping for the scheduler and should be called in your task if it a long running task which contains a loop. If there is no loop you should still call this method in some form of intervals to keep your task alive.
+Set a progress as percentage value is not required, if not set the task keeps beeing at 0% and set to 100% if finished.
+
 
 Let us have a look how this works with a job which copies a file from a to b.
 
@@ -775,13 +784,6 @@ class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
     }
 }
 ```
-
-### Data Persistence
-
-This library does not provide any data persistence! It is important to understand this fact. This library operates on a [MongoDB capped collection](https://docs.mongodb.com/manual/core/capped-collections) with 
-a fixed size limit by design. Meaning the newest job will overwrite the oldest job if the limit is reached. A side note here regarding postponed jobs (TaskScheduler\Scheduler::OPTION_AT), those jobs will get queued locally once received. If they fall out from the network queue, they will get executed anyway. If a worker dies they will get rescheduled if possible. **But** interval jobs are not meant to be persistent and there is no guarantee for that. It is best practice during bootstraping your queue node to schedule jobs if they are not already scheduled from a persistent data source (For example using [TaskScheduler\Scheduler::addJobOnce](#add-job-if-not-exists)).
-
->**Note**: This is planned to change in v4. v4 will feature persistency for jobs.
 
 ### Signal handling
 

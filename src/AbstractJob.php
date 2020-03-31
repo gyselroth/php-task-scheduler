@@ -85,7 +85,7 @@ abstract class AbstractJob implements JobInterface
     /**
      * {@inheritdoc}
      */
-    public function updateProgress(float $progress): JobInterface
+    public function updateProgress(float $progress=0): JobInterface
     {
         $this->scheduler->updateJobProgress($this, $progress);
         return $this;

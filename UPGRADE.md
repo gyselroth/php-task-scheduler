@@ -1,6 +1,33 @@
+## v3 => v4
+
+### MongoDB version
+
+The scheduler v4 makes use of MongoDB changestreams instead capped collections. Which also means the MongoDB version 
+must be at least v3.6. Also MongoDB must be deployed as a replication set.
+If your deployment can not meet these new requirements you have to continue to use v3.
+
+## API
+The API v4 is fully compatible with the v3 API. There is no breaking change.
+
+## Persistency
+The new taskscheduler collection is not a capped collection anymore. Therefore all jobs will be kept forever unless you 
+do not integrate any mechanism to cleanup old records. By design this is left to implementators. 
+For example this may be done using a MongoDB index with autoremoval support.
+
+## Cleanup collections
+The pre v4 collections `taskscheduler.jobs` and `taskscheduler.events` may be removed. There is no inbuilt mechanism for this.
+Also if required you need to write a mechanism to migrate jobs from the legacy collection to the new `takscheduler` collection. Do so using the scheduler api if any task migration is required.
+
+## Job alive ping
+v4 comes with a feature to automatically reschedule orphaned jobs. An orphaned job is when a job is flagged with the processing status but is not handled by any worker. This may happen if workers get killed by `sigkill` or other exceptions.
+By default if a running job did not notify the scheduler within 30s the job get killed and reset to waiting.
+Note that the 30s may be changed to another value during the initializer of the scheduler.
+To keep the API compatibility the alive ping is made by calling `updateProgress(float $progress_percentage)` which is maybe already implemented in your tasks. 
+If no progress percantage should be updated or it is just not important in your case you may just leave that parameter and just call `updateProgress()`.
+
 ## v1/v2 => v3
 
-### Implementationof TaskScheduler\Process
+### Implementation of TaskScheduler\Process
 
 If you do not use the return value of `TaskScheduler\Scheduler::addJob` or `Scheduler::addJobOnce` the upgrade in user space will be fully compatible.
 One major change is, that you will receive an instance of `TaskScheduler\Process` instead just the process id from those methods.
