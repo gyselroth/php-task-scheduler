@@ -18,6 +18,14 @@ use TaskScheduler\Exception\InvalidArgumentException;
 class SchedulerValidator
 {
     /**
+     * Interval references.
+     */
+    public const INTERVAL_REFERENCES = [
+        'start',
+        'end',
+    ];
+
+    /**
      * Validate given job options.
      */
     public static function validateOptions(array $options): array
@@ -46,6 +54,11 @@ class SchedulerValidator
                         throw new InvalidArgumentException('option '.$option.' must be a an instance of '.ObjectId::class);
                     }
 
+                break;
+                case Scheduler::OPTION_INTERVAL_REFERENCE:
+                    if (!in_array($value, self::INTERVAL_REFERENCES)) {
+                        throw new InvalidArgumentException('option '.$option.' must be "start" or "end"');
+                    }
                 break;
                 default:
                     throw new InvalidArgumentException('invalid option '.$option.' given');

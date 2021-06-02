@@ -33,6 +33,7 @@ class Scheduler
      */
     public const OPTION_AT = 'at';
     public const OPTION_INTERVAL = 'interval';
+    public const OPTION_INTERVAL_REFERENCE = 'interval_reference';
     public const OPTION_RETRY = 'retry';
     public const OPTION_RETRY_INTERVAL = 'retry_interval';
     public const OPTION_FORCE_SPAWN = 'force_spawn';
@@ -50,6 +51,7 @@ class Scheduler
      */
     public const OPTION_DEFAULT_AT = 'default_at';
     public const OPTION_DEFAULT_INTERVAL = 'default_interval';
+    public const OPTION_DEFAULT_INTERVAL_REFERENCE = 'default_interval_reference';
     public const OPTION_DEFAULT_RETRY = 'default_retry';
     public const OPTION_DEFAULT_RETRY_INTERVAL = 'default_retry_interval';
     public const OPTION_DEFAULT_TIMEOUT = 'default_timeout';
@@ -150,6 +152,14 @@ class Scheduler
      */
     protected $default_timeout = 0;
 
+
+    /**
+     * Default interval reference (start/end)
+     *
+     * @var string
+     */
+    protected $default_interval_reference = 'end';
+
     /**
      * Job Queue size.
      *
@@ -206,6 +216,7 @@ class Scheduler
             switch ($option) {
                 case self::OPTION_JOB_QUEUE:
                 case self::OPTION_EVENT_QUEUE:
+                case self::OPTION_DEFAULT_INTERVAL_REFERENCE:
                     $this->{$option} = (string) $value;
 
                 break;
@@ -552,6 +563,7 @@ class Scheduler
             self::OPTION_FORCE_SPAWN => false,
             self::OPTION_TIMEOUT => $this->default_timeout,
             self::OPTION_IGNORE_DATA => false,
+            self::OPTION_INTERVAL_REFERENCE => $this->default_interval_reference,
         ];
 
         $options = array_merge($defaults, $options);

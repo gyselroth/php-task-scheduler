@@ -457,7 +457,7 @@ class Worker
      */
     protected function processJob(array $job): ObjectId
     {
-        $now = time();
+        $now = $job_start_time = time();
 
         if ($job['options']['at'] > $now) {
             $this->updateJob($job, JobInterface::STATUS_POSTPONED);
@@ -533,7 +533,11 @@ class Worker
                 'pm' => $this->process,
             ]);
 
-            $job['options']['at'] = time() + $job['options']['interval'];
+            $interval_reference = $job['options']['interval_reference'] === 'end'
+                ? time()
+                : $job_start_time;
+
+            $job['options']['at'] = $interval_reference + $job['options']['interval'];
             $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
             return $job->getId();
