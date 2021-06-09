@@ -8,6 +8,10 @@
         {
             "name": "Raffael Sahli",
             "email": "sahli@gyselroth.net"
+        },
+        {
+            "name": "Sandro Aebischer",
+            "email": "aebischer@gyselroth.com"
         }
     ],
     "autoload": {
