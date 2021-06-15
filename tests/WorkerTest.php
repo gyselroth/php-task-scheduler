@@ -412,6 +412,38 @@ class WorkerTest extends TestCase
         $this->assertTrue($interval_job->getOptions()['at'] > time());
     }
 
+    public function testProcessJobIntervalReferenceStart()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_INTERVAL => 100,
+            Scheduler::OPTION_INTERVAL_REFERENCE => 'start',
+        ]);
+
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->processAll();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
+        $interval_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertSame(JobInterface::STATUS_WAITING, $interval_job->getStatus());
+        $this->assertSame('start', $interval_job->getOptions()['interval_reference']);
+    }
+
+    public function testProcessJobIntervalReferenceEnd()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_INTERVAL => 100,
+            Scheduler::OPTION_INTERVAL_REFERENCE => 'end',
+        ]);
+
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->processAll();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
+        $interval_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertSame(JobInterface::STATUS_WAITING, $interval_job->getStatus());
+        $this->assertSame('end', $interval_job->getOptions()['interval_reference']);
+    }
+
     public function testProcessEndlessInterval()
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
