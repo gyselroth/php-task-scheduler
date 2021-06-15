@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * TaskScheduler
  *
- * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
+ * @author      gyselroth™  (http://www.gyselroth.com)
+ * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -56,9 +56,10 @@ class SchedulerValidator
 
                 break;
                 case Scheduler::OPTION_INTERVAL_REFERENCE:
-                    if (!in_array($value, self::INTERVAL_REFERENCES)) {
+                    if (!in_array($value, self::INTERVAL_REFERENCES, true)) {
                         throw new InvalidArgumentException('option '.$option.' must be "start" or "end"');
                     }
+
                 break;
                 default:
                     throw new InvalidArgumentException('invalid option '.$option.' given');

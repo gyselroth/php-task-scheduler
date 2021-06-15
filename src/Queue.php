@@ -5,18 +5,18 @@ declare(strict_types=1);
 /**
  * TaskScheduler
  *
- * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
+ * @author      gyselroth™  (http://www.gyselroth.com)
+ * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
 namespace TaskScheduler;
 
+use League\Event\Emitter;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\SpawnForkException;
-use League\Event\Emitter;
 
 class Queue
 {
@@ -73,7 +73,7 @@ class Queue
     protected $queue;
 
     /**
-     * Scheduler
+     * Scheduler.
      *
      * @var Scheduler
      */
@@ -82,7 +82,7 @@ class Queue
     /**
      * Init queue.
      */
-    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter=null)
+    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter = null)
     {
         $this->scheduler = $scheduler;
         $this->db = $db;
@@ -198,9 +198,11 @@ class Queue
                         break;
                         case WorkerManager::TYPE_WORKER_SPAWN:
                             $this->emitter->emit('taskscheduler.onWorkerSpawn', $msg['_id']);
+
                         break;
                         case WorkerManager::TYPE_WORKER_KILL:
                             $this->emitter->emit('taskscheduler.onWorkerKill', $msg['_id']);
+
                         break;
                         default:
                             $this->logger->warning('received unknown systemv message type ['.$type.']', [
@@ -236,7 +238,7 @@ class Queue
                     $this->main();
                 });
 
-                if($event === null) {
+                if (null === $event) {
                     break;
                 }
 
@@ -279,7 +281,7 @@ class Queue
     {
         $this->emit($this->scheduler->getJob($event['job']));
 
-        if($event['status'] > JobInterface::STATUS_POSTPONED) {
+        if ($event['status'] > JobInterface::STATUS_POSTPONED) {
             $this->logger->debug('received event ['.$event['status'].'] for job ['.$event['job'].'], write into systemv queue', [
                 'category' => get_class($this),
             ]);

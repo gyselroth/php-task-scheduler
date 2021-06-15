@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * TaskScheduler
  *
- * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
+ * @author      gyselroth™  (http://www.gyselroth.com)
+ * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -14,15 +14,15 @@ namespace TaskScheduler\Testsuite;
 
 use Helmich\MongoMock\MockDatabase;
 use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\UTCDateTime;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidArgumentException;
-use TaskScheduler\Exception\LogicException;
 use TaskScheduler\Exception\JobNotFoundException;
+use TaskScheduler\Exception\LogicException;
 use TaskScheduler\JobInterface;
 use TaskScheduler\Process;
 use TaskScheduler\Scheduler;
-use MongoDB\BSON\UTCDateTime;
 
 class SchedulerTest extends TestCase
 {

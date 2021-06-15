@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * TaskScheduler
  *
- * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
+ * @author      gyselroth™  (http://www.gyselroth.com)
+ * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -19,12 +19,11 @@ abstract class AbstractJob implements JobInterface
     /**
      * Data.
      *
-     * @var mixed
      **/
     protected $data;
 
     /**
-     * Scheduler
+     * Scheduler.
      *
      * @var Scheduler
      */
@@ -79,6 +78,7 @@ abstract class AbstractJob implements JobInterface
     public function setScheduler(Scheduler $scheduler): JobInterface
     {
         $this->scheduler = $scheduler;
+
         return $this;
     }
 
@@ -88,6 +88,7 @@ abstract class AbstractJob implements JobInterface
     public function updateProgress(float $progress): JobInterface
     {
         $this->scheduler->updateJobProgress($this, $progress);
+
         return $this;
     }
 }

@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * TaskScheduler
  *
- * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
+ * @author      gyselroth™  (http://www.gyselroth.com)
+ * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -40,11 +40,12 @@ class Process
     }
 
     /**
-     * Replace process data
+     * Replace process data.
      */
     public function replace(Process $process): self
     {
         $this->job = $process->toArray();
+
         return $this;
     }
 
@@ -97,7 +98,7 @@ class Process
     }
 
     /**
-     * Get current job progress
+     * Get current job progress.
      */
     public function getProgress(): float
     {
@@ -110,6 +111,7 @@ class Process
     public function wait(): Process
     {
         $this->scheduler->waitFor([$this], Scheduler::OPTION_THROW_EXCEPTION);
+
         return $this;
     }
 

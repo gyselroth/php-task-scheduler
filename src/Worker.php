@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * TaskScheduler
  *
- * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
+ * @author      gyselroth™  (http://www.gyselroth.com)
+ * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -406,7 +406,7 @@ class Worker
         if ($status >= JobInterface::STATUS_DONE) {
             $set['ended'] = new UTCDateTime();
 
-            if(isset($job['progress'])) {
+            if (isset($job['progress'])) {
                 $set['progress'] = 100.0;
             }
         }
@@ -533,7 +533,7 @@ class Worker
                 'pm' => $this->process,
             ]);
 
-            $interval_reference = $job['options']['interval_reference'] === 'end'
+            $interval_reference = 'end' === $job['options']['interval_reference']
                 ? time()
                 : $job_start_time;
 
