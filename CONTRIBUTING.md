@@ -67,7 +67,7 @@ This repository gets shipped with an .editorconfig configuration. For more infor
 Add the following script to your git pre-commit hook file, otherwise your build will fail if you do not following code style:
 
 ```
-./vendor/bin/php-cs-fixer fix --config=.php_cs.dist -v
+./vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php -v
 ```
 
 This automatically converts your code into the code style guidelines of this project otherwise your build will fail!
