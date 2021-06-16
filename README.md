@@ -1,6 +1,6 @@
 # Clustered process management for PHP
 
-[![Build Status](https://travis-ci.org/gyselroth/php-task-scheduler.svg?branch=master)](https://travis-ci.org/gyselroth/php-task-scheduler)
+[![Build Status](https://travis-ci.com/gyselroth/php-task-scheduler.svg?branch=master)](https://travis-ci.com/gyselroth/php-task-scheduler)
 [![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/gyselroth/mongodb-php-task-scheduler/badges/quality-score.png?b=master)](https://scrutinizer-ci.com/g/gyselroth/mongodb-php-task-scheduler/?branch=master)
 [![Code Coverage](https://scrutinizer-ci.com/g/gyselroth/mongodb-php-task-scheduler/badges/coverage.png?b=master)](https://scrutinizer-ci.com/g/gyselroth/mongodb-php-task-scheduler/?branch=master)
 [![Latest Stable Version](https://img.shields.io/packagist/v/gyselroth/mongodb-php-task-scheduler.svg)](https://packagist.org/packages/gyselroth/mongodb-php-task-scheduler)
