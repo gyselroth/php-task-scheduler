@@ -6,8 +6,6 @@ php:
 os: linux
 arch:
   - arm64
-  - ppc64le
-  - s390x
 before_install:
   - echo "extension = mongodb.so" >> ~/.phpenv/versions/$(phpenv version-name)/etc/php.ini
 sudo: false
