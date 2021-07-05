@@ -6,8 +6,9 @@
     "license": "MIT",
     "authors": [
         {
-            "name": "Raffael Sahli",
-            "email": "sahli@gyselroth.net"
+            "name": "gyselroth",
+            "email": "mail@gyselroth.com",
+            "homepage": "http://www.gyselroth.com"
         }
     ],
     "autoload": {

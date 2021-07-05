@@ -49,7 +49,7 @@ Please make sure that you always specify the number of your issue starting with 
 
 ## Pull Request
 You are absolutely welcome to submit a pull request which references an open issue.
-[![Build Status](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler.svg)](https://travis-ci.org/gyselroth/mongodb-php-task-scheduler)
+[![Build Status](https://travis-ci.com/gyselroth/mongodb-php-task-scheduler.svg)](https://travis-ci.com/gyselroth/mongodb-php-task-scheduler)
 
 Send bug fixes PR to the master branch and new features to the dev branch.
 
@@ -67,7 +67,7 @@ This repository gets shipped with an .editorconfig configuration. For more infor
 Add the following script to your git pre-commit hook file, otherwise your build will fail if you do not following code style:
 
 ```
-./vendor/bin/php-cs-fixer fix --config=.php_cs.dist -v
+./vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php -v
 ```
 
 This automatically converts your code into the code style guidelines of this project otherwise your build will fail!

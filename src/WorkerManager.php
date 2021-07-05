@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * TaskScheduler
  *
- * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
+ * @author      gyselroth™  (http://www.gyselroth.com)
+ * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -206,6 +206,7 @@ class WorkerManager
         }
 
         $this->spawnMinimumWorkers();
+
         return $this;
     }
 
@@ -253,7 +254,6 @@ class WorkerManager
         }
     }
 
-
     /**
      * Start minumum number of workers.
      */
@@ -267,7 +267,6 @@ class WorkerManager
             $this->spawnWorker();
         }
     }
-
 
     /**
      * Start worker.
@@ -379,7 +378,7 @@ class WorkerManager
             case JobInterface::STATUS_DONE:
             case JobInterface::STATUS_FAILED:
             case JobInterface::STATUS_TIMEOUT:
-                $worker = array_search((string) $event['job'], $this->job_map);
+                $worker = array_search((string) $event['job'], $this->job_map, false);
                 if (false === $worker) {
                     return $this;
                 }
@@ -390,7 +389,7 @@ class WorkerManager
 
             break;
             case JobInterface::STATUS_CANCELED:
-                $worker = array_search($event['job'], $this->job_map);
+                $worker = array_search($event['job'], $this->job_map, false);
                 if (false === $worker) {
                     return $this;
                 }

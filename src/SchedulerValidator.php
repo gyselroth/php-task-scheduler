@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * TaskScheduler
  *
- * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
+ * @author      gyselroth™  (http://www.gyselroth.com)
+ * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -17,6 +17,14 @@ use TaskScheduler\Exception\InvalidArgumentException;
 
 class SchedulerValidator
 {
+    /**
+     * Interval references.
+     */
+    public const INTERVAL_REFERENCES = [
+        'start',
+        'end',
+    ];
+
     /**
      * Validate given job options.
      */
@@ -44,6 +52,12 @@ class SchedulerValidator
                 case Scheduler::OPTION_ID:
                     if (!$value instanceof ObjectId) {
                         throw new InvalidArgumentException('option '.$option.' must be a an instance of '.ObjectId::class);
+                    }
+
+                break;
+                case Scheduler::OPTION_INTERVAL_REFERENCE:
+                    if (!in_array($value, self::INTERVAL_REFERENCES, true)) {
+                        throw new InvalidArgumentException('option '.$option.' must be "start" or "end"');
                     }
 
                 break;
