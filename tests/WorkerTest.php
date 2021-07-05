@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * TaskScheduler
  *
- * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
+ * @author      gyselroth™  (http://www.gyselroth.com)
+ * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -55,13 +55,13 @@ class WorkerTest extends TestCase
 
                     return false;
                 })
-        );
+            );
         $this->worker->method('exit')
             ->will(
                 $this->returnCallback(function () {
                     return true;
                 })
-        );
+            );
     }
 
     public function testStartWorkerNoJob()
@@ -102,19 +102,19 @@ class WorkerTest extends TestCase
     public function testEventHandler()
     {
         $called1 = false;
-        $this->scheduler->on('waiting', function($e, $p) use(&$called1) {
+        $this->scheduler->on('waiting', function ($e, $p) use (&$called1) {
             $this->assertSame(JobInterface::STATUS_WAITING, $p->getStatus());
             $called1 = true;
         });
 
         $called2 = false;
-        $this->scheduler->on('processing', function($e, $p) use(&$called2) {
+        $this->scheduler->on('processing', function ($e, $p) use (&$called2) {
             $this->assertSame(JobInterface::STATUS_PROCESSING, $p->getStatus());
             $called2 = true;
         });
 
         $called3 = false;
-        $this->scheduler->on('done', function($e, $p) use(&$called3) {
+        $this->scheduler->on('done', function ($e, $p) use (&$called3) {
             $this->assertSame(JobInterface::STATUS_DONE, $p->getStatus());
             $called3 = true;
         });
@@ -205,7 +205,7 @@ class WorkerTest extends TestCase
     public function testSetProgressTo100AfterFinish()
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
-        $job = (new SuccessJobMock())->setId($job->getId());;
+        $job = (new SuccessJobMock())->setId($job->getId());
 
         $this->scheduler->updateJobProgress($job, 50.1);
         $this->worker->processOne($job->getId());
@@ -412,6 +412,38 @@ class WorkerTest extends TestCase
         $this->assertTrue($interval_job->getOptions()['at'] > time());
     }
 
+    public function testProcessJobIntervalReferenceStart()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_INTERVAL => 100,
+            Scheduler::OPTION_INTERVAL_REFERENCE => 'start',
+        ]);
+
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->processAll();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
+        $interval_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertSame(JobInterface::STATUS_WAITING, $interval_job->getStatus());
+        $this->assertSame('start', $interval_job->getOptions()['interval_reference']);
+    }
+
+    public function testProcessJobIntervalReferenceEnd()
+    {
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_INTERVAL => 100,
+            Scheduler::OPTION_INTERVAL_REFERENCE => 'end',
+        ]);
+
+        $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
+        $this->worker->processAll();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
+        $interval_job = iterator_to_array($this->scheduler->getJobs())[0];
+        $this->assertSame(JobInterface::STATUS_WAITING, $interval_job->getStatus());
+        $this->assertSame('end', $interval_job->getOptions()['interval_reference']);
+    }
+
     public function testProcessEndlessInterval()
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
@@ -510,7 +542,7 @@ class WorkerTest extends TestCase
 
                     return false;
                 })
-        );
+            );
 
         return $worker;
     }

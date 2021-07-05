@@ -5,8 +5,8 @@ declare(strict_types=1);
 /**
  * TaskScheduler
  *
- * @author      Raffael Sahli <sahli@gyselroth.net>
- * @copyright   Copryright (c) 2017-2019 gyselroth GmbH (https://gyselroth.com)
+ * @author      gyselroth™  (http://www.gyselroth.com)
+ * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -19,11 +19,11 @@ use ReflectionClass;
 use ReflectionMethod;
 use ReflectionProperty;
 use TaskScheduler\Exception\InvalidArgumentException;
+use TaskScheduler\JobInterface;
 use TaskScheduler\Queue;
+use TaskScheduler\Worker;
 use TaskScheduler\WorkerFactoryInterface;
 use TaskScheduler\WorkerManager;
-use TaskScheduler\JobInterface;
-use TaskScheduler\Worker;
 
 class WorkerManagerTest extends TestCase
 {
@@ -36,8 +36,9 @@ class WorkerManagerTest extends TestCase
         $factory = $this->createMock(WorkerFactoryInterface::class);
 
         //make sure we provide a worker process which is long enaugh alive to run tests
-        $factory->method('buildWorker')->will($this->returnCallback(function() use($worker) {
+        $factory->method('buildWorker')->will($this->returnCallback(function () use ($worker) {
             sleep(2);
+
             return $worker;
         }));
 
@@ -59,13 +60,13 @@ class WorkerManagerTest extends TestCase
 
                     return true;
                 })
-        );
+            );
         $this->manager->method('exit')
             ->will(
                 $this->returnCallback(function () {
                     return true;
                 })
-        );
+            );
     }
 
     public function testStartInitialDefaultWorkers()
@@ -217,7 +218,7 @@ class WorkerManagerTest extends TestCase
 
         msg_send($queue, WorkerManager::TYPE_EVENT, [
             'status' => JobInterface::STATUS_CANCELED,
-            'job' => $job
+            'job' => $job,
         ]);
 
         $forks_property = self::getProperty('forks');
@@ -227,7 +228,7 @@ class WorkerManagerTest extends TestCase
 
         $map_property = self::getProperty('job_map');
         $map_property->setValue($this->manager, [
-            (string)$key => $job
+            (string) $key => $job,
         ]);
         $this->assertSame(1, count($map_property->getValue($this->manager)));
 
@@ -246,13 +247,13 @@ class WorkerManagerTest extends TestCase
             WorkerManager::OPTION_PM => WorkerManager::PM_STATIC,
         ]);
 
-        $queue = msg_get_queue(ftok(dirname(__FILE__).'/../src/Queue.php', 't'));
+        $queue = msg_get_queue(ftok(__DIR__.'/../src/Queue.php', 't'));
         msg_send($queue, WorkerManager::TYPE_JOB, [
             '_id' => new ObjectId(),
             'options' => [
                 'force_spawn' => true,
-                'at' => time()+10,
-            ]
+                'at' => time() + 10,
+            ],
         ]);
 
         $this->manager->process();

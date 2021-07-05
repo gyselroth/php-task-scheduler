@@ -68,7 +68,7 @@ $(COMPOSER_TARGET) $(PHPCS_FIXER_SCRIPT) $(PHPUNIT_SCRIPT) $(PHPSTAN_SCRIPT): $(
 phpcs-check: $(PHPCS_FIXER_TARGET)
 
 $(PHPCS_CHECK_TARGET): $(PHPCS_FIXER_SCRIPT) $(PHP_FILES) $(COMPOSER_LOCK)
-	$(PHP_BIN) $(PHPCS_FIXER_SCRIPT)  fix --config=.php_cs.dist -v --dry-run --allow-risky --stop-on-violation --using-cache=no
+	$(PHP_BIN) $(PHPCS_FIXER_SCRIPT)  fix --config=.php-cs-fixer.dist.php -v --dry-run --allow-risky --stop-on-violation --using-cache=no
 	@touch $@
 
 
@@ -76,7 +76,7 @@ $(PHPCS_CHECK_TARGET): $(PHPCS_FIXER_SCRIPT) $(PHP_FILES) $(COMPOSER_LOCK)
 phpcs-fix: $(PHPCS_FIXER_TARGET)
 
 $(PHPCS_FIX_TARGET): $(PHPCS_FIXER_SCRIPT) $(PHP_FILES) $(COMPOSER_LOCK)
-	$(PHP_BIN) $(PHPCS_FIXER_SCRIPT)  fix --config=.php_cs.dist -v
+	$(PHP_BIN) $(PHPCS_FIXER_SCRIPT)  fix --config=.php-cs-fixer.dist.php -v
 	@touch $@
 
 
