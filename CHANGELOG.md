@@ -1,10 +1,9 @@
-## 3.3.0-alpha.1
+## 3.3.0
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
-**Date**: Wed June 02 15:25:00 CET 2021
+**Date**: Tue July 05 15:44:00 CET 2021
 
 ### Features
-* Added option to define if interval refers to start or end of previous job
-
+* Added option to define if job interval refers to start or end of previous job
 
 ## 3.2.2
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
