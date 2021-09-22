@@ -39,6 +39,7 @@ class Scheduler
     public const OPTION_FORCE_SPAWN = 'force_spawn';
     public const OPTION_TIMEOUT = 'timeout';
     public const OPTION_ID = 'id';
+    public const OPTION_JOB_QUEUE = 'job_queue';
     public const OPTION_IGNORE_DATA = 'ignore_data';
 
     /**
@@ -60,10 +61,7 @@ class Scheduler
      * Queue options.
      */
     public const OPTION_PROGRESS_RATE_LIMIT = 'progress_rate_limit';
-    public const OPTION_JOB_QUEUE = 'job_queue';
-    public const OPTION_JOB_QUEUE_SIZE = 'job_queue_size';
-    public const OPTION_EVENT_QUEUE = 'event_queue';
-    public const OPTION_EVENT_QUEUE_SIZE = 'event_queue_size';
+    public const OPTION_ORPHANED_RATE_LIMIT = 30;
 
     /**
      * MongoDB type map.
@@ -108,14 +106,7 @@ class Scheduler
      *
      * @var string
      */
-    protected $job_queue = 'taskscheduler.jobs';
-
-    /**
-     * Event Collection name.
-     *
-     * @var string
-     */
-    protected $event_queue = 'taskscheduler.events';
+    protected $job_queue = 'taskscheduler';
 
     /**
      * Unix time.
@@ -160,20 +151,6 @@ class Scheduler
     protected $default_interval_reference = 'end';
 
     /**
-     * Job Queue size.
-     *
-     * @var int
-     */
-    protected $job_queue_size = 1000000;
-
-    /**
-     * Event Queue size.
-     *
-     * @var int
-     */
-    protected $event_queue_size = 5000000;
-
-    /**
      * Progress rate limit (miliseconds).
      *
      * @var int
@@ -181,11 +158,11 @@ class Scheduler
     protected $progress_rate_limit = 1000;
 
     /**
-     * Events queue.
+     * Orphaned rate limit
      *
-     * @var MessageQueue
+     * @var int
      */
-    protected $events;
+    protected $orphaned_rate_limit = 30;
 
     /**
      * Progress rate limit storage.
@@ -202,7 +179,6 @@ class Scheduler
         $this->db = $db;
         $this->logger = $logger;
         $this->setOptions($config);
-        $this->events = new MessageQueue($db, $this->getEventQueue(), $this->getEventQueueSize(), $logger);
         $this->emitter = $emitter ?? new Emitter();
     }
 
@@ -214,7 +190,6 @@ class Scheduler
         foreach ($config as $option => $value) {
             switch ($option) {
                 case self::OPTION_JOB_QUEUE:
-                case self::OPTION_EVENT_QUEUE:
                 case self::OPTION_DEFAULT_INTERVAL_REFERENCE:
                     $this->{$option} = (string) $value;
 
@@ -224,9 +199,8 @@ class Scheduler
                 case self::OPTION_DEFAULT_INTERVAL:
                 case self::OPTION_DEFAULT_RETRY:
                 case self::OPTION_DEFAULT_TIMEOUT:
-                case self::OPTION_JOB_QUEUE_SIZE:
-                case self::OPTION_EVENT_QUEUE_SIZE:
                 case self::OPTION_PROGRESS_RATE_LIMIT:
+                case self::OPTION_ORPHANED_RATE_LIMIT:
                     $this->{$option} = (int) $value;
 
                 break;
@@ -239,19 +213,11 @@ class Scheduler
     }
 
     /**
-     * Get job Queue size.
+     * Get orphaned rate limit
      */
-    public function getJobQueueSize(): int
+    public function getOrphanedRateLimit(): int
     {
-        return $this->job_queue_size;
-    }
-
-    /**
-     * Get event Queue size.
-     */
-    public function getEventQueueSize(): int
-    {
-        return $this->event_queue_size;
+        return $this->orphaned_rate_limit;
     }
 
     /**
@@ -260,14 +226,6 @@ class Scheduler
     public function getJobQueue(): string
     {
         return $this->job_queue;
-    }
-
-    /**
-     * Get event collection name.
-     */
-    public function getEventQueue(): string
-    {
-        return $this->event_queue;
     }
 
     /**
@@ -299,12 +257,6 @@ class Scheduler
             throw new JobNotFoundException('job '.$id.' was not found');
         }
 
-        $this->db->{$this->event_queue}->insertOne([
-            'job' => $id,
-            'status' => JobInterface::STATUS_CANCELED,
-            'timestamp' => new UTCDateTime(),
-        ]);
-
         return true;
     }
 
@@ -314,7 +266,6 @@ class Scheduler
     public function flush(): Scheduler
     {
         $this->db->{$this->job_queue}->drop();
-        $this->db->{$this->event_queue}->drop();
 
         return $this;
     }
@@ -353,12 +304,6 @@ class Scheduler
             'category' => get_class($this),
             'params' => $options,
             'data' => $data,
-        ]);
-
-        $this->db->{$this->event_queue}->insertOne([
-            'job' => $result->getInsertedId(),
-            'status' => JobInterface::STATUS_WAITING,
-            'timestamp' => new UTCDateTime(),
         ]);
 
         $document = $this->db->{$this->job_queue}->findOne(['_id' => $result->getInsertedId()], [
@@ -421,12 +366,6 @@ class Scheduler
             'data' => $data,
         ]);
 
-        $this->db->{$this->event_queue}->insertOne([
-            'job' => $result->getUpsertedId(),
-            'status' => JobInterface::STATUS_WAITING,
-            'timestamp' => new UTCDateTime(),
-        ]);
-
         $document = $this->db->{$this->job_queue}->findOne(['_id' => $result->getUpsertedId()], [
             'typeMap' => self::TYPE_MAP,
         ]);
@@ -452,33 +391,27 @@ class Scheduler
             return $job->getId();
         }, $stack);
 
-        $cursor = $this->events->getCursor([
-            'job' => ['$in' => $jobs],
+        $cursor = $this->db->{$this->getJobQueue()}->watch([
+            ['$match' => ['fullDocument._id' => ['$in' => $jobs]]],
         ]);
 
         $start = time();
         $expected = count($stack);
         $done = 0;
+        $cursor->rewind();
 
         while (true) {
-            if (null === $cursor->current()) {
-                if ($cursor->getInnerIterator()->isDead()) {
-                    $this->events->create();
-
-                    return $this->waitFor($stack, $options);
-                }
-
-                $this->events->next($cursor, function () use ($stack, $options) {
-                    $this->waitFor($stack, $options);
-                });
-
+            if(!$cursor->valid()) {
+                $cursor->next();
                 continue;
             }
 
             $event = $cursor->current();
-            $this->events->next($cursor, function () use ($stack, $options) {
-                $this->waitFor($stack, $options);
-            });
+            $cursor->next();
+
+            if($event === null) {
+                continue;
+            }
 
             $process = $orig[(string) $event['job']];
             $data = $process->toArray();
@@ -512,7 +445,9 @@ class Scheduler
             ];
         }
 
-        $cursor = $this->events->getCursor($query);
+        $cursor = $this->events->watch([
+            '$match' => $query
+        ]);
 
         while (true) {
             if (null === $cursor->current()) {
@@ -521,22 +456,22 @@ class Scheduler
                         'category' => get_class($this),
                     ]);
 
-                    $this->events->create();
+                    #$this->events->create();
 
                     return $this->listen($callback, $query);
                 }
 
-                $this->events->next($cursor, function () use ($callback, $query) {
-                    return $this->listen($callback, $query);
-                });
+                #$this->events->next($cursor, function () use ($callback, $query) {
+                    #return $this->listen($callback, $query);
+                #});
 
                 continue;
             }
 
             $result = $cursor->current();
-            $this->events->next($cursor, function () use ($callback, $query) {
-                $this->listen($callback, $query);
-            });
+            #$this->events->next($cursor, function () use ($callback, $query) {
+                #$this->listen($callback, $query);
+            #});
 
             $process = new Process($result, $this);
             $this->emit($process);
@@ -567,6 +502,7 @@ class Scheduler
             'progress' => ['$exists' => true],
         ], [
             '$set' => [
+                'alive' => new UTCDateTime(),
                 'progress' => round($progress, 2),
             ],
         ]);
