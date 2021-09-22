@@ -45,20 +45,6 @@ class Queue
     protected $factory;
 
     /**
-     * Jobs queue.
-     *
-     * @var MessageQueue
-     */
-    protected $jobs;
-
-    /**
-     * Events queue.
-     *
-     * @var MessageQueue
-     */
-    protected $events;
-
-    /**
      * Worker manager pid.
      *
      * @var int
