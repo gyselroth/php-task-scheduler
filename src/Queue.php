@@ -13,7 +13,6 @@ declare(strict_types=1);
 namespace TaskScheduler;
 
 use League\Event\Emitter;
-use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\SpawnForkException;

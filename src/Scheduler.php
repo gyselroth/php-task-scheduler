@@ -172,12 +172,20 @@ class Scheduler
     protected $progress_limit = [];
 
     /**
+     * SessionHandler.
+     *
+     * @var SessionHandler
+     */
+    protected $sessionHandler;
+
+    /**
      * Init queue.
      */
     public function __construct(Database $db, LoggerInterface $logger, array $config = [], ?Emitter $emitter = null)
     {
         $this->db = $db;
         $this->logger = $logger;
+        $this->sessionHandler = new SessionHandler($this->db, $this->logger);
         $this->setOptions($config);
         $this->emitter = $emitter ?? new Emitter();
     }
@@ -213,7 +221,7 @@ class Scheduler
     }
 
     /**
-     * Get orphaned rate limit
+     * Get orphaned rate limit.
      */
     public function getOrphanedRateLimit(): int
     {
@@ -336,10 +344,14 @@ class Scheduler
             $filter = ['data' => $data] + $filter;
         }
 
+        $session = $this->sessionHandler->getSession();
+        $session->startTransaction($this->sessionHandler->getOptions());
+
         $result = $this->db->{$this->job_queue}->updateOne($filter, ['$setOnInsert' => $document], [
             'upsert' => true,
-            '$isolated' => true,
         ]);
+
+        $session->commitTransaction();
 
         if ($result->getMatchedCount() > 0) {
             $document = $this->db->{$this->job_queue}->findOne($filter, [
@@ -542,14 +554,18 @@ class Scheduler
      */
     protected function updateJob(ObjectId $id, int $status): UpdateResult
     {
+        $session = $this->sessionHandler->getSession();
+        $session->startTransaction($this->sessionHandler->getOptions());
+
         $result = $this->db->{$this->job_queue}->updateMany([
             '_id' => $id,
-            '$isolated' => true,
         ], [
             '$set' => [
                 'status' => $status,
             ],
         ]);
+
+        $session->commitTransaction();
 
         return $result;
     }

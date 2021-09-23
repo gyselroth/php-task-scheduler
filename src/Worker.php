@@ -80,6 +80,13 @@ class Worker
     protected $id;
 
     /**
+     * SessionHandler.
+     *
+     * @var SessionHandler
+     */
+    protected $sessionHandler;
+
+    /**
      * Init worker.
      */
     public function __construct(ObjectId $id, Scheduler $scheduler, Database $db, LoggerInterface $logger, ?ContainerInterface $container = null)
@@ -89,6 +96,7 @@ class Worker
         $this->scheduler = $scheduler;
         $this->db = $db;
         $this->logger = $logger;
+        $this->sessionHandler = new SessionHandler($this->db, $this->logger);
         $this->container = $container;
     }
 
@@ -266,13 +274,18 @@ class Worker
      */
     protected function saveState(): self
     {
+        $session = $this->sessionHandler->getSession();
+        $session->startTransaction($this->sessionHandler->getOptions());
+
         foreach ($this->queue as $key => $job) {
             $this->db->selectCollection($this->scheduler->getJobQueue())->updateOne(
-                ['_id' => $job['_id'], '$isolated' => true],
+                ['_id' => $job['_id']],
                 ['$setOnInsert' => $job],
                 ['upsert' => true]
             );
         }
+
+        $session->commitTransaction();
 
         return $this;
     }
@@ -331,13 +344,17 @@ class Worker
             $set['worker'] = $this->id;
         }
 
+        $session = $this->sessionHandler->getSession();
+        $session->startTransaction($this->sessionHandler->getOptions());
+
         $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
             '_id' => $job['_id'],
             'status' => $from_status,
-            '$isolated' => true,
         ], [
             '$set' => $set,
         ]);
+
+        $session->commitTransaction();
 
         $this->logger->debug('collect job ['.$job['_id'].'] with status ['.$from_status.']', [
             'category' => get_class($this),
@@ -378,12 +395,16 @@ class Worker
             }
         }
 
+        $session = $this->sessionHandler->getSession();
+        $session->startTransaction($this->sessionHandler->getOptions());
+
         $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
             '_id' => $job['_id'],
-            '$isolated' => true,
         ], [
             '$set' => $set,
         ]);
+
+        $session->commitTransaction();
 
         return $result->isAcknowledged();
     }
@@ -393,13 +414,17 @@ class Worker
      */
     protected function processLocalQueue(): bool
     {
+        $session = $this->sessionHandler->getSession();
+
         $now = time();
         foreach ($this->queue as $key => $job) {
+            $session->startTransaction($this->sessionHandler->getOptions());
             $this->db->{$this->scheduler->getJobQueue()}->updateOne(
-                ['_id' => $job['_id'], '$isolated' => true],
+                ['_id' => $job['_id']],
                 ['$setOnInsert' => $job],
                 ['upsert' => true]
             );
+            $session->commitTransaction();
 
             if ($job['options']['at'] <= $now) {
                 $this->logger->info('postponed job ['.$job['_id'].'] ['.$job['class'].'] can now be executed', [
