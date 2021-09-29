@@ -55,7 +55,6 @@ class SchedulerTest extends TestCase
         $this->assertSame($job->getClass(), 'test');
         $this->assertSame(['foo' => 'bar'], $job->getData());
         $this->assertInstanceOf(ObjectId::class, $job->getId());
-        $this->assertInstanceOf(ObjectId::class, $job->getWorker());
     }
 
     public function testAddJobWithCustomIdInvalidValue()
@@ -331,18 +330,18 @@ class SchedulerTest extends TestCase
             'default_retry' => 1,
             'default_at' => 1000000,
             'default_retry_interval' => 1,
+            'default_interval_reference' => 'start',
             'default_interval' => 300,
-            'job_queue' => 'foo',
-            'job_queue_size' => 10,
-            'event_queue' => 'bar',
-            'event_queue_size' => 50,
+            'default_timeout' => 1,
         ]);
 
         $job = $scheduler->addJob('test', ['foo' => 'bar'])->getOptions();
         $this->assertSame(1, $job['retry']);
         $this->assertSame(1000000, $job['at']);
         $this->assertSame(1, $job['retry_interval']);
+        $this->assertSame('start', $job['interval_reference']);
         $this->assertSame(300, $job['interval']);
+        $this->assertSame(1, $job['timeout']);
     }
 
     public function testChangeDefaultJobOptions()
@@ -365,15 +364,13 @@ class SchedulerTest extends TestCase
     {
         $this->scheduler->setOptions([
             'job_queue' => 'foo',
-            'job_queue_size' => 10,
-            'event_queue' => 'bar',
-            'event_queue_size' => 50,
+            'progress_rate_limit' => 500,
+            'orphaned_rate_limit' => 100,
         ]);
 
         $this->assertSame('foo', $this->scheduler->getJobQueue());
-        $this->assertSame('bar', $this->scheduler->getEventQueue());
-        $this->assertSame(10, $this->scheduler->getJobQueueSize());
-        $this->assertSame(50, $this->scheduler->getEventQueueSize());
+        $this->assertSame(500, $this->scheduler->getProgressRateLimit());
+        $this->assertSame(100, $this->scheduler->getOrphanedRateLimit());
     }
 
     public function testChangeInvalidOption()

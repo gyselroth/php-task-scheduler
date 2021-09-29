@@ -61,7 +61,7 @@ class Scheduler
      * Queue options.
      */
     public const OPTION_PROGRESS_RATE_LIMIT = 'progress_rate_limit';
-    public const OPTION_ORPHANED_RATE_LIMIT = 30;
+    public const OPTION_ORPHANED_RATE_LIMIT = 'orphaned_rate_limit';
 
     /**
      * MongoDB type map.
@@ -158,7 +158,7 @@ class Scheduler
     protected $progress_rate_limit = 1000;
 
     /**
-     * Orphaned rate limit
+     * Orphaned rate limit.
      *
      * @var int
      */
@@ -218,6 +218,14 @@ class Scheduler
         }
 
         return $this;
+    }
+
+    /**
+     * Get progress rate limit.
+     */
+    public function getProgressRateLimit(): int
+    {
+        return $this->progress_rate_limit;
     }
 
     /**
