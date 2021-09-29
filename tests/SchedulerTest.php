@@ -60,7 +60,7 @@ class SchedulerTest extends TestCase
     public function testAddJobWithCustomIdInvalidValue()
     {
         $this->expectException(InvalidArgumentException::class);
-        $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
+        $this->scheduler->addJob('test', ['foo' => 'bar'], [
             Scheduler::OPTION_ID => 'foobar',
         ]);
     }
@@ -79,11 +79,11 @@ class SchedulerTest extends TestCase
     {
         $this->expectException(\Exception::class);
         $id = new ObjectId();
-        $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
+        $this->scheduler->addJob('test', ['foo' => 'bar'], [
             Scheduler::OPTION_ID => $id,
         ]);
 
-        $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
+        $this->scheduler->addJob('test', ['foo' => 'bar'], [
             Scheduler::OPTION_ID => $id,
         ]);
     }
@@ -101,8 +101,8 @@ class SchedulerTest extends TestCase
         $ts = new UTCDateTime();
         $job = $this->scheduler->addJob('test', ['foo' => 'bar'])->toArray();
         $this->assertTrue($job['created'] >= $ts);
-        $this->assertTrue($job['started'] >= $ts);
-        $this->assertTrue($job['ended'] >= $ts);
+        $this->assertEquals(null, $job['started']);
+        $this->assertEquals(null, $job['ended']);
     }
 
     public function testGetJob()
@@ -124,7 +124,7 @@ class SchedulerTest extends TestCase
 
     public function testGetClosedJobsWhenNoClosedJobsExist()
     {
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar']);
+        $this->scheduler->addJob('test', ['foo' => 'bar']);
         $jobs = $this->scheduler->getJobs(['status' => JobInterface::STATUS_DONE]);
         $this->assertSame(0, count(iterator_to_array($jobs)));
     }
@@ -132,7 +132,7 @@ class SchedulerTest extends TestCase
     public function testGetInexistingJob()
     {
         $this->expectException(JobNotFoundException::class);
-        $job = $this->scheduler->getJob(new ObjectId());
+        $this->scheduler->getJob(new ObjectId());
     }
 
     public function testCancelJob()
@@ -174,7 +174,7 @@ class SchedulerTest extends TestCase
     public function testAddJobAdvancedInvalidValue()
     {
         $this->expectException(InvalidArgumentException::class);
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar'], [
+        $this->scheduler->addJob('test', ['foo' => 'bar'], [
             Scheduler::OPTION_RETRY => '10',
             Scheduler::OPTION_INTERVAL => 60,
             Scheduler::OPTION_RETRY_INTERVAL => 10,
@@ -184,7 +184,7 @@ class SchedulerTest extends TestCase
     public function testAddJobAdvancedInvalidOption()
     {
         $this->expectException(InvalidArgumentException::class);
-        $id = $this->scheduler->addJob('test', ['foo' => 'bar'], [
+        $this->scheduler->addJob('test', ['foo' => 'bar'], [
             'foobar' => 1,
         ]);
     }
@@ -207,11 +207,11 @@ class SchedulerTest extends TestCase
             Scheduler::OPTION_INTERVAL => 1,
         ]);
 
-        $seccond = $this->scheduler->addJobOnce('test', $data, [
+        $second = $this->scheduler->addJobOnce('test', $data, [
             Scheduler::OPTION_INTERVAL => 2,
         ]);
 
-        $this->assertNotEquals($first->getId(), $seccond->getId());
+        $this->assertNotEquals($first->getId(), $second->getId());
 
         $this->assertSame(JobInterface::STATUS_CANCELED, $this->scheduler->getJob($first->getId())->getStatus());
         $jobs = $this->scheduler->getJobs();
@@ -226,11 +226,11 @@ class SchedulerTest extends TestCase
             Scheduler::OPTION_AT => time() + 3600,
         ]);
 
-        $seccond = $this->scheduler->addJobOnce('test', $data, [
+        $second = $this->scheduler->addJobOnce('test', $data, [
             Scheduler::OPTION_INTERVAL => 1,
         ]);
 
-        $this->assertEquals($first->getId(), $seccond->getId());
+        $this->assertEquals($first->getId(), $second->getId());
     }
 
     public function testUpdateJobProgressTooLow()
@@ -289,10 +289,10 @@ class SchedulerTest extends TestCase
     public function testAddOnceDifferentData()
     {
         $first = $this->scheduler->addJobOnce('test', 'foo');
-        $seccond = $this->scheduler->addJobOnce('test', 'bar');
-        $this->assertNotEquals($first->getId(), $seccond->getId());
+        $second = $this->scheduler->addJobOnce('test', 'bar');
+        $this->assertNotEquals($first->getId(), $second->getId());
         $this->assertSame(JobInterface::STATUS_WAITING, $this->scheduler->getJob($first->getId())->getStatus());
-        $this->assertSame(JobInterface::STATUS_WAITING, $this->scheduler->getJob($seccond->getId())->getStatus());
+        $this->assertSame(JobInterface::STATUS_WAITING, $this->scheduler->getJob($second->getId())->getStatus());
         $jobs = $this->scheduler->getJobs();
         $this->assertSame(2, count(iterator_to_array($jobs)));
     }
@@ -303,14 +303,14 @@ class SchedulerTest extends TestCase
             Scheduler::OPTION_IGNORE_DATA => true,
         ]);
 
-        $seccond = $this->scheduler->addJobOnce('test', 'bar', [
+        $second = $this->scheduler->addJobOnce('test', 'bar', [
             Scheduler::OPTION_IGNORE_DATA => true,
         ]);
 
-        $this->assertNotEquals($first->getId(), $seccond->getId());
+        $this->assertNotEquals($first->getId(), $second->getId());
 
         $this->assertSame(JobInterface::STATUS_CANCELED, $this->scheduler->getJob($first->getId())->getStatus());
-        $this->assertSame(JobInterface::STATUS_WAITING, $this->scheduler->getJob($seccond->getId())->getStatus());
+        $this->assertSame(JobInterface::STATUS_WAITING, $this->scheduler->getJob($second->getId())->getStatus());
         $jobs = $this->scheduler->getJobs();
         $this->assertSame(1, count(iterator_to_array($jobs)));
     }
@@ -318,7 +318,7 @@ class SchedulerTest extends TestCase
     public function testAddJobWithIgnoreDataInvalidValue()
     {
         $this->expectException(InvalidArgumentException::class);
-        $job = $this->scheduler->addJob('test', ['foo' => 'bar'], [
+        $this->scheduler->addJob('test', ['foo' => 'bar'], [
             Scheduler::OPTION_IGNORE_DATA => 'foobar',
         ]);
     }
