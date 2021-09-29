@@ -23,6 +23,7 @@ use TaskScheduler\Exception\LogicException;
 use TaskScheduler\JobInterface;
 use TaskScheduler\Process;
 use TaskScheduler\Scheduler;
+use TaskScheduler\SessionHandler;
 
 class SchedulerTest extends TestCase
 {
@@ -32,6 +33,16 @@ class SchedulerTest extends TestCase
     {
         $mongodb = new MockDatabase();
         $this->scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
+
+        $sessionHandler = $this->getMockBuilder(SessionHandler::class)
+            ->setConstructorArgs([$mongodb, $this->createMock(LoggerInterface::class)])
+            ->getMock();
+
+        $reflection = new \ReflectionClass($this->scheduler);
+        $reflection_property = $reflection->getProperty('sessionHandler');
+        $reflection_property->setAccessible(true);
+
+        $reflection_property->setValue($this->scheduler, $sessionHandler);
     }
 
     public function testAddJob()
