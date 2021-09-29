@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2b79a61992767a8771f45f94890d57e4",
+    "content-hash": "8defebae4f95ad20786b170ca5e9c0b2",
     "packages": [
         {
             "name": "composer/package-versions-deprecated",
@@ -78,59 +78,6 @@
                 }
             ],
             "time": "2021-09-13T08:41:34+00:00"
-        },
-        {
-            "name": "dg/bypass-finals",
-            "version": "v1.3.1",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/dg/bypass-finals.git",
-                "reference": "495f5bc762e7bf30a13ed8253f44bb3a701767bb"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/dg/bypass-finals/zipball/495f5bc762e7bf30a13ed8253f44bb3a701767bb",
-                "reference": "495f5bc762e7bf30a13ed8253f44bb3a701767bb",
-                "shasum": ""
-            },
-            "require": {
-                "php": ">=7.1"
-            },
-            "require-dev": {
-                "nette/tester": "^2.3",
-                "phpstan/phpstan": "^0.12"
-            },
-            "type": "library",
-            "autoload": {
-                "classmap": [
-                    "src/"
-                ]
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "BSD-3-Clause",
-                "GPL-2.0",
-                "GPL-3.0"
-            ],
-            "authors": [
-                {
-                    "name": "David Grudl",
-                    "homepage": "https://davidgrudl.com"
-                }
-            ],
-            "description": "Removes final keyword from source code on-the-fly and allows mocking of final methods and classes",
-            "keywords": [
-                "finals",
-                "mocking",
-                "phpunit",
-                "testing",
-                "unit"
-            ],
-            "support": {
-                "issues": "https://github.com/dg/bypass-finals/issues",
-                "source": "https://github.com/dg/bypass-finals/tree/v1.3.1"
-            },
-            "time": "2021-04-09T10:42:55+00:00"
         },
         {
             "name": "jean85/pretty-package-versions",
@@ -979,7 +926,7 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/s-aebischer/php-mongomock",
-                "reference": "11ecbb9"
+                "reference": "7995e9b"
             },
             "require": {
                 "ext-json": "*",
@@ -1015,7 +962,7 @@
                 }
             ],
             "description": "Library containing highly intelligent MongoDB mocks for unit testing",
-            "time": "2021-09-27T14:42:35+00:00"
+            "time": "2021-09-29T13:12:34+00:00"
         },
         {
             "name": "myclabs/deep-copy",

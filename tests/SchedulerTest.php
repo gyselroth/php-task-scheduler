@@ -13,6 +13,7 @@ declare(strict_types=1);
 namespace TaskScheduler\Testsuite;
 
 use Helmich\MongoMock\MockDatabase;
+use Helmich\MongoMock\MockSession;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use PHPUnit\Framework\TestCase;
@@ -23,7 +24,6 @@ use TaskScheduler\Exception\LogicException;
 use TaskScheduler\JobInterface;
 use TaskScheduler\Process;
 use TaskScheduler\Scheduler;
-use TaskScheduler\SessionHandler;
 
 class SchedulerTest extends TestCase
 {
@@ -33,10 +33,7 @@ class SchedulerTest extends TestCase
     {
         $mongodb = new MockDatabase();
         $this->scheduler = new Scheduler($mongodb, $this->createMock(LoggerInterface::class));
-
-        $sessionHandler = $this->getMockBuilder(SessionHandler::class)
-            ->setConstructorArgs([$mongodb, $this->createMock(LoggerInterface::class)])
-            ->getMock();
+        $sessionHandler = new MockSession();
 
         $reflection = new \ReflectionClass($this->scheduler);
         $reflection_property = $reflection->getProperty('sessionHandler');
