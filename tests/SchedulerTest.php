@@ -385,8 +385,9 @@ class SchedulerTest extends TestCase
     {
         $called = false;
         $job = $this->scheduler->addJob('test', 'foobar');
-        $this->scheduler->listen(function (Process $process) use(&$called) {
+        $this->scheduler->listen(function (Process $process) use (&$called) {
             $called = true;
+
             return true;
         }, ['job' => $job->getId()]);
 
