@@ -389,7 +389,7 @@ class SchedulerTest extends TestCase
             $called = true;
 
             return true;
-        }, ['job' => $job->getId()]);
+        }, ['_id' => $job->getId()]);
 
         $this->assertTrue($called);
     }

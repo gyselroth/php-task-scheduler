@@ -459,9 +459,11 @@ class Scheduler
      */
     public function listen(Closure $callback, array $query = []): self
     {
-        $cursor = $this->db->{$this->getJobQueue()}->watch([
-            (count($query) > 0) ? ['$match' => $query] : [],
-        ], ['fullDocument' => 'updateLookup']);
+        if (count($query) > 0) {
+            $query = [['$match' => $query]];
+        }
+
+        $cursor = $this->db->{$this->getJobQueue()}->watch($query, ['fullDocument' => 'updateLookup']);
 
         for ($cursor->rewind(); true; $cursor->next()) {
             if (!$cursor->valid()) {
