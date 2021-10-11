@@ -461,21 +461,20 @@ class Scheduler
     {
         $cursor = $this->db->{$this->getJobQueue()}->watch([
             (count($query) > 0) ? ['$match' => $query] : [],
-        ], ['fullDocument' => 'lookupUpdate']);
+        ], ['fullDocument' => 'updateLookup']);
 
-        while (true) {
-            if($cursor->valid()) {
-                $cursor->next();
+        for ($cursor->rewind(); true; $cursor->next()) {
+            if (!$cursor->valid()) {
                 continue;
             }
 
             $result = $cursor->current();
-            $cursor->next();
 
-            if($result === null) {
+            if (null === $result) {
                 continue;
             }
 
+            $result = json_decode(json_encode($result->bsonSerialize()), true);
             $process = new Process($result['fullDocument'], $this);
             $this->emit($process);
 
