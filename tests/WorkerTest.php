@@ -13,6 +13,8 @@ declare(strict_types=1);
 namespace TaskScheduler\Testsuite;
 
 use Helmich\MongoMock\MockDatabase;
+use Helmich\MongoMock\MockSession;
+use http\Exception;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use PHPUnit\Framework\TestCase;
@@ -62,10 +64,18 @@ class WorkerTest extends TestCase
                     return true;
                 })
             );
+
+        $sessionHandler = new MockSession();
+        $reflection = new \ReflectionClass($this->worker);
+        $reflection_property = $reflection->getProperty('sessionHandler');
+        $reflection_property->setAccessible(true);
+
+        $reflection_property->setValue($this->worker, $sessionHandler);
     }
 
     public function testStartWorkerNoJob()
     {
+        $this->expectException(\Helmich\MongoMock\Exception::class);
         $this->worker->processAll();
     }
 

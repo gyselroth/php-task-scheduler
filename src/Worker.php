@@ -190,27 +190,23 @@ class Worker
             ],
         ]);
 
-        foreach($cursor_fetch as $job) {
-            $this->queueJob($job);
+        foreach ($cursor_fetch as $job) {
+            $this->queueJob((array) $job);
         }
 
-        $cursor_watch->rewind();
-
-        while ($this->loop()) {
+        for ($cursor_watch->rewind(); true; $cursor_watch->next()) {
             $this->processLocalQueue();
-            if(!$cursor_watch->valid()) {
-                $cursor_watch->next();
+            if (!$cursor_watch->valid()) {
                 continue;
             }
 
             $job = $cursor_watch->current();
-            $cursor_watch->next();
 
-            if($job === null) {
+            if (null === $job) {
                 continue;
             }
 
-            $this->queueJob($job['fullDocument']);
+            $this->queueJob((array) $job['fullDocument']);
         }
     }
 
