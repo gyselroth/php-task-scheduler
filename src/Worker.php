@@ -313,8 +313,10 @@ class Worker
         ]);
 
         if (true === $this->collectJob($job, JobInterface::STATUS_PROCESSING)) {
+            $this->scheduler->emitEvent($this->scheduler->getJob($job['_id']));
             $this->processJob($job);
         } elseif (JobInterface::STATUS_POSTPONED === $job['status']) {
+            $this->scheduler->emitEvent($this->scheduler->getJob($job['_id']));
             $this->logger->debug('found postponed job ['.$job['_id'].'] to requeue', [
                 'category' => get_class($this),
                 'pm' => $this->process,

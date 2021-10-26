@@ -327,6 +327,7 @@ class Scheduler
         ]);
 
         $process = new Process($document, $this);
+        $this->emit($process);
 
         return $process;
     }
@@ -412,37 +413,34 @@ class Scheduler
         }, $stack);
 
         $cursor = $this->db->{$this->getJobQueue()}->watch([
-            ['$match' => ['fullDocument._id' => ['$in' => $jobs]]],
-        ]);
+            ['$match' => ['_id' => ['$in' => $jobs]]],
+        ], ['fullDocument' => 'updateLookup']);
 
-        $start = time();
         $expected = count($stack);
         $done = 0;
         $cursor->rewind();
 
-        while (true) {
-            if(!$cursor->valid()) {
-                $cursor->next();
+        for ($cursor->rewind(); true; $cursor->next()) {
+            if (!$cursor->valid()) {
                 continue;
             }
 
             $event = $cursor->current();
-            $cursor->next();
 
-            if($event === null) {
+            if (null === $event) {
                 continue;
             }
-
-            $process = $orig[(string) $event['job']];
+            $process = $orig[(string) $event['fullDocument']['_id']];
             $data = $process->toArray();
-            $data['status'] = $event['status'];
+            $data['status'] = $event['fullDocument']['status'];
             $process->replace(new Process($data, $this));
             $this->emit($process);
 
-            if ($event['status'] < JobInterface::STATUS_DONE) {
+            if ($event['fullDocument']['status'] < JobInterface::STATUS_DONE) {
                 continue;
             }
-            if (JobInterface::STATUS_FAILED === $event['status'] && isset($event['exception']) && $options & self::OPTION_THROW_EXCEPTION) {
+
+            if (JobInterface::STATUS_FAILED === $event['fullDocument']['status'] && isset($event['exception']) && $options & self::OPTION_THROW_EXCEPTION) {
                 throw new $event['exception']['class']($event['exception']['message'], $event['exception']['code']);
             }
 
@@ -484,6 +482,10 @@ class Scheduler
                 return $this;
             }
         }
+    }
+
+    public function emitEvent(Process $process) {
+        $this->emit($process);
     }
 
     /**
