@@ -194,19 +194,23 @@ class Worker
             $this->queueJob((array) $job);
         }
 
-        for ($cursor_watch->rewind(); true; $cursor_watch->next()) {
+        $cursor_watch->rewind();
+        while ($this->loop()) {
             $this->processLocalQueue();
             if (!$cursor_watch->valid()) {
+                $cursor_watch->next();
                 continue;
             }
 
             $job = $cursor_watch->current();
 
             if (null === $job) {
+                $cursor_watch->next();
                 continue;
             }
 
             $this->queueJob((array) $job['fullDocument']);
+            $cursor_watch->next();
         }
     }
 

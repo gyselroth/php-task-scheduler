@@ -484,7 +484,8 @@ class Scheduler
         }
     }
 
-    public function emitEvent(Process $process) {
+    public function emitEvent(Process $process): void
+    {
         $this->emit($process);
     }
 

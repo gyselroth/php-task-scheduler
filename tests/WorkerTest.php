@@ -44,7 +44,7 @@ class WorkerTest extends TestCase
         $called = &$this->called;
         $this->worker = $this->getMockBuilder(Worker::class)
             ->setConstructorArgs([new ObjectId(), $this->scheduler, $this->mongodb, $this->createMock(LoggerInterface::class)])
-            ->setMethods(['loop', 'exit'])
+            ->onlyMethods(['loop', 'exit'])
             ->getMock();
         $this->worker->method('loop')
             ->will(
@@ -137,6 +137,57 @@ class WorkerTest extends TestCase
         $this->assertTrue($called3);
     }
 
+    public function testEventHandlerPostponed()
+    {
+        $called1 = false;
+        $this->scheduler->on('waiting', function ($e, $p) use (&$called1) {
+            $this->assertSame(JobInterface::STATUS_WAITING, $p->getStatus());
+            $called1 = true;
+        });
+
+        $called2 = false;
+        $this->scheduler->on('postponed', function ($e, $p) use (&$called2) {
+            $this->assertSame(JobInterface::STATUS_POSTPONED, $p->getStatus());
+            $called2 = true;
+        });
+
+        $called3 = false;
+        $this->scheduler->on('processing', function ($e, $p) use (&$called3) {
+            $this->assertSame(JobInterface::STATUS_PROCESSING, $p->getStatus());
+            $called3 = true;
+        });
+
+        $called4 = false;
+        $this->scheduler->on('done', function ($e, $p) use (&$called4) {
+            $this->assertSame(JobInterface::STATUS_DONE, $p->getStatus());
+            $called4 = true;
+        });
+
+        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
+            Scheduler::OPTION_AT => time() + 10,
+        ]);
+
+        $this->worker->processAll();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_POSTPONED, $job->getStatus());
+
+        //hook into the protected queue and reduce the time to wait
+        $jobs_property = self::getProperty('queue');
+        $jobs = $jobs_property->getValue($this->worker);
+        $jobs[key($jobs)]['options']['at'] = time() - 15;
+        $jobs_property->setValue($this->worker, $jobs);
+
+        $this->called = 0;
+        $this->worker->processAll();
+        $job = $this->scheduler->getJob($job->getId());
+        $this->assertSame(JobInterface::STATUS_DONE, $job->getStatus());
+
+        $this->assertTrue($called1);
+        $this->assertTrue($called2);
+        $this->assertTrue($called3);
+        $this->assertTrue($called4);
+    }
+
     public function testExecuteSuccessfulJobWaitFor()
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
@@ -148,7 +199,6 @@ class WorkerTest extends TestCase
 
     public function testExecuteErrorJobWaitFor()
     {
-        $this->expectException(\Exception::class);
         $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar']);
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
         $this->worker->processOne($job->getId());
