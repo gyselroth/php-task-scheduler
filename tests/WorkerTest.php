@@ -311,7 +311,8 @@ class WorkerTest extends TestCase
         $this->assertSame($new->getId(), $job->getId());
         $this->assertSame($new->toArray()['created'], $job->toArray()['created']);
         $this->assertSame(JobInterface::STATUS_WAITING, $job->getStatus());
-        $this->assertSame($new->getOptions()['at'], $job->getOptions()['at']);
+        $newOptions = $new->toArray()['options'];
+        $this->assertSame($newOptions['at'], $job->getOptions()['at']);
     }
 
     public function testUpdateJob()
@@ -589,7 +590,7 @@ class WorkerTest extends TestCase
         $called = 0;
         $worker = $this->getMockBuilder(Worker::class)
             ->setConstructorArgs([new ObjectId(), $this->scheduler, $this->mongodb, $this->createMock(LoggerInterface::class), $stub_container])
-            ->setMethods(['loop'])
+            ->onlyMethods(['loop'])
             ->getMock();
         $worker->method('loop')
             ->will(
