@@ -58,6 +58,6 @@ class QueueTest extends TestCase
 
     public function testProcess()
     {
-        $this->queue->process();
+        $this->assertNull($this->queue->process());
     }
 }
