@@ -167,7 +167,7 @@ class WorkerManagerTest extends TestCase
         for ($i = 0; $i <= 8; ++$i) {
             msg_send($queue, WorkerManager::TYPE_JOB, [
                 '_id' => new ObjectId(),
-                JobInterface::STATUS_WAITING,
+                'status' => JobInterface::STATUS_WAITING,
                 'options' => [
                     'force_spawn' => false,
                     'at' => 0,
