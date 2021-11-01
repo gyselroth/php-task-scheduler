@@ -513,7 +513,7 @@ class Worker
 
                 --$job['options']['retry'];
                 $job['options']['at'] = time() + $job['options']['retry_interval'];
-                $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
+                $job = $this->scheduler->addJob($job['class'], $job['data'], (array) $job['options']);
 
                 return $job->getId();
             }
@@ -532,7 +532,7 @@ class Worker
                 : $job_start_time;
 
             $job['options']['at'] = $interval_reference + $job['options']['interval'];
-            $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
+            $job = $this->scheduler->addJob($job['class'], $job['data'], (array) $job['options']);
 
             return $job->getId();
         }
@@ -543,7 +543,7 @@ class Worker
             ]);
 
             unset($job['options']['at']);
-            $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
+            $job = $this->scheduler->addJob($job['class'], $job['data'], (array) $job['options']);
 
             return $job->getId();
         }

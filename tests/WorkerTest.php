@@ -551,7 +551,7 @@ class WorkerTest extends TestCase
 
     public function testExecuteViaContainer()
     {
-        $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
+        $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar']);
         $worker = $this->getWorker();
         $worker->processAll();
     }
@@ -605,6 +605,13 @@ class WorkerTest extends TestCase
                     return false;
                 })
             );
+
+        $sessionHandler = new MockSession();
+        $reflection = new \ReflectionClass($this->worker);
+        $reflection_property = $reflection->getProperty('sessionHandler');
+        $reflection_property->setAccessible(true);
+
+        $reflection_property->setValue($worker, $sessionHandler);
 
         return $worker;
     }
