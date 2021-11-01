@@ -18,6 +18,20 @@ use Psr\Log\LoggerInterface;
 class SessionHandler
 {
     /**
+     * Database.
+     *
+     * @var Database
+     */
+    protected $db;
+
+    /**
+     * LoggerInterface.
+     *
+     * @var LoggerInterface
+     */
+    protected $logger;
+
+    /**
      * Scheduler.
      *
      * @var array
