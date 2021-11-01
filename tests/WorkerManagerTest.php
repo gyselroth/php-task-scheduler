@@ -141,6 +141,7 @@ class WorkerManagerTest extends TestCase
         $queue = msg_get_queue(ftok(__DIR__.'/../src/Queue.php', 't'));
         msg_send($queue, WorkerManager::TYPE_JOB, [
             '_id' => new ObjectId(),
+            'status' => JobInterface::STATUS_WAITING,
             'options' => [
                 'force_spawn' => false,
                 'at' => 0,
@@ -166,6 +167,7 @@ class WorkerManagerTest extends TestCase
         for ($i = 0; $i <= 8; ++$i) {
             msg_send($queue, WorkerManager::TYPE_JOB, [
                 '_id' => new ObjectId(),
+                JobInterface::STATUS_WAITING,
                 'options' => [
                     'force_spawn' => false,
                     'at' => 0,
@@ -189,6 +191,7 @@ class WorkerManagerTest extends TestCase
         $queue = msg_get_queue(ftok(__DIR__.'/../src/Queue.php', 't'));
         msg_send($queue, WorkerManager::TYPE_JOB, [
             '_id' => new ObjectId(),
+            'status' => JobInterface::STATUS_WAITING,
             'options' => [
                 'force_spawn' => true,
                 'at' => 0,
@@ -250,6 +253,7 @@ class WorkerManagerTest extends TestCase
         $queue = msg_get_queue(ftok(__DIR__.'/../src/Queue.php', 't'));
         msg_send($queue, WorkerManager::TYPE_JOB, [
             '_id' => new ObjectId(),
+            'status' => JobInterface::STATUS_WAITING,
             'options' => [
                 'force_spawn' => true,
                 'at' => time() + 10,
