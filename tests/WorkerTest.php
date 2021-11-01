@@ -344,6 +344,7 @@ class WorkerTest extends TestCase
         $current->setValue($this->worker, $job);
         $called = false;
 
+        pcntl_async_signals(true);
         pcntl_signal(SIGTERM, function () use (&$called) {
             $called = true;
         });
