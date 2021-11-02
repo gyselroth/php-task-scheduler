@@ -1,9 +1,9 @@
 version: 2.1
 
 jobs:
-  build:
+  build-7.2:
     docker:
-      -   image: circleci/php:7.2-cli
+      - image: circleci/php:7.2-cli
     steps:
       - checkout
       - run:
@@ -23,9 +23,32 @@ jobs:
          key: composer-v1-{{ checksum "composer.lock" }}
          paths:
            - vendor
+  build-7.3:
+    docker:
+      - image: circleci/php:7.3-cli
+    steps:
+      - checkout
+      - run:
+          name: deps
+          command: |
+            echo -e "extension = mongodb.so" | sudo tee /usr/local/etc/php/php.ini > /dev/null
+            sudo docker-php-ext-install pcntl sysvmsg
+            sudo pecl install mongodb && docker-php-ext-enable mongodb pcntl sysvmsg
+      - restore_cache:
+          keys:
+            - composer-v1-{{ checksum "composer.lock" }}
+            - composer-v1-
+      - run:
+          name: make
+          command: make
+      - save_cache:
+          key: composer-v1-{{ checksum "composer.lock" }}
+          paths:
+            - vendor
 
 workflows:
   version: 2
   build:
     jobs:
-      - build
+      - build-7.2
+      - build-7.3
