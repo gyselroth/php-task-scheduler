@@ -9,8 +9,8 @@ jobs:
       - run:
           name: deps
           command: |
-            docker-php-ext-install pcntl sysvmsg
-            pecl install mongodb && docker-php-ext-enable mongodb pcntl sysvmsg
+            sudo docker-php-ext-install pcntl sysvmsg
+            sudo pecl install mongodb && docker-php-ext-enable mongodb pcntl sysvmsg
       - restore_cache:
           keys:
             - composer-v1-{{ checksum "composer.lock" }}
