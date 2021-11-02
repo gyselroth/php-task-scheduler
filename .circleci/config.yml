@@ -6,9 +6,15 @@ jobs:
       -   image: circleci/php:7.2-cli
     steps:
       - checkout
+      - run:
+          name: deps
+          command: |
+            docker-php-ext-install pcntl sysvmsg
+            pecl install mongodb && docker-php-ext-enable mongodb pcntl sysvmsg
       - restore_cache:
           keys:
             - composer-v1-{{ checksum "composer.lock" }}
+            - composer-v1-
       - run:
           name: make
           command: make
