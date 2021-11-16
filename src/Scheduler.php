@@ -413,7 +413,7 @@ class Scheduler
         }, $stack);
 
         $cursor = $this->db->{$this->getJobQueue()}->watch([
-            ['$match' => ['_id' => ['$in' => $jobs]]],
+            ['$match' => ['fullDocument._id' => ['$in' => $jobs]]],
         ], ['fullDocument' => 'updateLookup']);
 
         $expected = count($stack);
