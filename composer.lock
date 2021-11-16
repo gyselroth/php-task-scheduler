@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "73077b8fd2eed827be7dd6df0ebdd9f0",
+    "content-hash": "0e648813cfa03c43d774e67f82238459",
     "packages": [
         {
             "name": "composer/package-versions-deprecated",
@@ -813,16 +813,16 @@
         },
         {
             "name": "friendsofphp/php-cs-fixer",
-            "version": "v2.19.2",
+            "version": "v2.19.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/FriendsOfPHP/PHP-CS-Fixer.git",
-                "reference": "d5c737c2e18ba502b75b44832b31fe627f82e307"
+                "reference": "75ac86f33fab4714ea5a39a396784d83ae3b5ed8"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/FriendsOfPHP/PHP-CS-Fixer/zipball/d5c737c2e18ba502b75b44832b31fe627f82e307",
-                "reference": "d5c737c2e18ba502b75b44832b31fe627f82e307",
+                "url": "https://api.github.com/repos/FriendsOfPHP/PHP-CS-Fixer/zipball/75ac86f33fab4714ea5a39a396784d83ae3b5ed8",
+                "reference": "75ac86f33fab4714ea5a39a396784d83ae3b5ed8",
                 "shasum": ""
             },
             "require": {
@@ -910,7 +910,7 @@
             "description": "A tool to automatically fix PHP code style",
             "support": {
                 "issues": "https://github.com/FriendsOfPHP/PHP-CS-Fixer/issues",
-                "source": "https://github.com/FriendsOfPHP/PHP-CS-Fixer/tree/v2.19.2"
+                "source": "https://github.com/FriendsOfPHP/PHP-CS-Fixer/tree/v2.19.3"
             },
             "funding": [
                 {
@@ -918,7 +918,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2021-08-18T19:55:46+00:00"
+            "time": "2021-11-15T17:17:55+00:00"
         },
         {
             "name": "helmich/mongomock",
@@ -926,7 +926,7 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/s-aebischer/php-mongomock",
-                "reference": "83619d3"
+                "reference": "1c770a1"
             },
             "require": {
                 "ext-json": "*",
@@ -962,7 +962,7 @@
                 }
             ],
             "description": "Library containing highly intelligent MongoDB mocks for unit testing",
-            "time": "2021-10-11T13:45:57+00:00"
+            "time": "2021-11-16T15:01:22+00:00"
         },
         {
             "name": "myclabs/deep-copy",
@@ -1247,16 +1247,16 @@
         },
         {
             "name": "nette/neon",
-            "version": "v3.3.0",
+            "version": "v3.3.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nette/neon.git",
-                "reference": "33d262a0c4fb6c6371385f6dc8532f4e32c20ebc"
+                "reference": "1f4e5f6a30bf45b6c2c932be7396ea70692ee607"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nette/neon/zipball/33d262a0c4fb6c6371385f6dc8532f4e32c20ebc",
-                "reference": "33d262a0c4fb6c6371385f6dc8532f4e32c20ebc",
+                "url": "https://api.github.com/repos/nette/neon/zipball/1f4e5f6a30bf45b6c2c932be7396ea70692ee607",
+                "reference": "1f4e5f6a30bf45b6c2c932be7396ea70692ee607",
                 "shasum": ""
             },
             "require": {
@@ -1266,8 +1266,11 @@
             "require-dev": {
                 "nette/tester": "^2.0",
                 "phpstan/phpstan": "^0.12",
-                "tracy/tracy": "^2.3"
+                "tracy/tracy": "^2.8.8"
             },
+            "bin": [
+                "bin/neon-lint"
+            ],
             "type": "library",
             "extra": {
                 "branch-alias": {
@@ -1306,9 +1309,9 @@
             ],
             "support": {
                 "issues": "https://github.com/nette/neon/issues",
-                "source": "https://github.com/nette/neon/tree/v3.3.0"
+                "source": "https://github.com/nette/neon/tree/v3.3.1"
             },
-            "time": "2021-10-19T22:11:22+00:00"
+            "time": "2021-11-09T01:00:15+00:00"
         },
         {
             "name": "nette/php-generator",
@@ -2351,29 +2354,29 @@
         },
         {
             "name": "phpunit/php-token-stream",
-            "version": "3.1.3",
+            "version": "4.0.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/sebastianbergmann/php-token-stream.git",
-                "reference": "9c1da83261628cb24b6a6df371b6e312b3954768"
+                "reference": "a853a0e183b9db7eed023d7933a858fa1c8d25a3"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sebastianbergmann/php-token-stream/zipball/9c1da83261628cb24b6a6df371b6e312b3954768",
-                "reference": "9c1da83261628cb24b6a6df371b6e312b3954768",
+                "url": "https://api.github.com/repos/sebastianbergmann/php-token-stream/zipball/a853a0e183b9db7eed023d7933a858fa1c8d25a3",
+                "reference": "a853a0e183b9db7eed023d7933a858fa1c8d25a3",
                 "shasum": ""
             },
             "require": {
                 "ext-tokenizer": "*",
-                "php": ">=7.1"
+                "php": "^7.3 || ^8.0"
             },
             "require-dev": {
-                "phpunit/phpunit": "^7.0"
+                "phpunit/phpunit": "^9.0"
             },
             "type": "library",
             "extra": {
                 "branch-alias": {
-                    "dev-master": "3.1-dev"
+                    "dev-master": "4.0-dev"
                 }
             },
             "autoload": {
@@ -2398,7 +2401,7 @@
             ],
             "support": {
                 "issues": "https://github.com/sebastianbergmann/php-token-stream/issues",
-                "source": "https://github.com/sebastianbergmann/php-token-stream/tree/3.1.3"
+                "source": "https://github.com/sebastianbergmann/php-token-stream/tree/master"
             },
             "funding": [
                 {
@@ -2407,7 +2410,7 @@
                 }
             ],
             "abandoned": true,
-            "time": "2021-07-26T12:15:06+00:00"
+            "time": "2020-08-04T08:28:15+00:00"
         },
         {
             "name": "phpunit/phpunit",
@@ -2865,16 +2868,16 @@
         },
         {
             "name": "sebastian/exporter",
-            "version": "3.1.3",
+            "version": "3.1.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/sebastianbergmann/exporter.git",
-                "reference": "6b853149eab67d4da22291d36f5b0631c0fd856e"
+                "reference": "0c32ea2e40dbf59de29f3b49bf375176ce7dd8db"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sebastianbergmann/exporter/zipball/6b853149eab67d4da22291d36f5b0631c0fd856e",
-                "reference": "6b853149eab67d4da22291d36f5b0631c0fd856e",
+                "url": "https://api.github.com/repos/sebastianbergmann/exporter/zipball/0c32ea2e40dbf59de29f3b49bf375176ce7dd8db",
+                "reference": "0c32ea2e40dbf59de29f3b49bf375176ce7dd8db",
                 "shasum": ""
             },
             "require": {
@@ -2883,7 +2886,7 @@
             },
             "require-dev": {
                 "ext-mbstring": "*",
-                "phpunit/phpunit": "^6.0"
+                "phpunit/phpunit": "^8.5"
             },
             "type": "library",
             "extra": {
@@ -2930,7 +2933,7 @@
             ],
             "support": {
                 "issues": "https://github.com/sebastianbergmann/exporter/issues",
-                "source": "https://github.com/sebastianbergmann/exporter/tree/3.1.3"
+                "source": "https://github.com/sebastianbergmann/exporter/tree/3.1.4"
             },
             "funding": [
                 {
@@ -2938,7 +2941,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2020-11-30T07:47:53+00:00"
+            "time": "2021-11-11T13:51:24+00:00"
         },
         {
             "name": "sebastian/global-state",
