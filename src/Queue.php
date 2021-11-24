@@ -13,6 +13,7 @@ declare(strict_types=1);
 namespace TaskScheduler;
 
 use League\Event\Emitter;
+use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\SpawnForkException;
@@ -234,7 +235,7 @@ class Queue
 
         $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
             'status' => JobInterface::STATUS_PROCESSING,
-            'alive' => ['$lt' => time()+30],
+            'alive' => ['$lt' => new UTCDateTime((time()-30)*1000)],
         ], [
             '$set' => ['status' => JobInterface::STATUS_WAITING],
         ]);
