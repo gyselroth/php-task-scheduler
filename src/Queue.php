@@ -94,7 +94,6 @@ class Queue
             ]);
 
             $this->cleanup(SIGTERM);
-            $this->process();
         }
     }
 
