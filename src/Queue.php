@@ -94,6 +94,7 @@ class Queue
             ]);
 
             $this->cleanup(SIGTERM);
+            $this->process();
         }
     }
 
@@ -198,7 +199,7 @@ class Queue
 
         foreach($cursor_fetch as $job) {
             $this->fetchEvents();
-            $this->handleJob($job);
+            $this->handleJob((array)$job);
         }
 
         $start = time();
@@ -216,14 +217,13 @@ class Queue
             }
 
             $this->fetchEvents();
-            $cursor_watch->next();
             $event = $cursor_watch->current();
+            $cursor_watch->next();
 
-            if($event === null) {
+            if($event === null || !isset($event['fullDocument'])) {
                 continue;
             }
-
-            $this->handleJob($event['fullDocument']);
+            $this->handleJob((array)$event['fullDocument']);
         }
     }
 
