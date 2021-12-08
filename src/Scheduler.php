@@ -27,6 +27,7 @@ use TaskScheduler\Exception\LogicException;
 class Scheduler
 {
     use EventsTrait;
+    use InjectTrait;
 
     /**
      * Job options.
@@ -420,8 +421,9 @@ class Scheduler
         $done = 0;
         $cursor->rewind();
 
-        for ($cursor->rewind(); true; $cursor->next()) {
+        while($this->loop()) {
             if (!$cursor->valid()) {
+                $cursor->next();
                 continue;
             }
 
@@ -437,6 +439,7 @@ class Scheduler
             $this->emit($process);
 
             if ($event['fullDocument']['status'] < JobInterface::STATUS_DONE) {
+                $cursor->next();
                 continue;
             }
 
@@ -445,6 +448,8 @@ class Scheduler
             }
 
             ++$done;
+
+            $cursor->next();
 
             if ($done >= $expected) {
                 return $this;

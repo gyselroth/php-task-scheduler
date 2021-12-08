@@ -176,6 +176,7 @@ class Worker
         $cursor_watch = $this->db->{$this->scheduler->getJobQueue()}->watch([
             ['$match' => [
                 'fullDocument.options.force_spawn' => false,
+                'fullDocument.worker' => null,
                 '$or' => [
                     ['fullDocument.status' => JobInterface::STATUS_WAITING],
                     ['fullDocument.status' => JobInterface::STATUS_POSTPONED],
@@ -184,6 +185,7 @@ class Worker
         ], ['fullDocument' => 'updateLookup']);
 
         $cursor_fetch = $this->db->{$this->scheduler->getJobQueue()}->find([
+            'fullDocument.worker' => null,
             '$or' => [
                 ['status' => JobInterface::STATUS_WAITING],
                 ['status' => JobInterface::STATUS_POSTPONED],
