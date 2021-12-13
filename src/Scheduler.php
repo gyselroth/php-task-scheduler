@@ -509,7 +509,7 @@ class Scheduler
             return $this;
         }
 
-        $result = $this->db->{$this->job_queue}->updateOne([
+        $this->db->{$this->job_queue}->updateOne([
             '_id' => $job->getId(),
             'progress' => ['$exists' => true],
         ], [
@@ -518,6 +518,17 @@ class Scheduler
                 'progress' => round($progress, 2),
             ],
         ]);
+
+        if (isset($job->getData()['parent']) && $job->getData()['parent'] instanceof ObjectId && $this->jobExists($job->getData()['parent'])) {
+            $this->db->{$this->job_queue}->updateOne([
+                '_id' => $job->getData()['parent'],
+                'alive' => ['$exists' => true],
+            ], [
+                '$set' => [
+                    'alive' => new UTCDateTime(),
+                ],
+            ]);
+        }
 
         $this->progress_limit[(string) $job->getId()] = $current;
 
@@ -585,5 +596,19 @@ class Scheduler
         $session->commitTransaction();
 
         return $result;
+    }
+
+    /**
+     * Check if job exists.
+     */
+    protected function jobExists(ObjectId $id): bool
+    {
+        $result = $this->db->{$this->job_queue}->findOne([
+            '_id' => $id,
+        ], [
+            'typeMap' => self::TYPE_MAP,
+        ]);
+
+        return !(null === $result);
     }
 }
