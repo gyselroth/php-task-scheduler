@@ -236,7 +236,7 @@ class Queue
             'status' => JobInterface::STATUS_PROCESSING,
             'alive' => ['$lt' => new UTCDateTime((time()-30)*1000)],
         ], [
-            '$set' => ['status' => JobInterface::STATUS_WAITING],
+            '$set' => ['status' => JobInterface::STATUS_WAITING, 'worker' => null],
         ]);
 
         $this->logger->debug('found [{jobs}] orphaned jobs, reset state to waiting', [
