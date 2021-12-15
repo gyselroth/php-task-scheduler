@@ -16,6 +16,7 @@ use League\Event\Emitter;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use Psr\Log\LoggerInterface;
+use TaskScheduler\Exception\InvalidArgumentException;
 use TaskScheduler\Exception\SpawnForkException;
 
 class Queue
