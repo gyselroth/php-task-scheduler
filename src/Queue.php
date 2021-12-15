@@ -24,6 +24,11 @@ class Queue
     use EventsTrait;
 
     /**
+     * Queue options.
+     */
+    public const OPTION_ORPHANED_TIMEOUT = 'orphaned_timeout';
+
+    /**
      * Database.
      *
      * @var Database
@@ -66,15 +71,46 @@ class Queue
     protected $scheduler;
 
     /**
+     * Orphaned timeout.
+     *
+     * @var int
+     */
+    protected $orphaned_timeout = 30;
+
+    /**
      * Init queue.
      */
-    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter = null)
+    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter = null, array $config = [])
     {
         $this->scheduler = $scheduler;
         $this->db = $db;
         $this->logger = $logger;
         $this->factory = $factory;
         $this->emitter = $emitter ?? new Emitter();
+        $this->setOptions($config);
+    }
+
+    /**
+     * Set options.
+     */
+    public function setOptions(array $config = []): self
+    {
+        foreach ($config as $option => $value) {
+            switch ($option) {
+                case self::OPTION_ORPHANED_TIMEOUT:
+                    if (!is_int($value)) {
+                        throw new InvalidArgumentException($option.' needs to be an integer');
+                    }
+
+                    $this->{$option} = $value;
+
+                    break;
+                default:
+                    throw new InvalidArgumentException('invalid option '.$option.' given');
+            }
+        }
+
+        return $this;
     }
 
     /**
@@ -206,7 +242,7 @@ class Queue
         $cursor_watch->rewind();
         while($this->loop()) {
             if(!$cursor_watch->valid()) {
-                if(time()-$start >= 30) {
+                if(time()-$start >= $this->orphaned_timeout) {
                     $this->rescheduleOrphanedJobs();
                     $start = time();
                 }
@@ -234,7 +270,7 @@ class Queue
 
         $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
             'status' => JobInterface::STATUS_PROCESSING,
-            'alive' => ['$lt' => new UTCDateTime((time()-30)*1000)],
+            'alive' => ['$lt' => new UTCDateTime((time()-$this->orphaned_timeout)*1000)],
         ], [
             '$set' => ['status' => JobInterface::STATUS_WAITING, 'worker' => null],
         ]);
