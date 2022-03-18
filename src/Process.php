@@ -120,6 +120,6 @@ class Process
      */
     public function getStatus(): int
     {
-        return $this->job['status'];
+        return (int) $this->job['status'];
     }
 }
