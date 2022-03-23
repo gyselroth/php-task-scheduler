@@ -120,6 +120,7 @@ class Worker
         ]);
 
         $this->updateJob($this->current_job, JobInterface::STATUS_TIMEOUT);
+        $this->cancelChildJobs($this->current_job);
         $job = $this->current_job;
 
         if (0 !== $job['options']['retry']) {
@@ -262,6 +263,7 @@ class Worker
         ]);
 
         $this->updateJob($this->current_job, JobInterface::STATUS_CANCELED);
+        $this->cancelChildJobs(($this->current_job));
         $options = $this->current_job['options'];
         $options['at'] = 0;
 
@@ -409,6 +411,44 @@ class Worker
         ]);
 
         $session->commitTransaction();
+
+        if ($result->getModifiedCount() >= 1) {
+            $this->logger->debug('updated job ['.$job['_id'].'] with status ['.$status.']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
+        }
+
+        return $result->isAcknowledged();
+    }
+
+    /**
+     * Cancel child jobs.
+     */
+    protected function cancelChildJobs(array $job): bool
+    {
+        $session = $this->sessionHandler->getSession();
+        $session->startTransaction($this->sessionHandler->getOptions());
+
+        $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
+            'status' => [
+                '$ne' => JobInterface::STATUS_DONE,
+            ],
+            'data.parent' => $job['_id'],
+        ], [
+            '$set' => [
+                'status' => JobInterface::STATUS_CANCELED,
+            ],
+        ]);
+
+        $session->commitTransaction();
+
+        if ($result->getModifiedCount() >= 1) {
+            $this->logger->debug('canceled ['.$result->getModifiedCount().'] child jobs for parent job ['.$job['_id'].']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
+        }
 
         return $result->isAcknowledged();
     }
