@@ -133,6 +133,7 @@ class Worker
             $job['options']['at'] = time() + $job['options']['retry_interval'];
             $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
+            $this->killProcess();
             return $job->getId();
         }
         if ($job['options']['interval'] > 0) {
@@ -144,6 +145,7 @@ class Worker
             $job['options']['at'] = time() + $job['options']['interval'];
             $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
+            $this->killProcess();
             return $job->getId();
         }
         if ($job['options']['interval'] <= -1) {
@@ -155,11 +157,11 @@ class Worker
             unset($job['options']['at']);
             $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
+            $this->killProcess();
             return $job->getId();
         }
 
-        $this->current_job = null;
-        posix_kill($this->process, SIGTERM);
+        $this->killProcess();
 
         return null;
     }
@@ -622,5 +624,11 @@ class Worker
         unset($instance);
 
         return $return;
+    }
+
+    protected function killProcess(): void
+    {
+        $this->current_job = null;
+        posix_kill($this->process, SIGTERM);
     }
 }
