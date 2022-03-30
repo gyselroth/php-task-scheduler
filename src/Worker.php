@@ -647,8 +647,9 @@ class Worker
     {
         foreach ($this->scheduler->getChildProcs($jobId) as $proc) {
             if (JobInterface::STATUS_TIMEOUT === $proc->getStatus()) {
-                $this->logger->info('child job with id ['.$proc->getId().'] timed out', [
+                $this->logger->debug('child job with id ['.$proc->getId().'] timed out', [
                     'category' => get_class($this),
+                    'pm' => $this->process,
                 ]);
 
                 return true;
