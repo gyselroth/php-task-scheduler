@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      gyselroth™  (http://www.gyselroth.com)
- * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2022 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -145,7 +145,7 @@ class WorkerManager
 
                     $this->{$option} = $value;
 
-                break;
+                    break;
                 case self::OPTION_PM:
                     if (!defined('self::PM_'.strtoupper($value))) {
                         throw new InvalidArgumentException($value.' is not a valid process handling type (static, dynamic, ondemand)');
@@ -153,7 +153,7 @@ class WorkerManager
 
                     $this->{$option} = $value;
 
-                break;
+                    break;
                 default:
                     throw new InvalidArgumentException('invalid option '.$option.' given');
             }
@@ -342,11 +342,11 @@ class WorkerManager
                     case self::TYPE_JOB:
                         $this->handleJob($msg);
 
-                    break;
+                        break;
                     case self::TYPE_WORKER_SPAWN:
                     case self::TYPE_WORKER_KILL:
                         //events handled by queue node
-                    break;
+                        break;
                     default:
                         $this->logger->warning('received unknown systemv message type ['.$type.']', [
                             'category' => get_class($this),
@@ -369,7 +369,6 @@ class WorkerManager
             case JobInterface::STATUS_WAITING:
             case JobInterface::STATUS_POSTPONED:
                 return $this->handleNewJob($event);
-
             case JobInterface::STATUS_PROCESSING:
                 $this->job_map[(string) $event['worker']] = $event['_id'];
 
@@ -377,7 +376,7 @@ class WorkerManager
             case JobInterface::STATUS_DONE:
             case JobInterface::STATUS_FAILED:
             case JobInterface::STATUS_TIMEOUT:
-                $worker = array_search((string) $event['_id'], $this->job_map);
+                $worker = array_search((string) $event['_id'], $this->job_map, true);
                 if (false === $worker) {
                     return $this;
                 }
@@ -388,7 +387,7 @@ class WorkerManager
 
                 break;
             case JobInterface::STATUS_CANCELED:
-                $worker = array_search($event['_id'], $this->job_map);
+                $worker = array_search($event['_id'], $this->job_map, true);
                 if (false === $worker) {
                     return $this;
                 }

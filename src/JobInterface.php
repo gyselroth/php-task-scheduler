@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      gyselroth™  (http://www.gyselroth.com)
- * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2022 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -37,6 +37,24 @@ interface JobInterface
     ];
 
     /**
+     * Pending jobs.
+     */
+    public const PENDING_JOBS = [
+        self::STATUS_WAITING,
+        self::STATUS_POSTPONED,
+        self::STATUS_PROCESSING,
+    ];
+
+    /**
+     * Failed jobs.
+     */
+    public const FAILED_JOBS = [
+        self::STATUS_FAILED,
+        self::STATUS_CANCELED,
+        self::STATUS_TIMEOUT,
+    ];
+
+    /**
      * Set job data.
      */
     public function setData($data): self;
@@ -64,7 +82,7 @@ interface JobInterface
     /**
      * Update job progress.
      */
-    public function updateProgress(float $progress=0): self;
+    public function updateProgress(float $progress = 0): self;
 
     /**
      * Start job.

@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      gyselroth™  (http://www.gyselroth.com)
- * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2022 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -183,7 +183,7 @@ class Queue
     }
 
     /**
-     * Fetch events
+     * Fetch events.
      */
     protected function fetchEvents()
     {
@@ -199,9 +199,11 @@ class Queue
                         break;
                     case WorkerManager::TYPE_WORKER_SPAWN:
                         $this->emitter->emit('taskscheduler.onWorkerSpawn', $msg['_id']);
+
                         break;
                     case WorkerManager::TYPE_WORKER_KILL:
                         $this->emitter->emit('taskscheduler.onWorkerKill', $msg['_id']);
+
                         break;
                     default:
                         $this->logger->warning('received unknown systemv message type ['.$type.']', [
@@ -225,7 +227,7 @@ class Queue
 
         $this->catchSignal();
 
-        $cursor_watch = $this->db->{$this->scheduler->getJobQueue()}->watch([],['fullDocument' => 'updateLookup']);
+        $cursor_watch = $this->db->{$this->scheduler->getJobQueue()}->watch([], ['fullDocument' => 'updateLookup']);
         $cursor_fetch = $this->db->{$this->scheduler->getJobQueue()}->find([
             '$or' => [
                 ['status' => JobInterface::STATUS_WAITING],
@@ -233,22 +235,23 @@ class Queue
             ],
         ]);
 
-        foreach($cursor_fetch as $job) {
+        foreach ($cursor_fetch as $job) {
             $this->fetchEvents();
-            $this->handleJob((array)$job);
+            $this->handleJob((array) $job);
         }
 
         $start = time();
 
         $cursor_watch->rewind();
-        while($this->loop()) {
-            if(!$cursor_watch->valid()) {
-                if(time()-$start >= $this->orphaned_timeout) {
+        while ($this->loop()) {
+            if (!$cursor_watch->valid()) {
+                if (time() - $start >= $this->orphaned_timeout) {
                     $this->rescheduleOrphanedJobs();
                     $start = time();
                 }
 
                 $cursor_watch->next();
+
                 continue;
             }
 
@@ -256,10 +259,10 @@ class Queue
             $event = $cursor_watch->current();
             $cursor_watch->next();
 
-            if($event === null || !isset($event['fullDocument'])) {
+            if (null === $event || !isset($event['fullDocument'])) {
                 continue;
             }
-            $this->handleJob((array)$event['fullDocument']);
+            $this->handleJob((array) $event['fullDocument']);
         }
     }
 
@@ -271,7 +274,7 @@ class Queue
 
         $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
             'status' => JobInterface::STATUS_PROCESSING,
-            'alive' => ['$lt' => new UTCDateTime((time()-$this->orphaned_timeout)*1000)],
+            'alive' => ['$lt' => new UTCDateTime((time() - $this->orphaned_timeout) * 1000)],
         ], [
             '$set' => ['status' => JobInterface::STATUS_WAITING, 'worker' => null],
         ]);

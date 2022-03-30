@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      gyselroth™  (http://www.gyselroth.com)
- * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2022 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -421,9 +421,10 @@ class Scheduler
         $done = 0;
         $cursor->rewind();
 
-        while($this->loop()) {
+        while ($this->loop()) {
             if (!$cursor->valid()) {
                 $cursor->next();
+
                 continue;
             }
 
@@ -440,6 +441,7 @@ class Scheduler
 
             if ($event['fullDocument']['status'] < JobInterface::STATUS_DONE) {
                 $cursor->next();
+
                 continue;
             }
 
@@ -533,6 +535,20 @@ class Scheduler
         $this->progress_limit[(string) $job->getId()] = $current;
 
         return $this;
+    }
+
+    /**
+     * Get child jobs.
+     */
+    public function getChildProcs(ObjectId $parentId): Generator
+    {
+        $result = $this->db->{$this->job_queue}->find([
+            'data.parent' => $parentId,
+        ], []);
+
+        foreach ($result as $job) {
+            yield new Process($job, $this);
+        }
     }
 
     /**

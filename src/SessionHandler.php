@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      gyselroth™  (http://www.gyselroth.com)
- * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2022 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -17,6 +17,12 @@ use Psr\Log\LoggerInterface;
 
 class SessionHandler
 {
+    /**
+     * Scheduler.
+     *
+     * @var array
+     */
+    public $transactionOptions;
     /**
      * Database.
      *
@@ -30,13 +36,6 @@ class SessionHandler
      * @var LoggerInterface
      */
     protected $logger;
-
-    /**
-     * Scheduler.
-     *
-     * @var array
-     */
-    public $transactionOptions;
 
     public function __construct(Database $db, LoggerInterface $logger)
     {

@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      gyselroth™  (http://www.gyselroth.com)
- * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2022 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -18,6 +18,7 @@ use MongoDB\Database;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidJobException;
+use TaskScheduler\Exception\JobTimeout;
 
 class Worker
 {
@@ -120,7 +121,7 @@ class Worker
         ]);
 
         $this->updateJob($this->current_job, JobInterface::STATUS_TIMEOUT);
-        $this->cancelChildJobs($this->current_job);
+        $this->updateChildJobs($this->current_job, JobInterface::STATUS_TIMEOUT);
         $job = $this->current_job;
 
         if (0 !== $job['options']['retry']) {
@@ -134,6 +135,7 @@ class Worker
             $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
             $this->killProcess();
+
             return $job->getId();
         }
         if ($job['options']['interval'] > 0) {
@@ -146,6 +148,7 @@ class Worker
             $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
             $this->killProcess();
+
             return $job->getId();
         }
         if ($job['options']['interval'] <= -1) {
@@ -158,6 +161,7 @@ class Worker
             $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
 
             $this->killProcess();
+
             return $job->getId();
         }
 
@@ -184,7 +188,7 @@ class Worker
                     ['fullDocument.status' => JobInterface::STATUS_WAITING],
                     ['fullDocument.status' => JobInterface::STATUS_POSTPONED],
                 ],
-            ]]
+            ]],
         ], ['fullDocument' => 'updateLookup']);
 
         $cursor_fetch = $this->db->{$this->scheduler->getJobQueue()}->find([
@@ -204,6 +208,7 @@ class Worker
             $this->processLocalQueue();
             if (!$cursor_watch->valid()) {
                 $cursor_watch->next();
+
                 continue;
             }
 
@@ -211,6 +216,7 @@ class Worker
 
             if (null === $job) {
                 $cursor_watch->next();
+
                 continue;
             }
 
@@ -265,7 +271,7 @@ class Worker
         ]);
 
         $this->updateJob($this->current_job, JobInterface::STATUS_CANCELED);
-        $this->cancelChildJobs(($this->current_job));
+        $this->updateChildJobs($this->current_job, JobInterface::STATUS_CANCELED);
         $options = $this->current_job['options'];
         $options['at'] = 0;
 
@@ -314,6 +320,18 @@ class Worker
      */
     protected function queueJob(array $job): bool
     {
+        if (isset($job['data']['parent'])) {
+            $parentJob = $this->scheduler->getJob($job['data']['parent'])->toArray();
+
+            if (in_array($parentJob['status'], JobInterface::FAILED_JOBS, true)) {
+                $this->logger->debug('parent job ['.$parentJob['_id'].'] not running anymore. do not queue job with id: ['.$job['_id'].']', [
+                    'category' => get_class($this),
+                ]);
+
+                return false;
+            }
+        }
+
         if (!isset($job['status'])) {
             return false;
         }
@@ -344,7 +362,7 @@ class Worker
     protected function collectJob(array $job, int $status, $from_status = JobInterface::STATUS_WAITING): bool
     {
         $set = [
-             'status' => $status,
+            'status' => $status,
         ];
 
         if (JobInterface::STATUS_PROCESSING === $status) {
@@ -427,7 +445,7 @@ class Worker
     /**
      * Cancel child jobs.
      */
-    protected function cancelChildJobs(array $job): bool
+    protected function updateChildJobs(array $job, int $status): bool
     {
         $session = $this->sessionHandler->getSession();
         $session->startTransaction($this->sessionHandler->getOptions());
@@ -439,7 +457,7 @@ class Worker
             'data.parent' => $job['_id'],
         ], [
             '$set' => [
-                'status' => JobInterface::STATUS_CANCELED,
+                'status' => $status,
             ],
         ]);
 
@@ -523,6 +541,8 @@ class Worker
         try {
             $this->executeJob($job);
             $this->current_job = null;
+        } catch (JobTimeout $e) {
+            return $job['_id'];
         } catch (\Throwable $e) {
             pcntl_alarm(0);
 
@@ -534,20 +554,6 @@ class Worker
 
             $this->updateJob($job, JobInterface::STATUS_FAILED);
             $this->current_job = null;
-
-            /*$this->db->{$this->scheduler->getEventQueue()}->insertOne([
-                'job' => $job['_id'],
-                'worker' => $this->id,
-                'status' => JobInterface::STATUS_FAILED,
-                'timestamp' => new UTCDateTime(),
-                'exception' => [
-                    'class' => get_class($e),
-                    'message' => $e->getMessage(),
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine(),
-                    'code' => $e->getCode(),
-                ],
-            ]);*/
 
             if (0 !== $job['options']['retry']) {
                 $this->logger->debug('failed job ['.$job['_id'].'] has a retry interval of ['.$job['options']['retry'].']', [
@@ -620,8 +626,13 @@ class Worker
             ->setScheduler($this->scheduler)
             ->start();
 
-        $return = $this->updateJob($job, JobInterface::STATUS_DONE);
         unset($instance);
+
+        if ($this->checkIfTimedOut($job['_id'])) {
+            throw new JobTimeout('job timed out');
+        }
+
+        $return = $this->updateJob($job, JobInterface::STATUS_DONE);
 
         return $return;
     }
@@ -630,5 +641,20 @@ class Worker
     {
         $this->current_job = null;
         posix_kill($this->process, SIGTERM);
+    }
+
+    protected function checkIfTimedOut(ObjectId $jobId): bool
+    {
+        foreach ($this->scheduler->getChildProcs($jobId) as $proc) {
+            if (JobInterface::STATUS_TIMEOUT === $proc->getStatus()) {
+                $this->logger->info('child job with id ['.$proc->getId().'] timed out', [
+                    'category' => get_class($this),
+                ]);
+
+                return true;
+            }
+        }
+
+        return false;
     }
 }
