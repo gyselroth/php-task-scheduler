@@ -465,7 +465,7 @@ class Worker
         $session->commitTransaction();
 
         if ($result->getModifiedCount() >= 1) {
-            $this->logger->debug('canceled ['.$result->getModifiedCount().'] child jobs for parent job ['.$job['_id'].']', [
+            $this->logger->debug('updated ['.$result->getModifiedCount().'] child jobs for parent job ['.$job['_id'].'] with status ['.$status.']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);

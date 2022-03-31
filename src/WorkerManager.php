@@ -383,14 +383,15 @@ class WorkerManager
 
                 return $this;
             case JobInterface::STATUS_FAILED:
-            case JobInterface::STATUS_TIMEOUT:
             case JobInterface::STATUS_CANCELED:
-                $worker = array_search($event['_id'], $this->job_map, true);
+            case JobInterface::STATUS_TIMEOUT:
+                $worker = array_search($event['_id'], $this->job_map, false);
+
                 if (false === $worker) {
                     return $this;
                 }
 
-                $this->logger->debug('received cancel event for job ['.$event['_id'].'] running on worker ['.$worker.']', [
+                $this->logger->debug('received failure event for job ['.$event['_id'].'] running on worker ['.$worker.']', [
                     'category' => get_class($this),
                 ]);
 
