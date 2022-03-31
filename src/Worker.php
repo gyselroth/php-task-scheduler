@@ -17,6 +17,7 @@ use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
+use TaskScheduler\Exception\ChildJobFailure;
 use TaskScheduler\Exception\InvalidJobException;
 use TaskScheduler\Exception\JobTimeout;
 
@@ -628,13 +629,9 @@ class Worker
 
         unset($instance);
 
-        if ($this->checkIfTimedOut($job['_id'])) {
-            throw new JobTimeout('job timed out');
-        }
+        $this->checkChildJobs($job['_id']);
 
-        $return = $this->updateJob($job, JobInterface::STATUS_DONE);
-
-        return $return;
+        return $this->updateJob($job, JobInterface::STATUS_DONE);
     }
 
     protected function killProcess(): void
@@ -643,19 +640,23 @@ class Worker
         posix_kill($this->process, SIGTERM);
     }
 
-    protected function checkIfTimedOut(ObjectId $jobId): bool
+    protected function checkChildJobs(ObjectId $jobId): void
     {
         foreach ($this->scheduler->getChildProcs($jobId) as $proc) {
             if (JobInterface::STATUS_TIMEOUT === $proc->getStatus()) {
-                $this->logger->debug('child job with id ['.$proc->getId().'] timed out', [
+                $this->logger->info('child job with id ['.$proc->getId().'] timed out', [
                     'category' => get_class($this),
-                    'pm' => $this->process,
                 ]);
 
-                return true;
+                throw new JobTimeout('child job timed out');
+            }
+            if (JobInterface::STATUS_FAILED === $proc->getStatus()) {
+                $this->logger->info('child job with id ['.$proc->getId().'] failed', [
+                    'category' => get_class($this),
+                ]);
+
+                throw new ChildJobFailure('child job failed');
             }
         }
-
-        return false;
     }
 }
