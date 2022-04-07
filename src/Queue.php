@@ -25,24 +25,19 @@ class Queue
     use EventsTrait;
 
     /**
-     * Orphaned job timeout.
+     * Orphaned timeout.
      */
-    public const OPTION_ORPHANED_JOB_TIMEOUT = 'orphaned_job_timeout';
+    public const OPTION_ORPHANED_TIMEOUT = 'orphaned_timeout';
 
     /**
-     * Orphaned worker timeout.
+     * Endless worker timeout.
      */
-    public const OPTION_ORPHANED_WORKER_TIMEOUT = 'orphaned_worker_timeout';
+    public const OPTION_ENDLESS_WORKER_TIMEOUT = 'endless_worker_timeout';
 
     /**
-     * Minimum waiting jobs for worker timout.
+     * Minimum waiting jobs for endless worker timout.
      */
-    public const OPTION_WAITING_JOBS_FOR_WORKER_TIMEOUT = 'waiting_jobs_for_worker_timeout';
-
-    /**
-     * Amount of processing jobs for worker timout.
-     */
-    public const OPTION_PROCESSING_JOBS_FOR_WORKER_TIMEOUT = 'processing_for_jobs_worker_timeout';
+    public const OPTION_WAITING_JOBS_FOR_ENDLESS_WORKER = 'waiting_jobs_for_endless_worker';
 
     /**
      * Database.
@@ -87,32 +82,25 @@ class Queue
     protected $scheduler;
 
     /**
-     * Orphaned job timeout.
+     * Orphaned timeout.
      *
      * @var int
      */
-    protected $orphaned_job_timeout = 30;
+    protected $orphaned_timeout = 30;
 
     /**
-     * Orphaned worker timeout.
+     * Endless worker timeout.
      *
      * @var int
      */
-    protected $orphaned_worker_timeout = 600;
+    protected $endless_worker_timeout = 600;
 
     /**
-     * Minimum waiting jobs for worker timeout.
+     * Minimum waiting jobs endless worker restart.
      *
      * @var int
      */
-    protected $waiting_jobs_for_worker_timeout = 5;
-
-    /**
-     * Amount of processing jobs for worker timeout.
-     *
-     * @var int
-     */
-    protected $processing_for_jobs_worker_timeout = 0;
+    protected $waiting_jobs_for_endless_worker = 5;
 
     /**
      * Init queue.
@@ -134,10 +122,9 @@ class Queue
     {
         foreach ($config as $option => $value) {
             switch ($option) {
-                case self::OPTION_ORPHANED_JOB_TIMEOUT:
-                case self::OPTION_ORPHANED_WORKER_TIMEOUT:
-                case self::OPTION_WAITING_JOBS_FOR_WORKER_TIMEOUT:
-                case self::OPTION_PROCESSING_JOBS_FOR_WORKER_TIMEOUT:
+                case self::OPTION_ORPHANED_TIMEOUT:
+                case self::OPTION_ENDLESS_WORKER_TIMEOUT:
+                case self::OPTION_WAITING_JOBS_FOR_ENDLESS_WORKER:
                     if (!is_int($value)) {
                         throw new InvalidArgumentException($option.' needs to be an integer');
                     }
@@ -284,13 +271,13 @@ class Queue
         $cursor_watch->rewind();
         while ($this->loop()) {
             if (!$cursor_watch->valid()) {
-                if (time() - $start_job >= $this->orphaned_job_timeout) {
+                if (time() - $start_job >= $this->orphaned_timeout) {
                     $this->rescheduleOrphanedJobs();
                     $start_job = time();
                 }
 
-                if (time() - $start_worker >= $this->orphaned_worker_timeout) {
-                    $this->checkForOrphanedWorkers();
+                if (time() - $start_worker >= $this->endless_worker_timeout) {
+                    $this->checkEndlessRunningWorkers();
                     $start_worker = time();
                 }
 
@@ -318,7 +305,7 @@ class Queue
 
         $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
             'status' => JobInterface::STATUS_PROCESSING,
-            'alive' => ['$lt' => new UTCDateTime((time() - $this->orphaned_job_timeout) * 1000)],
+            'alive' => ['$lt' => new UTCDateTime((time() - $this->orphaned_timeout) * 1000)],
         ], [
             '$set' => ['status' => JobInterface::STATUS_WAITING, 'worker' => null],
         ]);
@@ -331,9 +318,9 @@ class Queue
         return $this;
     }
 
-    protected function checkForOrphanedWorkers(): self
+    protected function checkEndlessRunningWorkers(): self
     {
-        $this->logger->debug('looking for orphaned workers', [
+        $this->logger->debug('looking for endless running workers', [
             'category' => get_class($this),
         ]);
 
@@ -341,25 +328,26 @@ class Queue
             'status' => JobInterface::STATUS_WAITING,
         ])->toArray();
 
-        $waiting = count($waiting);
-
-        $this->logger->debug('found [{jobs}] waiting jobs', [
-            'category' => get_class($this),
-            'jobs' => $waiting,
-        ]);
-
         $processing = $this->db->{$this->scheduler->getJobQueue()}->find([
             'status' => JobInterface::STATUS_PROCESSING,
         ])->toArray();
 
+        $waiting = count($waiting);
         $processing = count($processing);
 
-        $this->logger->debug('found [{jobs}] processing jobs', [
+        $this->logger->debug('found [{jobs_waiting}] waiting jobs and [{jobs_processing}] processing jobs', [
             'category' => get_class($this),
-            'jobs' => $processing,
+            'jobs_waiting' => $waiting,
+            'jobs_processing' => $processing,
         ]);
 
-        if ($waiting > $this->waiting_jobs_for_worker_timeout && $processing === $this->processing_for_jobs_worker_timeout) {
+        if ($waiting > $this->waiting_jobs_for_endless_worker && 0 === $processing) {
+            $this->db->{$this->scheduler->getJobQueue()}->updateMany([
+                'status' => JobInterface::STATUS_WAITING,
+            ], [
+                '$set' => ['status' => JobInterface::STATUS_FAILED, 'worker' => null],
+            ]);
+
             $this->exitWorkerManager(SIGCHLD, ['pid' => $this->manager_pid]);
         }
 
