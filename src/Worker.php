@@ -371,6 +371,26 @@ class Worker
             $set['worker'] = $this->id;
         }
 
+        $this->logger->debug('collect job ['.$job['_id'].'] with status ['.$from_status.']', [
+            'category' => get_class($this),
+            'pm' => $this->process,
+        ]);
+
+        $live_job = $this->db->{$this->scheduler->getJobQueue()}->findOne([
+            '_id' => $job['_id'],
+        ], [
+            'typeMap' => $this->scheduler::TYPE_MAP,
+        ]);
+
+        if ((int) $live_job['status'] === $status) {
+            $this->logger->debug('job ['.$job['_id'].'] with status [.'.$from_status.'] is already collected with new status ['.$status.']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
+
+            return false;
+        }
+
         $session = $this->sessionHandler->getSession();
         $session->startTransaction($this->sessionHandler->getOptions());
 
@@ -383,11 +403,6 @@ class Worker
 
         $session->commitTransaction();
 
-        $this->logger->debug('collect job ['.$job['_id'].'] with status ['.$from_status.']', [
-            'category' => get_class($this),
-            'pm' => $this->process,
-        ]);
-
         if (1 === $result->getModifiedCount()) {
             $this->logger->debug('job ['.$job['_id'].'] collected; update status to ['.$status.']', [
                 'category' => get_class($this),
@@ -396,11 +411,6 @@ class Worker
 
             return true;
         }
-
-        $this->logger->debug('job ['.$job['_id'].'] is already collected with status ['.$job['status'].']', [
-            'category' => get_class($this),
-            'pm' => $this->process,
-        ]);
 
         return false;
     }
