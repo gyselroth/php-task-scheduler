@@ -536,6 +536,8 @@ class Worker
                 'pm' => $this->process,
             ]);
 
+            $this->removeWorker($job);
+
             return $job['_id'];
         }
 
@@ -667,6 +669,32 @@ class Worker
 
                 throw new ChildJobFailure('child job failed');
             }
+        }
+    }
+
+    /**
+     * Remove worker.
+     */
+    protected function removeWorker(array $job): void
+    {
+        $session = $this->sessionHandler->getSession();
+        $session->startTransaction($this->sessionHandler->getOptions());
+
+        $result = $this->db->{$this->scheduler->getJobQueue()}->updateOne([
+            '_id' => $job['_id'],
+        ], [
+            '$set' => [
+                'worker' => null,
+            ],
+        ]);
+
+        $session->commitTransaction();
+
+        if ($result->getModifiedCount() >= 1) {
+            $this->logger->debug('removed worker of job ['.$job['_id'].']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
         }
     }
 }
