@@ -362,16 +362,7 @@ class Worker
      */
     protected function collectJob(array $job, int $status, $from_status = JobInterface::STATUS_WAITING): bool
     {
-        $set = [
-            'status' => $status,
-        ];
-
-        if (JobInterface::STATUS_PROCESSING === $status) {
-            $set['started'] = new UTCDateTime();
-            $set['worker'] = $this->id;
-        }
-
-        $this->logger->debug('collect job ['.$job['_id'].'] with status ['.$from_status.']', [
+        $this->logger->debug('try to collect job ['.$job['_id'].'] with status ['.$from_status.']', [
             'category' => get_class($this),
             'pm' => $this->process,
         ]);
@@ -382,13 +373,22 @@ class Worker
             'typeMap' => $this->scheduler::TYPE_MAP,
         ]);
 
-        if ((int) $live_job['status'] === $status) {
-            $this->logger->debug('job ['.$job['_id'].'] with status [.'.$from_status.'] is already collected with new status ['.$status.']', [
+        if ((int) $live_job['status'] === $status || null !== $live_job['worker']) {
+            $this->logger->debug('job ['.$job['_id'].'] is either already collected with new status ['.$status.'] or has a worker set', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);
 
             return false;
+        }
+
+        $set = [
+            'status' => $status,
+        ];
+
+        if (JobInterface::STATUS_PROCESSING === $status) {
+            $set['started'] = new UTCDateTime();
+            $set['worker'] = $this->id;
         }
 
         $session = $this->sessionHandler->getSession();
@@ -404,7 +404,7 @@ class Worker
         $session->commitTransaction();
 
         if (1 === $result->getModifiedCount()) {
-            $this->logger->debug('job ['.$job['_id'].'] collected; update status to ['.$status.']', [
+            $this->logger->debug('job ['.$job['_id'].'] collected; update status from ['.$live_job['status'].'] to ['.$status.']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);
