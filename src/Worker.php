@@ -510,9 +510,21 @@ class Worker
                 unset($this->queue[$key]);
                 $job['options']['at'] = 0;
 
-                if (true === $this->collectJob($job, JobInterface::STATUS_PROCESSING, JobInterface::STATUS_POSTPONED)) {
-                    $this->processJob($job);
-                }
+                $session->startTransaction($this->sessionHandler->getOptions());
+                $this->db->{$this->scheduler->getJobQueue()}->updateOne([
+                    '_id' => $job['_id'],
+                ], [
+                    '$set' => [
+                        'status' => JobInterface::STATUS_WAITING,
+                    ],
+                ]);
+
+                $session->commitTransaction();
+
+                $this->logger->info('set job status of job ['.$job['_id'].'] to waiting', [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]);
             }
         }
 

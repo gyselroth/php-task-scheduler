@@ -544,7 +544,9 @@ class Scheduler
     {
         $result = $this->db->{$this->job_queue}->find([
             'data.parent' => $parentId,
-        ], []);
+        ], [
+            'typeMap' => self::TYPE_MAP,
+        ]);
 
         foreach ($result as $job) {
             yield new Process($job, $this);
