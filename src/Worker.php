@@ -363,7 +363,7 @@ class Worker
      */
     protected function collectJob(array $job, int $status, $from_status = JobInterface::STATUS_WAITING): bool
     {
-        $this->logger->debug('try to collect job ['.$job['_id'].'] with status ['.$from_status.']', [
+        $this->logger->debug('try to collect job ['.$job['_id'].'] with status ['.$from_status.'] by worker ['.$this->id.']', [
             'category' => get_class($this),
             'pm' => $this->process,
         ]);
@@ -375,7 +375,7 @@ class Worker
         ]);
 
         if ((int) $live_job['status'] === $status || (null !== $live_job['worker'] && $this->id !== $live_job['worker'])) {
-            $this->logger->debug('job ['.$job['_id'].'] is either already collected with new status ['.$status.'] or has a worker set', [
+            $this->logger->debug('job ['.$job['_id'].'] is either already collected with new status ['.$status.'] or has a worker set; worker ['.$this->id.']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);
@@ -405,7 +405,7 @@ class Worker
         $session->commitTransaction();
 
         if (1 === $result->getModifiedCount()) {
-            $this->logger->debug('job ['.$job['_id'].'] collected; update status from ['.$live_job['status'].'] to ['.$status.']', [
+            $this->logger->debug('job ['.$job['_id'].'] collected; update status from ['.$live_job['status'].'] to ['.$status.'] by worker ['.$this->id.']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
             ]);
@@ -512,8 +512,10 @@ class Worker
                 $job['options']['at'] = 0;
 
                 $session->startTransaction($this->sessionHandler->getOptions());
-                $this->db->{$this->scheduler->getJobQueue()}->updateOne([
+                $result = $this->db->{$this->scheduler->getJobQueue()}->updateOne([
                     '_id' => $job['_id'],
+                    'status' => JobInterface::STATUS_POSTPONED,
+                    'worker' => null,
                 ], [
                     '$set' => [
                         'status' => JobInterface::STATUS_WAITING,
@@ -522,10 +524,12 @@ class Worker
 
                 $session->commitTransaction();
 
-                $this->logger->info('set job status of job ['.$job['_id'].'] to waiting', [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                ]);
+                if (1 === $result->getModifiedCount()) {
+                    $this->logger->info('set job status of job ['.$job['_id'].'] to waiting by worker ['.$this->id.']', [
+                        'category' => get_class($this),
+                        'pm' => $this->process,
+                    ]);
+                }
             }
         }
 
