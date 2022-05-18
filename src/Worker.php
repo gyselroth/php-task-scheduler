@@ -374,7 +374,7 @@ class Worker
             'typeMap' => $this->scheduler::TYPE_MAP,
         ]);
 
-        if ((int) $live_job['status'] === $status || (null !== $live_job['worker'] && $this->id !== $live_job['worker'])) {
+        if ((int) $live_job['status'] === $status || (isset($live_job['worker']) && $this->id !== $live_job['worker'])) {
             $this->logger->debug('job ['.$job['_id'].'] is either already collected with new status ['.$status.'] or has a worker set; worker ['.$this->id.']', [
                 'category' => get_class($this),
                 'pm' => $this->process,
