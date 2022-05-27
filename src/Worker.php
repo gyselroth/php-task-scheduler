@@ -388,7 +388,9 @@ class Worker
         ];
 
         if (JobInterface::STATUS_PROCESSING === $status) {
-            $set['started'] = new UTCDateTime();
+            $timestamp = new UTCDateTime();
+            $set['started'] = $timestamp;
+            $set['alive'] = $timestamp;
             $set['worker'] = $this->id;
         }
 
