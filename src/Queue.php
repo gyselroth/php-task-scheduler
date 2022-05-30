@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      gyselroth™  (http://www.gyselroth.com)
- * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2022 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -16,12 +16,28 @@ use League\Event\Emitter;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use Psr\Log\LoggerInterface;
+use TaskScheduler\Exception\InvalidArgumentException;
 use TaskScheduler\Exception\SpawnForkException;
 
 class Queue
 {
     use InjectTrait;
     use EventsTrait;
+
+    /**
+     * Orphaned timeout.
+     */
+    public const OPTION_ORPHANED_TIMEOUT = 'orphaned_timeout';
+
+    /**
+     * Endless worker timeout.
+     */
+    public const OPTION_ENDLESS_WORKER_TIMEOUT = 'endless_worker_timeout';
+
+    /**
+     * Minimum waiting jobs for endless worker timout.
+     */
+    public const OPTION_WAITING_JOBS_FOR_ENDLESS_WORKER = 'waiting_jobs_for_endless_worker';
 
     /**
      * Database.
@@ -45,20 +61,6 @@ class Queue
     protected $factory;
 
     /**
-     * Jobs queue.
-     *
-     * @var MessageQueue
-     */
-    protected $jobs;
-
-    /**
-     * Events queue.
-     *
-     * @var MessageQueue
-     */
-    protected $events;
-
-    /**
      * Worker manager pid.
      *
      * @var int
@@ -80,17 +82,62 @@ class Queue
     protected $scheduler;
 
     /**
+     * Orphaned timeout.
+     *
+     * @var int
+     */
+    protected $orphaned_timeout = 30;
+
+    /**
+     * Endless worker timeout.
+     *
+     * @var int
+     */
+    protected $endless_worker_timeout = 600;
+
+    /**
+     * Minimum waiting jobs endless worker restart.
+     *
+     * @var int
+     */
+    protected $waiting_jobs_for_endless_worker = 5;
+
+    /**
      * Init queue.
      */
-    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter = null)
+    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter = null, array $config = [])
     {
         $this->scheduler = $scheduler;
         $this->db = $db;
         $this->logger = $logger;
         $this->factory = $factory;
-        $this->jobs = new MessageQueue($db, $scheduler->getJobQueue(), $scheduler->getJobQueueSize(), $logger);
-        $this->events = new MessageQueue($db, $scheduler->getEventQueue(), $scheduler->getEventQueueSize(), $logger);
         $this->emitter = $emitter ?? new Emitter();
+        $this->setOptions($config);
+    }
+
+    /**
+     * Set options.
+     */
+    public function setOptions(array $config = []): self
+    {
+        foreach ($config as $option => $value) {
+            switch ($option) {
+                case self::OPTION_ORPHANED_TIMEOUT:
+                case self::OPTION_ENDLESS_WORKER_TIMEOUT:
+                case self::OPTION_WAITING_JOBS_FOR_ENDLESS_WORKER:
+                    if (!is_int($value)) {
+                        throw new InvalidArgumentException($option.' needs to be an integer');
+                    }
+
+                    $this->{$option} = $value;
+
+                    break;
+                default:
+                    throw new InvalidArgumentException('invalid option '.$option.' given');
+            }
+        }
+
+        return $this;
     }
 
     /**
@@ -162,6 +209,40 @@ class Queue
     }
 
     /**
+     * Fetch events.
+     */
+    protected function fetchEvents()
+    {
+        while ($this->loop()) {
+            if (msg_receive($this->queue, 0, $type, 16384, $msg, true, MSG_IPC_NOWAIT)) {
+                $this->logger->debug('received systemv message type ['.$type.']', [
+                    'category' => get_class($this),
+                ]);
+
+                switch ($type) {
+                    case WorkerManager::TYPE_JOB:
+                        //handled by worker manager
+                        break;
+                    case WorkerManager::TYPE_WORKER_SPAWN:
+                        $this->emitter->emit('taskscheduler.onWorkerSpawn', $msg['_id']);
+
+                        break;
+                    case WorkerManager::TYPE_WORKER_KILL:
+                        $this->emitter->emit('taskscheduler.onWorkerKill', $msg['_id']);
+
+                        break;
+                    default:
+                        $this->logger->warning('received unknown systemv message type ['.$type.']', [
+                            'category' => get_class($this),
+                        ]);
+                }
+            } else {
+                return;
+            }
+        }
+    }
+
+    /**
      * Fork handling, blocking process.
      */
     protected function main(): void
@@ -170,123 +251,104 @@ class Queue
             'category' => get_class($this),
         ]);
 
-        $cursor_jobs = $this->jobs->getCursor([
+        $this->catchSignal();
+
+        $cursor_watch = $this->db->{$this->scheduler->getJobQueue()}->watch([], ['fullDocument' => 'updateLookup']);
+        $cursor_fetch = $this->db->{$this->scheduler->getJobQueue()}->find([
             '$or' => [
                 ['status' => JobInterface::STATUS_WAITING],
                 ['status' => JobInterface::STATUS_POSTPONED],
             ],
         ]);
 
-        $cursor_events = $this->events->getCursor([
-            'timestamp' => ['$gte' => new UTCDateTime()],
-            'job' => ['$exists' => true],
-        ]);
+        foreach ($cursor_fetch as $job) {
+            $this->fetchEvents();
+            $this->handleJob((array) $job);
+        }
 
-        $this->catchSignal();
+        $start_job = $start_worker = time();
 
+        $cursor_watch->rewind();
         while ($this->loop()) {
-            while ($this->loop()) {
-                if (msg_receive($this->queue, 0, $type, 16384, $msg, true, 0)) {
-                    $this->logger->debug('received systemv message type ['.$type.']', [
-                        'category' => get_class($this),
-                    ]);
-
-                    switch ($type) {
-                        case WorkerManager::TYPE_JOB:
-                        case WorkerManager::TYPE_EVENT:
-                            //handled by worker manager
-                        break;
-                        case WorkerManager::TYPE_WORKER_SPAWN:
-                            $this->emitter->emit('taskscheduler.onWorkerSpawn', $msg['_id']);
-
-                        break;
-                        case WorkerManager::TYPE_WORKER_KILL:
-                            $this->emitter->emit('taskscheduler.onWorkerKill', $msg['_id']);
-
-                        break;
-                        default:
-                            $this->logger->warning('received unknown systemv message type ['.$type.']', [
-                                'category' => get_class($this),
-                            ]);
-                    }
-                } else {
-                    break;
-                }
-            }
-
-            while ($this->loop()) {
-                if (null === $cursor_events->current()) {
-                    if ($cursor_events->getInnerIterator()->isDead()) {
-                        $this->logger->error('event queue cursor is dead, is it a capped collection?', [
-                            'category' => get_class($this),
-                        ]);
-
-                        $this->events->create();
-
-                        $this->main();
-
-                        break;
-                    }
-
-                    $this->events->next($cursor_events, function () {
-                        $this->main();
-                    });
+            if (!$cursor_watch->valid()) {
+                if (time() - $start_job >= $this->orphaned_timeout) {
+                    $this->rescheduleOrphanedJobs();
+                    $start_job = time();
                 }
 
-                $event = $cursor_events->current();
-                $this->events->next($cursor_events, function () {
-                    $this->main();
-                });
-
-                if (null === $event) {
-                    break;
+                if (time() - $start_worker >= $this->endless_worker_timeout) {
+                    $this->checkEndlessRunningWorkers();
+                    $start_worker = time();
                 }
 
-                $this->handleEvent($event);
-            }
-
-            if (null === $cursor_jobs->current()) {
-                if ($cursor_jobs->getInnerIterator()->isDead()) {
-                    $this->logger->error('job queue cursor is dead, is it a capped collection?', [
-                        'category' => get_class($this),
-                    ]);
-
-                    $this->jobs->create();
-                    $this->main();
-
-                    break;
-                }
-
-                $this->jobs->next($cursor_jobs, function () {
-                    $this->main();
-                });
+                $cursor_watch->next();
 
                 continue;
             }
 
-            $job = $cursor_jobs->current();
+            $this->fetchEvents();
+            $event = $cursor_watch->current();
+            $cursor_watch->next();
 
-            $this->jobs->next($cursor_jobs, function () {
-                $this->main();
-            });
-
-            $this->handleJob($job);
+            if (null === $event || !isset($event['fullDocument'])) {
+                continue;
+            }
+            $this->handleJob((array) $event['fullDocument']);
         }
     }
 
-    /**
-     * Handle events.
-     */
-    protected function handleEvent(array $event): self
+    protected function rescheduleOrphanedJobs(): self
     {
-        $this->emit($this->scheduler->getJob($event['job']));
+        $this->logger->debug('looking for orphaned jobs', [
+            'category' => get_class($this),
+        ]);
 
-        if ($event['status'] > JobInterface::STATUS_POSTPONED) {
-            $this->logger->debug('received event ['.$event['status'].'] for job ['.$event['job'].'], write into systemv queue', [
-                'category' => get_class($this),
+        $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
+            'status' => JobInterface::STATUS_PROCESSING,
+            'alive' => ['$lt' => new UTCDateTime((time() - $this->orphaned_timeout) * 1000)],
+        ], [
+            '$set' => ['status' => JobInterface::STATUS_WAITING, 'worker' => null],
+        ]);
+
+        $this->logger->debug('found [{jobs}] orphaned jobs, reset state to waiting', [
+            'category' => get_class($this),
+            'jobs' => $result->getMatchedCount(),
+        ]);
+
+        return $this;
+    }
+
+    protected function checkEndlessRunningWorkers(): self
+    {
+        $this->logger->debug('looking for endless running workers', [
+            'category' => get_class($this),
+        ]);
+
+        $waiting = $this->db->{$this->scheduler->getJobQueue()}->find([
+            'status' => JobInterface::STATUS_WAITING,
+        ])->toArray();
+
+        $processing = $this->db->{$this->scheduler->getJobQueue()}->find([
+            'status' => JobInterface::STATUS_PROCESSING,
+        ])->toArray();
+
+        $waiting = count($waiting);
+        $processing = count($processing);
+
+        $this->logger->debug('found [{jobs_waiting}] waiting jobs and [{jobs_processing}] processing jobs', [
+            'category' => get_class($this),
+            'jobs_waiting' => $waiting,
+            'jobs_processing' => $processing,
+        ]);
+
+        if ($waiting > $this->waiting_jobs_for_endless_worker && 0 === $processing) {
+            $this->db->{$this->scheduler->getJobQueue()}->updateMany([
+                'status' => JobInterface::STATUS_WAITING,
+            ], [
+                '$set' => ['status' => JobInterface::STATUS_FAILED, 'worker' => null],
             ]);
 
-            msg_send($this->queue, WorkerManager::TYPE_EVENT, $event);
+            $this->exitWorkerManager(SIGCHLD, ['pid' => $this->manager_pid]);
         }
 
         return $this;
@@ -301,10 +363,7 @@ class Queue
             'category' => get_class($this),
         ]);
 
-        msg_send($this->queue, WorkerManager::TYPE_JOB, [
-            '_id' => $job['_id'],
-            'options' => $job['options'],
-        ]);
+        msg_send($this->queue, WorkerManager::TYPE_JOB, $job);
 
         return $this;
     }
