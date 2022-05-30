@@ -1,3 +1,12 @@
+## 4.0.0
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Mon May 30 15:20:00 CET 2022
+
+### Features
+* Implementation of MongoDB >= v3.6
+* Auto detection of orphaned jobs
+* Use of changestreams instead capped collections
+
 ## 3.3.0
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Tue July 05 15:44:00 CET 2021
