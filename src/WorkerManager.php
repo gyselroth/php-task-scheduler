@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      gyselroth™  (http://www.gyselroth.com)
- * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2022 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -40,9 +40,8 @@ class WorkerManager
      * Fork handler actions.
      */
     public const TYPE_JOB = 1;
-    public const TYPE_EVENT = 2;
-    public const TYPE_WORKER_SPAWN = 3;
-    public const TYPE_WORKER_KILL = 4;
+    public const TYPE_WORKER_SPAWN = 2;
+    public const TYPE_WORKER_KILL = 3;
 
     /**
      * Process management.
@@ -146,7 +145,7 @@ class WorkerManager
 
                     $this->{$option} = $value;
 
-                break;
+                    break;
                 case self::OPTION_PM:
                     if (!defined('self::PM_'.strtoupper($value))) {
                         throw new InvalidArgumentException($value.' is not a valid process handling type (static, dynamic, ondemand)');
@@ -154,7 +153,7 @@ class WorkerManager
 
                     $this->{$option} = $value;
 
-                break;
+                    break;
                 default:
                     throw new InvalidArgumentException('invalid option '.$option.' given');
             }
@@ -343,15 +342,11 @@ class WorkerManager
                     case self::TYPE_JOB:
                         $this->handleJob($msg);
 
-                    break;
-                    case self::TYPE_EVENT:
-                        $this->handleEvent($msg);
-
-                    break;
+                        break;
                     case self::TYPE_WORKER_SPAWN:
                     case self::TYPE_WORKER_KILL:
                         //events handled by queue node
-                    break;
+                        break;
                     default:
                         $this->logger->warning('received unknown systemv message type ['.$type.']', [
                             'category' => get_class($this),
@@ -364,21 +359,22 @@ class WorkerManager
     /**
      * Handle events.
      */
-    protected function handleEvent(array $event): self
+    protected function handleJob(array $event): self
     {
-        $this->logger->debug('handle event ['.$event['status'].'] for job ['.$event['job'].']', [
+        $this->logger->debug('handle event ['.$event['status'].'] for job ['.$event['_id'].']', [
             'category' => get_class($this),
         ]);
 
         switch ($event['status']) {
+            case JobInterface::STATUS_WAITING:
+            case JobInterface::STATUS_POSTPONED:
+                return $this->handleNewJob($event);
             case JobInterface::STATUS_PROCESSING:
-                $this->job_map[(string) $event['worker']] = $event['job'];
+                $this->job_map[(string) $event['worker']] = $event['_id'];
 
                 return $this;
             case JobInterface::STATUS_DONE:
-            case JobInterface::STATUS_FAILED:
-            case JobInterface::STATUS_TIMEOUT:
-                $worker = array_search((string) $event['job'], $this->job_map, false);
+                $worker = array_search((string) $event['_id'], $this->job_map, true);
                 if (false === $worker) {
                     return $this;
                 }
@@ -386,15 +382,16 @@ class WorkerManager
                 unset($this->job_map[$worker]);
 
                 return $this;
-
-            break;
+            case JobInterface::STATUS_FAILED:
             case JobInterface::STATUS_CANCELED:
-                $worker = array_search($event['job'], $this->job_map, false);
+            case JobInterface::STATUS_TIMEOUT:
+                $worker = array_search($event['_id'], $this->job_map, false);
+
                 if (false === $worker) {
                     return $this;
                 }
 
-                $this->logger->debug('received cancel event for job ['.$event['job'].'] running on worker ['.$worker.']', [
+                $this->logger->debug('received failure event for job ['.$event['_id'].'] running on worker ['.$worker.']', [
                     'category' => get_class($this),
                 ]);
 
@@ -439,7 +436,7 @@ class WorkerManager
     /**
      * Handle job.
      */
-    protected function handleJob(array $job): self
+    protected function handleNewJob(array $job): self
     {
         if (true === $job['options'][Scheduler::OPTION_FORCE_SPAWN]) {
             if ($job['options']['at'] > time()) {

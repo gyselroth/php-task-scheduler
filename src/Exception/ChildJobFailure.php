@@ -10,14 +10,8 @@ declare(strict_types=1);
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
-namespace TaskScheduler\Testsuite\Mock;
+namespace TaskScheduler\Exception;
 
-use TaskScheduler\AbstractJob;
-
-class SuccessJobMock extends AbstractJob
+class ChildJobFailure extends \Exception
 {
-    public function start(): bool
-    {
-        return true;
-    }
 }

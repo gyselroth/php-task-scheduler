@@ -27,11 +27,12 @@ This brings a real world implementation for parallel process management to PHP. 
 * Signal management
 * Intercept events
 * Progress support
+* Auto detection of orphaned jobs
 
-## v3
+## v4
 
-This is the documentation for the current major version v3. You may check the [upgrade guide](https://github.com/gyselroth/php-task-scheduler/blob/master/UPGRADE.md) if you want to upgrade from v2/v1.
-The documentation for v2 is available [here](https://github.com/gyselroth/php-task-scheduler/blob/2.x/README.md). 
+This is the documentation for the current major version v4. You may check the [upgrade guide](https://github.com/gyselroth/php-task-scheduler/blob/master/UPGRADE.md) if you want to upgrade from v3 or even an older version.
+The documentation for v3 is available [here](https://github.com/gyselroth/php-task-scheduler/blob/3.x/README.md).
 
 # Table of Contents
 * [Features](#features)
@@ -74,11 +75,12 @@ PHP isn't a multithreaded language and neither can it handle (most) tasks asynch
 A job is scheduled via a task scheduler and gets written into a central message queue (MongoDB). All Queue nodes will get notified in (soft) realtime that a new job is available.
 The queue node will forward the job via a internal systemv message queue to the worker manager. The worker manager decides if a new worker needs to be spawned.
 At last, one worker will execute the task according the principle first come first serves. If no free slots are available the job will wait in the queue and get executed as soon as there is a free slot.
-A job may be rescheduled if it failed. There are lots of more features available, continue reading. 
+A job may be rescheduled if it failed. There are lots of more features available, continue reading.
 
 ## Requirements
 * Posix system (Basically every linux)
-* MongoDB server >= 2.2
+* MongoDB server >= 3.6
+* MongoDB replication set (May also be just a single MongoDB node)
 * PHP >= 7.1
 * PHP pcntl extension
 * PHP posix extension
@@ -121,7 +123,7 @@ You may encounter the follwing terms in this readme or elsewhere:
 If your app gets built using a docker container you must use at least the following build options:
 
 ```Dockerfile
-FROM php:7.2
+FROM php:7.4
 RUN docker-php-ext-install pcntl sysvmsg
 RUN pecl install mongodb && docker-php-ext-enable mongodb pcntl sysvmsg
 ```
@@ -132,7 +134,7 @@ For a better understanding how this library works, we're going to implement a ma
 
 ### Create job
 
-It is quite easy to create a task, you just need to implement TaskScheduler\JobInterface. 
+It is quite easy to create a task, you just need to implement TaskScheduler\JobInterface.
 In this example we're going to implement a job called MailJob which sends mail using zend-mail.
 
 >**Note**: You can use TaskScheduler\AbstractJob to implement the required default methods by TaskScheduler\JobInterface.
@@ -185,13 +187,13 @@ This is the whole magic, our scheduler now got its first job, awesome!
 
 But now we need to execute those queued jobs.  
 That's where the queue nodes come into play.
-Those nodes listen in (soft) realtime for new jobs and will load balance those jobs. 
+Those nodes listen in (soft) realtime for new jobs and will load balance those jobs.
 
 #### Create worker factory
 
 You will need to create your own worker node factory in your app namespace which gets called to spawn new child processes.
-This factory gets called during a new fork is spawned. This means if it gets called, you are in a new process and you will need to bootstrap your application 
-from scratch (Or just the things you need for a worker). 
+This factory gets called during a new fork is spawned. This means if it gets called, you are in a new process and you will need to bootstrap your application
+from scratch (Or just the things you need for a worker).
 
 >**Note**: Both a worker manager and a worker itself are spawned in own forks from the queue node process.
 
@@ -263,7 +265,7 @@ $queue->process();
 >**Note**: TaskScheduler\Queue::process() is a blocking call.
 
 
-Our mail gets sent as soon as a queue node is running and started some workers. 
+Our mail gets sent as soon as a queue node is running and started some workers.
 
 Usually you want those nodes running at all times! They act like invisible execution nodes behind your app.
 
@@ -328,7 +330,7 @@ $scheduler->flush();
 
 ### Handling of failed jobs
 
-A job is acknowledged as failed if the job throws an exception of any kind. 
+A job is acknowledged as failed if the job throws an exception of any kind.
 If we have a look at our mail job again, but this time it will throw an exception:
 
 ```php
@@ -352,7 +354,7 @@ This will lead to a FAILED job as soon as this job gets executed.
 
 >**Note**: It does not matter if you return `true` or `false`, only an uncaught exception will result to a FAILED job, however you should always return `true`.
 
-The scheduler has an integrated handling of failed jobs. You may specify to automatically reschedule a job if it failed. 
+The scheduler has an integrated handling of failed jobs. You may specify to automatically reschedule a job if it failed.
 The following will reschedule the job up to 5 times (If it ended with status FAILED) with an interval of 30s.
 
 ```php
@@ -364,11 +366,18 @@ $scheduler->addJob(MailJob::class, $mail->toString(), [
 
 This will queue our mail to be executed in one hour from now and it will re-schedule the job up to three times if it fails with an interval of one minute.
 
-### Job progress
+### Alive ping and Job progress
 
-TaskScheduler has built-in support to update the progress of a job from your job implementation. 
+TaskScheduler has built-in support to update the progress of a job from your job implementation.
 By default a job starts at `0` (%) and ends with progress `100` (%). Note that the progress is floating number.
 You may increase the progress made within your job.
+
+**Important**:
+Note that by default the scheduler takes a job after 30s as orphaned and reschedules it.
+You may change the 30s globally during the Scheduler initialization or keep calling `->updateProgress()` within your task implementation.
+Calling `updateProgress` with or without a progress acts like a keep alive ping for the scheduler and should be called in your task if it a long running task which contains a loop. If there is no loop you should still call this method in some form of intervals to keep your task alive.
+Set a progress as percentage value is not required, if not set the task keeps beeing at 0% and set to 100% if finished.
+
 
 Let us have a look how this works with a job which copies a file from a to b.
 
@@ -404,7 +413,7 @@ $p = $scheduler->getJob(MongoDB\BSON\ObjectId('5b3cbc39e26cf26c6d0ede69'));
 $p->getProgress();
 ```
 
->**Note** There is a rate limit for the progress updates which is by default 500ms. You may change the rate limit by configuring the `TaskScheduler::OPTION_PROGRESS_RATE_LIMIT` to something else and to 0 
+>**Note** There is a rate limit for the progress updates which is by default 500ms. You may change the rate limit by configuring the `TaskScheduler::OPTION_PROGRESS_RATE_LIMIT` to something else and to 0
 if you do not want a rate limit at all.
 
 ### Asynchronous programming
@@ -435,8 +444,8 @@ $scheduler->waitFor($stack);
 This will wait for all three jobs to be finished before continuing.
 
 **Important note**:\
-If you are programming in http mode (incoming http requests) and your app needs to deploy tasks it is good practice not to wait!. 
-Best practice is to return a [HTTP 202 code](https://httpstatuses.com/202) instead. If the client needs to know the result of those jobs you may return 
+If you are programming in http mode (incoming http requests) and your app needs to deploy tasks it is good practice not to wait!.
+Best practice is to return a [HTTP 202 code](https://httpstatuses.com/202) instead. If the client needs to know the result of those jobs you may return
 the process id's and send a 2nd request which then waits and returns the status of those jobs or the client may get its results via a persistent connection or websockets.
 
 ```php
@@ -748,7 +757,7 @@ from the number of outstanding jobs. For example you may be using [Kubernetes au
 ### Using a PSR-11 DIC
 Optionally one can pass a Psr\Container\ContainerInterface to the worker nodes which then get called to create job instances.
 You probably already get it, but here is the worker [factory again](#create-worker-factory). This time it passes an instance of a PSR-11 container to worker nodes.
-And if you already using a container it makes perfectly sense to request the manager from it. (Of course you may also request a worker instances from it if your container implementation supports 
+And if you already using a container it makes perfectly sense to request the manager from it. (Of course you may also request a worker instances from it if your container implementation supports
 parameters at runtime (The worker id). Note: This will be an incompatible container implementation from the [PSR-11 specification](https://github.com/php-fig/fig-standards/blob/master/accepted/PSR-11-container.md).)
 
 ```php
@@ -778,21 +787,14 @@ class WorkerFactory extends TaskScheduler\WorkerFactoryInterface
 }
 ```
 
-### Data Persistence
-
-This library does not provide any data persistence! It is important to understand this fact. This library operates on a [MongoDB capped collection](https://docs.mongodb.com/manual/core/capped-collections) with 
-a fixed size limit by design. Meaning the newest job will overwrite the oldest job if the limit is reached. A side note here regarding postponed jobs (TaskScheduler\Scheduler::OPTION_AT), those jobs will get queued locally once received. If they fall out from the network queue, they will get executed anyway. If a worker dies they will get rescheduled if possible. **But** interval jobs are not meant to be persistent and there is no guarantee for that. It is best practice during bootstraping your queue node to schedule jobs if they are not already scheduled from a persistent data source (For example using [TaskScheduler\Scheduler::addJobOnce](#add-job-if-not-exists)).
-
->**Note**: This is planned to change in v4. v4 will feature persistency for jobs.
-
 ### Signal handling
 
-Terminating queue nodes is possible of course. They even manage to reschedule running jobs. You just need to send a SIGTERM to the process. The queue node then will transmit this the worker manager while the worker manager will send it to all running workers and they 
+Terminating queue nodes is possible of course. They even manage to reschedule running jobs. You just need to send a SIGTERM to the process. The queue node then will transmit this the worker manager while the worker manager will send it to all running workers and they
 will save their state and nicely exit. A worker also saves its state if the worker process directly receives a SIGTERM.
 If a SIGKILL was used to terminate the queue node (or worker) the state can not be saved and you might get zombie jobs (Jobs with the state PROCESSING but no worker will actually process those jobs).
 No good sysadmin will terminate running jobs by using SIGKILL, it is not acceptable and may only be used if you know what you are doing.
 
-You should as well avoid using never ending blocking functions in your job, php can't handle signals if you do that. 
+You should as well avoid using never ending blocking functions in your job, php can't handle signals if you do that.
 
 
 ## Real world examples

@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      gyselroth™  (http://www.gyselroth.com)
- * @copyright   Copryright (c) 2017-2021 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2022 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -27,6 +27,7 @@ use TaskScheduler\Exception\LogicException;
 class Scheduler
 {
     use EventsTrait;
+    use InjectTrait;
 
     /**
      * Job options.
@@ -39,6 +40,7 @@ class Scheduler
     public const OPTION_FORCE_SPAWN = 'force_spawn';
     public const OPTION_TIMEOUT = 'timeout';
     public const OPTION_ID = 'id';
+    public const OPTION_JOB_QUEUE = 'job_queue';
     public const OPTION_IGNORE_DATA = 'ignore_data';
 
     /**
@@ -60,10 +62,7 @@ class Scheduler
      * Queue options.
      */
     public const OPTION_PROGRESS_RATE_LIMIT = 'progress_rate_limit';
-    public const OPTION_JOB_QUEUE = 'job_queue';
-    public const OPTION_JOB_QUEUE_SIZE = 'job_queue_size';
-    public const OPTION_EVENT_QUEUE = 'event_queue';
-    public const OPTION_EVENT_QUEUE_SIZE = 'event_queue_size';
+    public const OPTION_ORPHANED_RATE_LIMIT = 'orphaned_rate_limit';
 
     /**
      * MongoDB type map.
@@ -108,14 +107,7 @@ class Scheduler
      *
      * @var string
      */
-    protected $job_queue = 'taskscheduler.jobs';
-
-    /**
-     * Event Collection name.
-     *
-     * @var string
-     */
-    protected $event_queue = 'taskscheduler.events';
+    protected $job_queue = 'taskscheduler';
 
     /**
      * Unix time.
@@ -160,20 +152,6 @@ class Scheduler
     protected $default_interval_reference = 'end';
 
     /**
-     * Job Queue size.
-     *
-     * @var int
-     */
-    protected $job_queue_size = 1000000;
-
-    /**
-     * Event Queue size.
-     *
-     * @var int
-     */
-    protected $event_queue_size = 5000000;
-
-    /**
      * Progress rate limit (miliseconds).
      *
      * @var int
@@ -181,11 +159,11 @@ class Scheduler
     protected $progress_rate_limit = 1000;
 
     /**
-     * Events queue.
+     * Orphaned rate limit.
      *
-     * @var MessageQueue
+     * @var int
      */
-    protected $events;
+    protected $orphaned_rate_limit = 30;
 
     /**
      * Progress rate limit storage.
@@ -195,14 +173,21 @@ class Scheduler
     protected $progress_limit = [];
 
     /**
+     * SessionHandler.
+     *
+     * @var SessionHandler
+     */
+    protected $sessionHandler;
+
+    /**
      * Init queue.
      */
     public function __construct(Database $db, LoggerInterface $logger, array $config = [], ?Emitter $emitter = null)
     {
         $this->db = $db;
         $this->logger = $logger;
+        $this->sessionHandler = new SessionHandler($this->db, $this->logger);
         $this->setOptions($config);
-        $this->events = new MessageQueue($db, $this->getEventQueue(), $this->getEventQueueSize(), $logger);
         $this->emitter = $emitter ?? new Emitter();
     }
 
@@ -214,7 +199,6 @@ class Scheduler
         foreach ($config as $option => $value) {
             switch ($option) {
                 case self::OPTION_JOB_QUEUE:
-                case self::OPTION_EVENT_QUEUE:
                 case self::OPTION_DEFAULT_INTERVAL_REFERENCE:
                     $this->{$option} = (string) $value;
 
@@ -224,9 +208,8 @@ class Scheduler
                 case self::OPTION_DEFAULT_INTERVAL:
                 case self::OPTION_DEFAULT_RETRY:
                 case self::OPTION_DEFAULT_TIMEOUT:
-                case self::OPTION_JOB_QUEUE_SIZE:
-                case self::OPTION_EVENT_QUEUE_SIZE:
                 case self::OPTION_PROGRESS_RATE_LIMIT:
+                case self::OPTION_ORPHANED_RATE_LIMIT:
                     $this->{$option} = (int) $value;
 
                 break;
@@ -239,19 +222,19 @@ class Scheduler
     }
 
     /**
-     * Get job Queue size.
+     * Get progress rate limit.
      */
-    public function getJobQueueSize(): int
+    public function getProgressRateLimit(): int
     {
-        return $this->job_queue_size;
+        return $this->progress_rate_limit;
     }
 
     /**
-     * Get event Queue size.
+     * Get orphaned rate limit.
      */
-    public function getEventQueueSize(): int
+    public function getOrphanedRateLimit(): int
     {
-        return $this->event_queue_size;
+        return $this->orphaned_rate_limit;
     }
 
     /**
@@ -260,14 +243,6 @@ class Scheduler
     public function getJobQueue(): string
     {
         return $this->job_queue;
-    }
-
-    /**
-     * Get event collection name.
-     */
-    public function getEventQueue(): string
-    {
-        return $this->event_queue;
     }
 
     /**
@@ -299,12 +274,6 @@ class Scheduler
             throw new JobNotFoundException('job '.$id.' was not found');
         }
 
-        $this->db->{$this->event_queue}->insertOne([
-            'job' => $id,
-            'status' => JobInterface::STATUS_CANCELED,
-            'timestamp' => new UTCDateTime(),
-        ]);
-
         return true;
     }
 
@@ -314,7 +283,6 @@ class Scheduler
     public function flush(): Scheduler
     {
         $this->db->{$this->job_queue}->drop();
-        $this->db->{$this->event_queue}->drop();
 
         return $this;
     }
@@ -355,17 +323,12 @@ class Scheduler
             'data' => $data,
         ]);
 
-        $this->db->{$this->event_queue}->insertOne([
-            'job' => $result->getInsertedId(),
-            'status' => JobInterface::STATUS_WAITING,
-            'timestamp' => new UTCDateTime(),
-        ]);
-
         $document = $this->db->{$this->job_queue}->findOne(['_id' => $result->getInsertedId()], [
             'typeMap' => self::TYPE_MAP,
         ]);
 
         $process = new Process($document, $this);
+        $this->emit($process);
 
         return $process;
     }
@@ -391,10 +354,14 @@ class Scheduler
             $filter = ['data' => $data] + $filter;
         }
 
+        $session = $this->sessionHandler->getSession();
+        $session->startTransaction($this->sessionHandler->getOptions());
+
         $result = $this->db->{$this->job_queue}->updateOne($filter, ['$setOnInsert' => $document], [
             'upsert' => true,
-            '$isolated' => true,
         ]);
+
+        $session->commitTransaction();
 
         if ($result->getMatchedCount() > 0) {
             $document = $this->db->{$this->job_queue}->findOne($filter, [
@@ -419,12 +386,6 @@ class Scheduler
             'category' => get_class($this),
             'params' => $options,
             'data' => $data,
-        ]);
-
-        $this->db->{$this->event_queue}->insertOne([
-            'job' => $result->getUpsertedId(),
-            'status' => JobInterface::STATUS_WAITING,
-            'timestamp' => new UTCDateTime(),
         ]);
 
         $document = $this->db->{$this->job_queue}->findOne(['_id' => $result->getUpsertedId()], [
@@ -452,48 +413,45 @@ class Scheduler
             return $job->getId();
         }, $stack);
 
-        $cursor = $this->events->getCursor([
-            'job' => ['$in' => $jobs],
-        ]);
+        $cursor = $this->db->{$this->getJobQueue()}->watch([
+            ['$match' => ['fullDocument._id' => ['$in' => $jobs]]],
+        ], ['fullDocument' => 'updateLookup']);
 
-        $start = time();
         $expected = count($stack);
         $done = 0;
+        $cursor->rewind();
 
-        while (true) {
-            if (null === $cursor->current()) {
-                if ($cursor->getInnerIterator()->isDead()) {
-                    $this->events->create();
-
-                    return $this->waitFor($stack, $options);
-                }
-
-                $this->events->next($cursor, function () use ($stack, $options) {
-                    $this->waitFor($stack, $options);
-                });
+        while ($this->loop()) {
+            if (!$cursor->valid()) {
+                $cursor->next();
 
                 continue;
             }
 
             $event = $cursor->current();
-            $this->events->next($cursor, function () use ($stack, $options) {
-                $this->waitFor($stack, $options);
-            });
 
-            $process = $orig[(string) $event['job']];
+            if (null === $event) {
+                continue;
+            }
+            $process = $orig[(string) $event['fullDocument']['_id']];
             $data = $process->toArray();
-            $data['status'] = $event['status'];
+            $data['status'] = $event['fullDocument']['status'];
             $process->replace(new Process($data, $this));
             $this->emit($process);
 
-            if ($event['status'] < JobInterface::STATUS_DONE) {
+            if ($event['fullDocument']['status'] < JobInterface::STATUS_DONE) {
+                $cursor->next();
+
                 continue;
             }
-            if (JobInterface::STATUS_FAILED === $event['status'] && isset($event['exception']) && $options & self::OPTION_THROW_EXCEPTION) {
+
+            if (JobInterface::STATUS_FAILED === $event['fullDocument']['status'] && isset($event['exception']) && $options & self::OPTION_THROW_EXCEPTION) {
                 throw new $event['exception']['class']($event['exception']['message'], $event['exception']['code']);
             }
 
             ++$done;
+
+            $cursor->next();
 
             if ($done >= $expected) {
                 return $this;
@@ -506,45 +464,36 @@ class Scheduler
      */
     public function listen(Closure $callback, array $query = []): self
     {
-        if (0 === count($query)) {
-            $query = [
-                'timestamp' => ['$gte' => new UTCDateTime()],
-            ];
+        if (count($query) > 0) {
+            $query = [['$match' => $query]];
         }
 
-        $cursor = $this->events->getCursor($query);
+        $cursor = $this->db->{$this->getJobQueue()}->watch($query, ['fullDocument' => 'updateLookup']);
 
-        while (true) {
-            if (null === $cursor->current()) {
-                if ($cursor->getInnerIterator()->isDead()) {
-                    $this->logger->error('events queue cursor is dead, is it a capped collection?', [
-                        'category' => get_class($this),
-                    ]);
-
-                    $this->events->create();
-
-                    return $this->listen($callback, $query);
-                }
-
-                $this->events->next($cursor, function () use ($callback, $query) {
-                    return $this->listen($callback, $query);
-                });
-
+        for ($cursor->rewind(); true; $cursor->next()) {
+            if (!$cursor->valid()) {
                 continue;
             }
 
             $result = $cursor->current();
-            $this->events->next($cursor, function () use ($callback, $query) {
-                $this->listen($callback, $query);
-            });
 
-            $process = new Process($result, $this);
+            if (null === $result) {
+                continue;
+            }
+
+            $result = json_decode(json_encode($result->bsonSerialize()), true);
+            $process = new Process($result['fullDocument'], $this);
             $this->emit($process);
 
             if (true === $callback($process)) {
                 return $this;
             }
         }
+    }
+
+    public function emitEvent(Process $process): void
+    {
+        $this->emit($process);
     }
 
     /**
@@ -562,18 +511,46 @@ class Scheduler
             return $this;
         }
 
-        $result = $this->db->{$this->job_queue}->updateOne([
+        $this->db->{$this->job_queue}->updateOne([
             '_id' => $job->getId(),
             'progress' => ['$exists' => true],
         ], [
             '$set' => [
+                'alive' => new UTCDateTime(),
                 'progress' => round($progress, 2),
             ],
         ]);
 
+        if (isset($job->getData()['parent']) && $job->getData()['parent'] instanceof ObjectId && $this->jobExists($job->getData()['parent'])) {
+            $this->db->{$this->job_queue}->updateOne([
+                '_id' => $job->getData()['parent'],
+                'alive' => ['$exists' => true],
+            ], [
+                '$set' => [
+                    'alive' => new UTCDateTime(),
+                ],
+            ]);
+        }
+
         $this->progress_limit[(string) $job->getId()] = $current;
 
         return $this;
+    }
+
+    /**
+     * Get child jobs.
+     */
+    public function getChildProcs(ObjectId $parentId): Generator
+    {
+        $result = $this->db->{$this->job_queue}->find([
+            'data.parent' => $parentId,
+        ], [
+            'typeMap' => self::TYPE_MAP,
+        ]);
+
+        foreach ($result as $job) {
+            yield new Process($job, $this);
+        }
     }
 
     /**
@@ -599,9 +576,10 @@ class Scheduler
             'class' => $class,
             'status' => JobInterface::STATUS_WAITING,
             'created' => new UTCDateTime(),
-            'started' => new UTCDateTime(),
-            'ended' => new UTCDateTime(),
-            'worker' => new ObjectId(),
+            'started' => null,
+            'ended' => null,
+            'alive' => new UTCDateTime(),
+            'worker' => null,
             'progress' => 0.0,
             'data' => $data,
         ];
@@ -622,15 +600,33 @@ class Scheduler
      */
     protected function updateJob(ObjectId $id, int $status): UpdateResult
     {
+        $session = $this->sessionHandler->getSession();
+        $session->startTransaction($this->sessionHandler->getOptions());
+
         $result = $this->db->{$this->job_queue}->updateMany([
             '_id' => $id,
-            '$isolated' => true,
         ], [
             '$set' => [
                 'status' => $status,
             ],
         ]);
 
+        $session->commitTransaction();
+
         return $result;
+    }
+
+    /**
+     * Check if job exists.
+     */
+    protected function jobExists(ObjectId $id): bool
+    {
+        $result = $this->db->{$this->job_queue}->findOne([
+            '_id' => $id,
+        ], [
+            'typeMap' => self::TYPE_MAP,
+        ]);
+
+        return !(null === $result);
     }
 }
