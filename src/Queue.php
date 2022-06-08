@@ -303,9 +303,19 @@ class Queue
             'category' => get_class($this),
         ]);
 
+        $this->db->{$this->scheduler->getJobQueue()}->updateMany([
+            'status' => JobInterface::STATUS_PROCESSING,
+            'alive' => ['$lt' => new UTCDateTime((time() - $this->orphaned_timeout) * 1000)],
+            'data.parent' => ['$ne' => null]
+        ], [
+            '$set' => ['status' => JobInterface::STATUS_FAILED],
+        ]);
+
+
         $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
             'status' => JobInterface::STATUS_PROCESSING,
             'alive' => ['$lt' => new UTCDateTime((time() - $this->orphaned_timeout) * 1000)],
+            'data.parent' => null
         ], [
             '$set' => ['status' => JobInterface::STATUS_WAITING, 'worker' => null],
         ]);
