@@ -1,3 +1,10 @@
+## 4.0.1
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Wed Jun 08 17:15:00 CET 2022
+
+### Bugfix
+* Reset only parent jobs when found orphaned
+
 ## 4.0.0
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Mon May 30 15:20:00 CET 2022
