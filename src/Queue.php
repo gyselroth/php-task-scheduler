@@ -303,27 +303,41 @@ class Queue
             'category' => get_class($this),
         ]);
 
-        $this->db->{$this->scheduler->getJobQueue()}->updateMany([
-            'status' => JobInterface::STATUS_PROCESSING,
-            'alive' => ['$lt' => new UTCDateTime((time() - $this->orphaned_timeout) * 1000)],
-            'data.parent' => ['$ne' => null]
-        ], [
-            '$set' => ['status' => JobInterface::STATUS_FAILED],
-        ]);
+        $alive_utc_datetime = new UTCDateTime((time() - $this->orphaned_timeout) * 1000);
 
+        foreach ($this->scheduler->getOrphanedProcs($alive_utc_datetime) as $orphaned_proc) {
+            $has_child_procs = false;
 
-        $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
-            'status' => JobInterface::STATUS_PROCESSING,
-            'alive' => ['$lt' => new UTCDateTime((time() - $this->orphaned_timeout) * 1000)],
-            'data.parent' => null
-        ], [
-            '$set' => ['status' => JobInterface::STATUS_WAITING, 'worker' => null],
-        ]);
+            foreach($this->scheduler->getChildProcs($orphaned_proc->getId()) as $child_proc) {
+                $has_child_procs = true;
+            }
 
-        $this->logger->debug('found [{jobs}] orphaned jobs, reset state to waiting', [
-            'category' => get_class($this),
-            'jobs' => $result->getMatchedCount(),
-        ]);
+            if ($has_child_procs) {
+                $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
+                    'status' => JobInterface::STATUS_PROCESSING,
+                    'alive' => ['$lt' => $alive_utc_datetime],
+                    'data.parent' => $orphaned_proc->getId()
+                ], [
+                    '$set' => ['status' => JobInterface::STATUS_FAILED],
+                ]);
+
+                $this->logger->debug('found [{jobs}] orphaned child job, set state to failed', [
+                    'category' => get_class($this),
+                    'jobs' => $result->getMatchedCount(),
+                ]);
+            } else {
+                $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
+                    '_id' => $orphaned_proc->getId(),
+                ], [
+                    '$set' => ['status' => JobInterface::STATUS_FAILED],
+                ]);
+
+                $this->logger->debug('found [{jobs}] orphaned parent job, reset state to failed', [
+                    'category' => get_class($this),
+                    'jobs' => $result->getMatchedCount(),
+                ]);
+            }
+        }
 
         return $this;
     }

@@ -1,3 +1,26 @@
+## 4.0.2
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Thu Jun 09 09:30:00 CET 2022
+
+### Bugfix
+* Changed faulty orphaned job handling
+
+## 4.0.1
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Wed Jun 08 17:15:00 CET 2022
+
+### Bugfix
+* Reset only parent jobs when found orphaned
+
+## 4.0.0
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Mon May 30 15:20:00 CET 2022
+
+### Features
+* Implementation of MongoDB >= v3.6
+* Auto detection of orphaned jobs
+* Use of changestreams instead capped collections
+
 ## 3.3.0
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Tue July 05 15:44:00 CET 2021
@@ -170,7 +193,7 @@
 **Maintainer**: Raffael Sahli <sahli@gyselroth.com>\
 **Date**: Thu Jul 19 11:02:34 CEST 2018
 
-* [FEATURE] Get current job id with getId() in a JobInterface implementation 
+* [FEATURE] Get current job id with getId() in a JobInterface implementation
 
 
 ## 2.0.3
@@ -192,7 +215,7 @@
 **Date**: Wed Mar 28 09:28:23 CET 2018
 
 * [FIX] fixed TaskScheduler\Queue::cleanup, cannot access protected method TaskScheduler\Queue::cleanup()
-* [CHANGE] code improvements, added new tests 
+* [CHANGE] code improvements, added new tests
 
 
 ## 2.0.1
