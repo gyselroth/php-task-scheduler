@@ -202,7 +202,7 @@ class Scheduler
                 case self::OPTION_DEFAULT_INTERVAL_REFERENCE:
                     $this->{$option} = (string) $value;
 
-                break;
+                    break;
                 case self::OPTION_DEFAULT_AT:
                 case self::OPTION_DEFAULT_RETRY_INTERVAL:
                 case self::OPTION_DEFAULT_INTERVAL:
@@ -212,7 +212,7 @@ class Scheduler
                 case self::OPTION_ORPHANED_RATE_LIMIT:
                     $this->{$option} = (int) $value;
 
-                break;
+                    break;
                 default:
                     throw new InvalidArgumentException('invalid option '.$option.' given');
             }
@@ -544,6 +544,21 @@ class Scheduler
     {
         $result = $this->db->{$this->job_queue}->find([
             'data.parent' => $parentId,
+        ], [
+            'typeMap' => self::TYPE_MAP,
+        ]);
+
+        foreach ($result as $job) {
+            yield new Process($job, $this);
+        }
+    }
+
+    public function getOrphanedProcs(UTCDateTime $alive_time): Generator
+    {
+        $result = $this->db->{$this->job_queue}->find([
+            'status' => JobInterface::STATUS_PROCESSING,
+            'alive' => ['$lt' => $alive_time],
+            'data.parent' => null
         ], [
             'typeMap' => self::TYPE_MAP,
         ]);
