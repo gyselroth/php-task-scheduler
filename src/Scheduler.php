@@ -558,7 +558,10 @@ class Scheduler
         $result = $this->db->{$this->job_queue}->find([
             'status' => JobInterface::STATUS_PROCESSING,
             'alive' => ['$lt' => $alive_time],
-            'data.parent' => null
+            '$or' => [
+                ['data.parent' => ['$exists' => false]],
+                ['data.parent' => null],
+            ],
         ], [
             'typeMap' => self::TYPE_MAP,
         ]);
