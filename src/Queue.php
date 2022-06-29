@@ -321,10 +321,22 @@ class Queue
                     '$set' => ['status' => JobInterface::STATUS_FAILED],
                 ]);
 
-                $this->logger->debug('found [{jobs}] orphaned child job, set state to failed', [
+                $this->logger->warning('found [{jobs}] orphaned child job, set state to failed', [
                     'category' => get_class($this),
                     'jobs' => $result->getMatchedCount(),
                 ]);
+
+                if ($result->getMatchedCount() === 0) {
+                    $this->logger->warning('no orphaned child jobs found for orphaned parent job ['.$orphaned_proc->getId().'] set state of parent job to done', [
+                        'category' => get_class($this),
+                    ]);
+
+                    $this->db->{$this->scheduler->getJobQueue()}->updateMany([
+                        '_id' => $orphaned_proc->getId(),
+                    ], [
+                        '$set' => ['status' => JobInterface::STATUS_DONE],
+                    ]);
+                }
             } else {
                 $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
                     '_id' => $orphaned_proc->getId(),
@@ -332,7 +344,7 @@ class Queue
                     '$set' => ['status' => JobInterface::STATUS_FAILED],
                 ]);
 
-                $this->logger->debug('found [{jobs}] orphaned parent job, reset state to failed', [
+                $this->logger->warning('found [{jobs}] orphaned parent job with jobId ['.$orphaned_proc->getId().'], reset state to failed', [
                     'category' => get_class($this),
                     'jobs' => $result->getMatchedCount(),
                 ]);
