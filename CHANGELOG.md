@@ -1,3 +1,10 @@
+## 4.0.4
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Wed Jun 29 10:00:00 CET 2022
+
+### Bugfix
+* Set orphaned parent job status to done when no orphaned child job found
+
 ## 4.0.3
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Tue Jun 21 08:00:00 CET 2022
