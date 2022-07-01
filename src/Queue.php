@@ -334,8 +334,13 @@ class Queue
                     $this->db->{$this->scheduler->getJobQueue()}->updateMany([
                         '_id' => $orphaned_proc->getId(),
                     ], [
-                        '$set' => ['status' => JobInterface::STATUS_DONE],
+                        '$set' => [
+                            'status' => JobInterface::STATUS_DONE,
+                            'ended' => $set['ended'] = new UTCDateTime()
+                        ],
                     ]);
+
+                    msg_send($this->queue, WorkerManager::TYPE_WORKER_ORPHANED_JOB, $orphaned_proc->toArray());
                 }
             } else {
                 $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([

@@ -571,6 +571,31 @@ class Scheduler
         }
     }
 
+    public function setJobOptionsType(array $options = []): array
+    {
+        foreach ($options as $option => $value) {
+            switch ($option) {
+                case Scheduler::OPTION_AT:
+                case Scheduler::OPTION_INTERVAL:
+                case Scheduler::OPTION_RETRY:
+                case Scheduler::OPTION_RETRY_INTERVAL:
+                case Scheduler::OPTION_TIMEOUT:
+                    $options[$option] = (int)$value;
+
+                    break;
+                case Scheduler::OPTION_IGNORE_DATA:
+                case Scheduler::OPTION_FORCE_SPAWN:
+                    $options[$option] = (bool)$value;
+
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        return $options;
+    }
+
     /**
      * Prepare insert.
      */
