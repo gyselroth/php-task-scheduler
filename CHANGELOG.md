@@ -1,3 +1,10 @@
+## 4.0.5
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Thu July 01 12:10:00 CET 2022
+
+### Bugfix
+* re-schedule job when worker is not available anymore
+
 ## 4.0.4
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Wed Jun 29 10:00:00 CET 2022
