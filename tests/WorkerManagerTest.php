@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace TaskScheduler\Testsuite;
 
+use Helmich\MongoMock\MockDatabase;
 use MongoDB\BSON\ObjectId;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -20,7 +21,7 @@ use ReflectionMethod;
 use ReflectionProperty;
 use TaskScheduler\Exception\InvalidArgumentException;
 use TaskScheduler\JobInterface;
-use TaskScheduler\Queue;
+use TaskScheduler\Scheduler;
 use TaskScheduler\Worker;
 use TaskScheduler\WorkerFactoryInterface;
 use TaskScheduler\WorkerManager;
@@ -32,6 +33,8 @@ class WorkerManagerTest extends TestCase
 
     public function setUp(): void
     {
+        $this->mongodb = new MockDatabase();
+        $this->scheduler = new Scheduler($this->mongodb, $this->createMock(LoggerInterface::class));
         $worker = $this->createMock(Worker::class);
         $factory = $this->createMock(WorkerFactoryInterface::class);
 
@@ -45,7 +48,7 @@ class WorkerManagerTest extends TestCase
         msg_remove_queue(msg_get_queue(ftok(__DIR__.'/../src/Queue.php', 't')));
         $called = &$this->called;
         $this->manager = $this->getMockBuilder(WorkerManager::class)
-            ->setConstructorArgs([$factory, $this->createMock(LoggerInterface::class)])
+            ->setConstructorArgs([$factory, $this->createMock(LoggerInterface::class), $this->scheduler])
             ->setMethods(['loop', 'exit'])
             ->getMock();
 
