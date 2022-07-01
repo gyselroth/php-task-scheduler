@@ -42,6 +42,7 @@ class WorkerManager
     public const TYPE_JOB = 1;
     public const TYPE_WORKER_SPAWN = 2;
     public const TYPE_WORKER_KILL = 3;
+    public const TYPE_WORKER_ORPHANED_JOB = 4;
 
     /**
      * Process management.
@@ -123,11 +124,12 @@ class WorkerManager
     /**
      * Init queue.
      */
-    public function __construct(WorkerFactoryInterface $factory, LoggerInterface $logger, array $config = [])
+    public function __construct(WorkerFactoryInterface $factory, LoggerInterface $logger, Scheduler $scheduler, array $config = [])
     {
         $this->logger = $logger;
         $this->setOptions($config);
         $this->factory = $factory;
+        $this->scheduler = $scheduler;
     }
 
     /**
@@ -347,6 +349,10 @@ class WorkerManager
                     case self::TYPE_WORKER_KILL:
                         //events handled by queue node
                         break;
+                    case self::TYPE_WORKER_ORPHANED_JOB:
+                        $this->handleOrphanedJob($msg);
+
+                        break;
                     default:
                         $this->logger->warning('received unknown systemv message type ['.$type.']', [
                             'category' => get_class($this),
@@ -506,5 +512,47 @@ class WorkerManager
         pcntl_signal(SIGCHLD, [$this, 'exitWorker']);
 
         return $this;
+    }
+
+    protected function handleOrphanedJob(array $job): void
+    {
+        $this->logger->debug('check if worker still exists ['.$job['worker'].']', [
+            'category' => get_class($this),
+        ]);
+
+        $exists = false;
+
+        foreach ($this->forks as $id => $process) {
+            if ($id === $job['worker']) {
+                $exists = true;
+            }
+        }
+
+        if (!$exists) {
+            $this->logger->warning('worker with id ['.$job['worker'].'] does not exist anymore', [
+                'category' => get_class($this),
+            ]);
+
+            if ($job['options']['interval'] > 0) {
+                $this->logger->debug('job ['.$job['_id'].'] had an interval of ['.$job['options']['interval'].'s]', [
+                    'category' => get_class($this),
+                ]);
+
+                $job['options']['at'] = time() + $job['options']['interval'];
+                $this->scheduler->addJob($job['class'], $job['data'], $this->scheduler->setJobOptionsType($job['options']));
+            }
+            if ($job['options']['interval'] <= -1) {
+                $this->logger->debug('job ['.$job['_id'].'] had an endless interval', [
+                    'category' => get_class($this),
+                ]);
+
+                unset($job['options']['at']);
+                $this->scheduler->addJob($job['class'], $job['data'], $this->scheduler->setJobOptionsType($job['options']));
+            }
+        }
+
+        $this->logger->warning('worker with id ['.$job['worker'].'] still exists. job should be restarted automatically', [
+            'category' => get_class($this),
+        ]);
     }
 }
