@@ -30,6 +30,8 @@ class WorkerManagerTest extends TestCase
 {
     protected $manager;
     protected $called = 1;
+    protected $mongodb;
+    protected $scheduler;
 
     public function setUp(): void
     {
