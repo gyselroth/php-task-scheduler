@@ -533,21 +533,33 @@ class WorkerManager
                 'category' => get_class($this),
             ]);
 
-            if ($job['options']['interval'] > 0) {
-                $this->logger->debug('job ['.$job['_id'].'] had an interval of ['.$job['options']['interval'].'s]', [
+            $rescheduled_orphaned_job = $this->db->{$this->scheduler->getJobQueue()}->find([
+                'orphaned_parent_id' => $job['_id'],
+            ])->toArray();
+
+            if (count($rescheduled_orphaned_job) === 0) {
+                $job['data']['orphaned_parent_id'] = $job['_id'];
+
+                if ($job['options']['interval'] > 0) {
+                    $this->logger->debug('job ['.$job['_id'].'] had an interval of ['.$job['options']['interval'].'s]', [
+                        'category' => get_class($this),
+                    ]);
+
+                    $job['options']['at'] = time() + $job['options']['interval'];
+                    $this->scheduler->addJob($job['class'], $job['data'], $this->scheduler->setJobOptionsType($job['options']));
+                }
+                if ($job['options']['interval'] <= -1) {
+                    $this->logger->debug('job ['.$job['_id'].'] had an endless interval', [
+                        'category' => get_class($this),
+                    ]);
+
+                    unset($job['options']['at']);
+                    $this->scheduler->addJob($job['class'], $job['data'], $this->scheduler->setJobOptionsType($job['options']));
+                }
+            } else {
+                $this->logger->debug('orphaned job job with id ['.$job['_id'].'] is already re-scheduled', [
                     'category' => get_class($this),
                 ]);
-
-                $job['options']['at'] = time() + $job['options']['interval'];
-                $this->scheduler->addJob($job['class'], $job['data'], $this->scheduler->setJobOptionsType($job['options']));
-            }
-            if ($job['options']['interval'] <= -1) {
-                $this->logger->debug('job ['.$job['_id'].'] had an endless interval', [
-                    'category' => get_class($this),
-                ]);
-
-                unset($job['options']['at']);
-                $this->scheduler->addJob($job['class'], $job['data'], $this->scheduler->setJobOptionsType($job['options']));
             }
         }
 
