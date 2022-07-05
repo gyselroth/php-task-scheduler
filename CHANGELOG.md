@@ -1,3 +1,10 @@
+## 4.0.6
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Tue July 05 11:25:00 CET 2022
+
+### Bugfix
+* check if orphaned job is already re-scheduled
+
 ## 4.0.5
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Thu July 01 12:10:00 CET 2022
