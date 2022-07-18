@@ -1,3 +1,10 @@
+## 4.0.8
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Mon July 18 14:15:00 CET 2022
+
+### Bugfix
+* search job with correct filter
+
 ## 4.0.7
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Mon July 18 12:00:00 CET 2022
