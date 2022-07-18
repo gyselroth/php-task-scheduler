@@ -535,7 +535,7 @@ class WorkerManager
             ]);
 
             $rescheduled_orphaned_job = $this->db->{$this->scheduler->getJobQueue()}->find([
-                'orphaned_parent_id' => $job['_id'],
+                'data.orphaned_parent_id' => $job['_id'],
             ])->toArray();
 
             if (count($rescheduled_orphaned_job) === 0) {
