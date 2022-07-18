@@ -50,7 +50,7 @@ class WorkerManagerTest extends TestCase
         msg_remove_queue(msg_get_queue(ftok(__DIR__.'/../src/Queue.php', 't')));
         $called = &$this->called;
         $this->manager = $this->getMockBuilder(WorkerManager::class)
-            ->setConstructorArgs([$factory, $this->createMock(LoggerInterface::class), $this->scheduler])
+            ->setConstructorArgs([$this->mongodb, $factory, $this->createMock(LoggerInterface::class), $this->scheduler])
             ->setMethods(['loop', 'exit'])
             ->getMock();
 

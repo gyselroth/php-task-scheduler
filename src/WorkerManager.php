@@ -124,8 +124,9 @@ class WorkerManager
     /**
      * Init queue.
      */
-    public function __construct(WorkerFactoryInterface $factory, LoggerInterface $logger, Scheduler $scheduler, array $config = [])
+    public function __construct(Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, Scheduler $scheduler, array $config = [])
     {
+        $this->db = $db;
         $this->logger = $logger;
         $this->setOptions($config);
         $this->factory = $factory;
