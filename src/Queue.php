@@ -40,11 +40,6 @@ class Queue
     public const OPTION_WAITING_JOBS_FOR_ENDLESS_WORKER = 'waiting_jobs_for_endless_worker';
 
     /**
-     * Maximum message size for msg_receive function
-     */
-    public const OPTION_MAX_MSG_SIZE = 'max_msg_size';
-
-    /**
      * Database.
      *
      * @var Database
@@ -108,13 +103,6 @@ class Queue
     protected $waiting_jobs_for_endless_worker = 5;
 
     /**
-     * Max message size for msg_receive function
-     *
-     * @var int
-     */
-    protected $max_msg_size = 16384;
-
-    /**
      * Init queue.
      */
     public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter = null, array $config = [])
@@ -137,7 +125,6 @@ class Queue
                 case self::OPTION_ORPHANED_TIMEOUT:
                 case self::OPTION_ENDLESS_WORKER_TIMEOUT:
                 case self::OPTION_WAITING_JOBS_FOR_ENDLESS_WORKER:
-                case self::OPTION_MAX_MSG_SIZE:
                     if (!is_int($value)) {
                         throw new InvalidArgumentException($option.' needs to be an integer');
                     }
@@ -227,7 +214,7 @@ class Queue
     protected function fetchEvents()
     {
         while ($this->loop()) {
-            if (msg_receive($this->queue, 0, $type, $this->max_msg_size, $msg, true, MSG_IPC_NOWAIT)) {
+            if (msg_receive($this->queue, 0, $type, 16384, $msg, true, MSG_IPC_NOWAIT)) {
                 $this->logger->debug('received systemv message type ['.$type.']', [
                     'category' => get_class($this),
                 ]);
