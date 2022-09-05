@@ -28,6 +28,7 @@ class WorkerManager
     public const OPTION_PM = 'pm';
     public const OPTION_MAX_CHILDREN = 'max_children';
     public const OPTION_MIN_CHILDREN = 'min_children';
+    public const OPTION_MAX_MSG_SIZE = 'max_msg_size';
 
     /**
      * Process handling.
@@ -87,6 +88,13 @@ class WorkerManager
     protected $min_children = 1;
 
     /**
+     * Max message size for msg_receive function
+     *
+     * @var int
+     */
+    protected $max_msg_size = 16384;
+
+    /**
      * Forks.
      *
      * @var array
@@ -142,6 +150,7 @@ class WorkerManager
             switch ($option) {
                 case self::OPTION_MAX_CHILDREN:
                 case self::OPTION_MIN_CHILDREN:
+                case self::OPTION_MAX_MSG_SIZE:
                     if (!is_int($value)) {
                         throw new InvalidArgumentException($option.' needs to be an integer');
                     }
@@ -336,7 +345,7 @@ class WorkerManager
                 $wait = 0;
             }
 
-            if (msg_receive($this->queue, 0, $type, 16384, $msg, true, $wait)) {
+            if (msg_receive($this->queue, 0, $type, $this->max_msg_size, $msg, true, $wait)) {
                 $this->logger->debug('received systemv message type ['.$type.']', [
                     'category' => get_class($this),
                 ]);
