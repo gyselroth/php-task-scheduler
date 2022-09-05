@@ -1,3 +1,10 @@
+## 4.1.0
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Mon Sep 05 11:00:00 CET 2022
+
+### Change
+* max message size for php function msg_receive is now configurable
+
 ## 4.0.8
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Mon July 18 14:15:00 CET 2022
