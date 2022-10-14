@@ -1,3 +1,10 @@
+## 4.0.10
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Fri Oct 14 16:45:00 CET 2022
+
+### Bugfix
+* check option and data before updating an existing job 
+
 ## 4.0.9
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Mon Sep 05 15:10:00 CET 2022
