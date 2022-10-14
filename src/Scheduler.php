@@ -368,7 +368,7 @@ class Scheduler
                 'typeMap' => self::TYPE_MAP,
             ]);
 
-            if (array_intersect_key($document['options'], $requested) !== $requested || ($data !== $document['data'] && true === $options[self::OPTION_IGNORE_DATA])) {
+            if (($document['options'] !== [] && array_intersect_key($document['options'], $requested) !== $requested) || ($document['data'] !== [] && $data !== $document['data'] && true === $options[self::OPTION_IGNORE_DATA])) {
                 $this->logger->debug('job ['.$document['_id'].'] options/data changed, reschedule new job', [
                     'category' => get_class($this),
                     'data' => $data,
