@@ -214,7 +214,7 @@ class Queue
     protected function fetchEvents()
     {
         while ($this->loop()) {
-            if (msg_receive($this->queue, 0, $type, 16384, $msg, true, MSG_IPC_NOWAIT & MSG_NOERROR)) {
+            if (msg_receive($this->queue, 0, $type, 16384, $msg, true, MSG_IPC_NOWAIT | MSG_NOERROR)) {
                 $this->logger->debug('received systemv message type ['.$type.']', [
                     'category' => get_class($this),
                 ]);
