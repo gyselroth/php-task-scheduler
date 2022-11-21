@@ -14,7 +14,6 @@ namespace TaskScheduler;
 
 use MongoDB\BSON\ObjectId;
 use MongoDB\Database;
-use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidArgumentException;
 use TaskScheduler\Exception\SpawnForkException;
@@ -74,13 +73,6 @@ class WorkerManager
     protected $logger;
 
     /**
-     * Container.
-     *
-     * @var ContainerInterface
-     */
-    protected $container;
-
-    /**
      * Max children.
      *
      * @var int
@@ -132,14 +124,13 @@ class WorkerManager
     /**
      * Init queue.
      */
-    public function __construct(Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, Scheduler $scheduler, array $config = [], ?ContainerInterface $container = null)
+    public function __construct(Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, Scheduler $scheduler, array $config = [])
     {
         $this->db = $db;
         $this->logger = $logger;
         $this->setOptions($config);
         $this->factory = $factory;
         $this->scheduler = $scheduler;
-        $this->container = $container;
     }
 
     /**
@@ -400,14 +391,16 @@ class WorkerManager
                 return $this;
 
             case JobInterface::STATUS_CANCELED:
-                $instance = $this->container->get($event['class']);
+                if (class_exists($event['class'])) {
+                    $instance = new $event['class']();
 
-                if (method_exists($instance, 'notification')) {
-                    $instance->notification($event['status'], $this->scheduler->getJob($event['_id'])->toArray());
-                } else {
-                    $this->logger->info('method notification() does not exists on instance', [
-                        'category' => get_class($this),
-                    ]);
+                    if (method_exists($instance, 'notification')) {
+                        $instance->notification($event['status'], $this->scheduler->getJob($event['_id'])->toArray());
+                    } else {
+                        $this->logger->info('method notification() does not exists on instance', [
+                            'category' => get_class($this),
+                        ]);
+                    }
                 }
 
             case JobInterface::STATUS_FAILED:
