@@ -15,6 +15,7 @@ namespace TaskScheduler;
 use League\Event\Emitter;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
+use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidArgumentException;
 use TaskScheduler\Exception\SpawnForkException;
@@ -52,6 +53,13 @@ class Queue
      * @var LoggerInterface
      */
     protected $logger;
+
+    /**
+     * Container.
+     *
+     * @var ContainerInterface
+     */
+    protected $container;
 
     /**
      * Worker factory.
@@ -105,7 +113,7 @@ class Queue
     /**
      * Init queue.
      */
-    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter = null, array $config = [])
+    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter = null, array $config = [], ?ContainerInterface $container = null)
     {
         $this->scheduler = $scheduler;
         $this->db = $db;
@@ -113,6 +121,7 @@ class Queue
         $this->factory = $factory;
         $this->emitter = $emitter ?? new Emitter();
         $this->setOptions($config);
+        $this->container = $container;
     }
 
     /**
@@ -348,6 +357,16 @@ class Queue
                 ], [
                     '$set' => ['status' => JobInterface::STATUS_FAILED],
                 ]);
+
+                $instance = $this->container->get($orphaned_proc->getClass());
+
+                if (method_exists($instance, 'notification')) {
+                    $instance->notification(JobInterface::STATUS_FAILED, $orphaned_proc->toArray());
+                } else {
+                    $this->logger->info('method notification() does not exists on instance', [
+                        'category' => get_class($this),
+                    ]);
+                }
 
                 $this->logger->warning('found [{jobs}] orphaned parent job with jobId ['.$orphaned_proc->getId().'], reset state to failed', [
                     'category' => get_class($this),

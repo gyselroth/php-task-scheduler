@@ -438,6 +438,16 @@ class Worker
         $session = $this->sessionHandler->getSession();
         $session->startTransaction($this->sessionHandler->getOptions());
 
+        $instance = $this->container->get($job['class']);
+
+        if (method_exists($instance, 'notification')) {
+            $instance->notification($status, $this->scheduler->getJob($job['_id'])->toArray());
+        } else {
+            $this->logger->info('method notification() does not exists on instance', [
+                'category' => get_class($this),
+            ]);
+        }
+
         $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
             '_id' => $job['_id'],
         ], [
