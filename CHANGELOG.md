@@ -1,3 +1,10 @@
+## 4.0.13
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Tue Nov 22 12:45:00 CET 2022
+
+### Change
+* Set parent job state to failed when orphaned child job is updated 
+
 ## 4.0.12
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Tue Nov 22 09:30:00 CET 2022
