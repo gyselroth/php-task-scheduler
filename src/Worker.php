@@ -438,8 +438,8 @@ class Worker
         $session = $this->sessionHandler->getSession();
         $session->startTransaction($this->sessionHandler->getOptions());
 
-        if (class_exists($job['class'])) {
-            $instance = new $job['class']();
+        if ($this->container !== null) {
+            $instance = $this->container->get($job['class']);
 
             if (method_exists($instance, 'notification')) {
                 $instance->notification($status, $this->scheduler->getJob($job['_id'])->toArray());
