@@ -15,6 +15,7 @@ namespace TaskScheduler;
 use League\Event\Emitter;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
+use MongoDB\UpdateResult;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use TaskScheduler\Exception\InvalidArgumentException;
@@ -350,25 +351,15 @@ class Queue
                     ]);
 
                     msg_send($this->queue, WorkerManager::TYPE_WORKER_ORPHANED_JOB, $orphaned_proc->toArray());
+                } else {
+                    $this->failJobAndNotifyJobClass($orphaned_proc);
+
+                    $this->logger->warning('set state of parent job ['.$orphaned_proc->getId().'] to failed', [
+                        'category' => get_class($this),
+                    ]);
                 }
             } else {
-                $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
-                    '_id' => $orphaned_proc->getId(),
-                ], [
-                    '$set' => ['status' => JobInterface::STATUS_FAILED],
-                ]);
-
-                if ($this->container !== null) {
-                    $instance = $this->container->get($orphaned_proc->getClass());
-
-                    if (method_exists($instance, 'notification')) {
-                        $instance->notification(JobInterface::STATUS_FAILED, $orphaned_proc->toArray());
-                    } else {
-                        $this->logger->info('method notification() does not exists on instance', [
-                            'category' => get_class($this),
-                        ]);
-                    }
-                }
+                $result = $this->failJobAndNotifyJobClass($orphaned_proc);
 
                 $this->logger->warning('found [{jobs}] orphaned parent job with jobId ['.$orphaned_proc->getId().'], reset state to failed', [
                     'category' => get_class($this),
@@ -378,6 +369,29 @@ class Queue
         }
 
         return $this;
+    }
+
+    protected function failJobAndNotifyJobClass(Process $job): UpdateResult
+    {
+        $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
+            '_id' => $job->getId(),
+        ], [
+            '$set' => ['status' => JobInterface::STATUS_FAILED],
+        ]);
+
+        if ($this->container !== null) {
+            $instance = $this->container->get($job->getClass());
+
+            if (method_exists($instance, 'notification')) {
+                $instance->notification(JobInterface::STATUS_FAILED, $job->toArray());
+            } else {
+                $this->logger->info('method notification() does not exists on instance', [
+                    'category' => get_class($this),
+                ]);
+            }
+        }
+
+        return $result;
     }
 
     protected function checkEndlessRunningWorkers(): self
