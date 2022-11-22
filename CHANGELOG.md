@@ -1,3 +1,10 @@
+## 4.0.12
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Tue Nov 22 09:30:00 CET 2022
+
+### Feature
+* Check Job class for notification method when job status changes
+
 ## 4.0.11
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Mon Oct 24 14:50:00 CET 2022
