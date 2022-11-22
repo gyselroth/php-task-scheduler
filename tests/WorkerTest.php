@@ -584,7 +584,7 @@ class WorkerTest extends TestCase
     {
         $stub_container = $this->getMockBuilder(ContainerInterface::class)
             ->getMock();
-        $stub_container->expects($this->once())->method('get')
+        $stub_container->expects($this->exactly(2))->method('get')
             ->willReturn(new SuccessJobMock());
 
         $called = 0;
