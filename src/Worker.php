@@ -329,6 +329,14 @@ class Worker
                     'category' => get_class($this),
                 ]);
 
+                $this->db->{$this->scheduler->getJobQueue()}->updateOne([
+                    '_id' => $job['_id'],
+                ], [
+                    '$set' => [
+                        'status' => JobInterface::STATUS_CANCELED,
+                    ],
+                ]);
+
                 return false;
             }
         }
