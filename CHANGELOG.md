@@ -1,3 +1,10 @@
+## 4.0.14
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Fri Nov 25 11:15:00 CET 2022
+
+### Bugfix
+* set child job state to canceled when ignoring it
+
 ## 4.0.13
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Tue Nov 22 12:45:00 CET 2022
