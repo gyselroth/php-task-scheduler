@@ -448,9 +448,13 @@ class Worker
 
         if ($this->container !== null) {
             $instance = $this->container->get($job['class']);
+            $live_job = $this->scheduler->getJob($job['_id'])->toArray();
 
             if (method_exists($instance, 'notification')) {
-                $instance->notification($status, $this->scheduler->getJob($job['_id'])->toArray());
+                if ($job['status'] !== $status && !isset($job['notification_sent'])) {
+                    $instance->notification($status, $live_job);
+                    $set['notification_sent'] = true;
+                }
             } else {
                 $this->logger->info('method notification() does not exists on instance', [
                     'category' => get_class($this),
