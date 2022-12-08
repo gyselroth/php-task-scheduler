@@ -1,3 +1,10 @@
+## 4.0.15
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Tue Dez 13 12:00:00 CET 2022
+
+### Bugfix
+* check if job notification already has been sent
+
 ## 4.0.14
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Fri Nov 25 11:15:00 CET 2022

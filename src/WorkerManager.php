@@ -130,6 +130,13 @@ class WorkerManager
     protected $factory;
 
     /**
+     * Sent notification JobIds
+     *
+     * @var array
+     */
+    protected $sent_notifications = [];
+
+    /**
      * Init queue.
      */
     public function __construct(Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, Scheduler $scheduler, array $config = [], ?ContainerInterface $container = null)
@@ -400,18 +407,6 @@ class WorkerManager
                 return $this;
 
             case JobInterface::STATUS_CANCELED:
-                if ($this->container !== null) {
-                    $instance = $this->container->get($event['class']);
-
-                    if (method_exists($instance, 'notification')) {
-                        $instance->notification($event['status'], $this->scheduler->getJob($event['_id'])->toArray());
-                    } else {
-                        $this->logger->info('method notification() does not exists on instance', [
-                            'category' => get_class($this),
-                        ]);
-                    }
-                }
-
             case JobInterface::STATUS_FAILED:
             case JobInterface::STATUS_TIMEOUT:
                 $worker = array_search($event['_id'], $this->job_map, false);
@@ -431,6 +426,33 @@ class WorkerManager
 
                     unset($this->job_map[(string) $worker]);
                     posix_kill($this->forks[(string) $worker], SIGKILL);
+                }
+                if ($event['status'] === JobInterface::STATUS_CANCELED) {
+                    if ($this->container !== null) {
+                        $instance = $this->container->get($event['class']);
+
+                        if (method_exists($instance, 'notification')) {
+                            sleep(rand(1, 5));
+                            $job = $this->scheduler->getJob($event['_id'])->toArray();
+
+                            if (!isset($job['notification_sent']) && !in_array($event['_id'], $this->sent_notifications)) {
+                                $this->sent_notifications[] = $event['_id'];
+                                $instance->notification($event['status'], $job);
+
+                                $this->db->{$this->scheduler->getJobQueue()}->updateOne([
+                                    '_id' => $event['_id'],
+                                ], [
+                                    '$set' => [
+                                        'notification_sent' => true,
+                                    ],
+                                ]);
+                            }
+                        } else {
+                            $this->logger->info('method notification() does not exists on instance', [
+                                'category' => get_class($this),
+                            ]);
+                        }
+                    }
                 }
 
                 return $this;

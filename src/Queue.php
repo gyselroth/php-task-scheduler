@@ -373,17 +373,29 @@ class Queue
 
     protected function failJobAndNotifyJobClass(Process $job): UpdateResult
     {
+        $job_id = $job->getId();
+
         $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
-            '_id' => $job->getId(),
+            '_id' => $job_id,
         ], [
             '$set' => ['status' => JobInterface::STATUS_FAILED],
         ]);
 
         if ($this->container !== null) {
             $instance = $this->container->get($job->getClass());
+            sleep(rand(1, 5));
+            $job = $this->scheduler->getJob($job_id)->toArray();
 
             if (method_exists($instance, 'notification')) {
-                $instance->notification(JobInterface::STATUS_FAILED, $job->toArray());
+                if (!isset($job['notification_sent'])) {
+                    $instance->notification(JobInterface::STATUS_FAILED, $job);
+
+                    $this->db->{$this->scheduler->getJobQueue()}->updateMany([
+                        '_id' => $job_id,
+                    ], [
+                        '$set' => ['notification_sent' => true],
+                    ]);
+                }
             } else {
                 $this->logger->info('method notification() does not exists on instance', [
                     'category' => get_class($this),
