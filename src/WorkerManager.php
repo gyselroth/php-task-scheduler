@@ -437,15 +437,15 @@ class WorkerManager
 
                             if (!isset($job['notification_sent']) && !in_array($event['_id'], $this->sent_notifications)) {
                                 $this->sent_notifications[] = $event['_id'];
-                                $instance->notification($event['status'], $job);
-
-                                $this->db->{$this->scheduler->getJobQueue()}->updateOne([
-                                    '_id' => $event['_id'],
-                                ], [
-                                    '$set' => [
-                                        'notification_sent' => true,
-                                    ],
-                                ]);
+                                if ($instance->notification($event['status'], $job)) {
+                                    $this->db->{$this->scheduler->getJobQueue()}->updateOne([
+                                        '_id' => $event['_id'],
+                                    ], [
+                                        '$set' => [
+                                            'notification_sent' => true,
+                                        ],
+                                    ]);
+                                }
                             }
                         } else {
                             $this->logger->info('method notification() does not exists on instance', [

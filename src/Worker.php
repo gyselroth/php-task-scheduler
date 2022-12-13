@@ -452,8 +452,9 @@ class Worker
 
             if (method_exists($instance, 'notification')) {
                 if ($job['status'] !== $status && !isset($job['notification_sent'])) {
-                    $instance->notification($status, $live_job);
-                    $set['notification_sent'] = true;
+                    if ($instance->notification($status, $live_job)) {
+                        $set['notification_sent'] = true;
+                    }
                 }
             } else {
                 $this->logger->info('method notification() does not exists on instance', [

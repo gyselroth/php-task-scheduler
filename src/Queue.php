@@ -388,13 +388,13 @@ class Queue
 
             if (method_exists($instance, 'notification')) {
                 if (!isset($job['notification_sent'])) {
-                    $instance->notification(JobInterface::STATUS_FAILED, $job);
-
-                    $this->db->{$this->scheduler->getJobQueue()}->updateMany([
-                        '_id' => $job_id,
-                    ], [
-                        '$set' => ['notification_sent' => true],
-                    ]);
+                    if ($instance->notification(JobInterface::STATUS_FAILED, $job)) {
+                        $this->db->{$this->scheduler->getJobQueue()}->updateMany([
+                            '_id' => $job_id,
+                        ], [
+                            '$set' => ['notification_sent' => true],
+                        ]);
+                    }
                 }
             } else {
                 $this->logger->info('method notification() does not exists on instance', [
