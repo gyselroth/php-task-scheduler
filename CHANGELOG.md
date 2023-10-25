@@ -1,3 +1,10 @@
+## 4.0.16-beta1
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Wed Oct 25 17:30:00 CET 2023
+
+### Bugfix
+* Changed operator on msg_receive function
+
 ## 4.0.15-beta1
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Thu Dec 08 18:45:00 CET 2022
