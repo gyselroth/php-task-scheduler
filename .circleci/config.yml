@@ -13,6 +13,8 @@ jobs:
             pecl install mongodb-1.16.2 && docker-php-ext-enable mongodb pcntl sysvmsg
             echo -e "extension = mongodb.so" | tee /usr/local/etc/php/php.ini > /dev/null
             curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+            apt-get update -y
+            apt-get install -y git zip unzip
       - restore_cache:
           keys:
             - composer-v1-{{ checksum "composer.lock" }}
