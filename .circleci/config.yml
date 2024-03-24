@@ -3,13 +3,15 @@ version: 2.1
 jobs:
   build-php-seven-two:
     docker:
-      - image: cimg/php:7.2.34
+      - image: php:7.2-cli
     steps:
       - checkout
       - run:
           name: deps
           command: |
-            sudo pecl install mongodb
+            echo -e "extension = mongodb.so" | sudo tee /usr/local/etc/php/php.ini > /dev/null
+            sudo docker-php-ext-install pcntl sysvmsg
+            sudo pecl install mongodb && docker-php-ext-enable mongodb pcntl sysvmsg
       - restore_cache:
           keys:
             - composer-v1-{{ checksum "composer.lock" }}
