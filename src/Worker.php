@@ -634,7 +634,7 @@ class Worker
                 'pm' => $this->process,
             ]);
 
-            $interval_reference = 'end' === $job['options']['interval_reference']
+            $interval_reference = (!isset($job['options']['interval_reference']) || 'end' === $job['options']['interval_reference'])
                 ? time()
                 : $job_start_time;
 
