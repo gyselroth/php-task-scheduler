@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   build-php-seven-two:
     docker:
-      - image: cimg/php:7.2-cli
+      - image: cimg/php:7.2.34
     steps:
       - checkout
       - run:
