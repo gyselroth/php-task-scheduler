@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   build-php-seven-two:
     docker:
-      - image: circleci/php:7.2-cli
+      - image: cimg/php:7.2-cli
     steps:
       - checkout
       - run:
@@ -25,7 +25,7 @@ jobs:
            - vendor
   build-php-seven-three:
     docker:
-      - image: circleci/php:7.3-cli
+      - image: cimg/php:7.3-cli
     steps:
       - checkout
       - run:
