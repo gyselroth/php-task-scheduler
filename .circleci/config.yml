@@ -9,9 +9,9 @@ jobs:
       - run:
           name: deps
           command: |
-            echo -e "extension = mongodb.so" | sudo tee /usr/local/etc/php/php.ini > /dev/null
-            sudo docker-php-ext-install pcntl sysvmsg
-            sudo pecl install mongodb && docker-php-ext-enable mongodb pcntl sysvmsg
+            echo -e "extension = mongodb.so" | tee /usr/local/etc/php/php.ini > /dev/null
+            docker-php-ext-install pcntl sysvmsg
+            pecl install mongodb && docker-php-ext-enable mongodb pcntl sysvmsg
       - restore_cache:
           keys:
             - composer-v1-{{ checksum "composer.lock" }}
