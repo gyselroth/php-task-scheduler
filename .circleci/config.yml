@@ -9,7 +9,6 @@ jobs:
       - run:
           name: deps
           command: |
-            sudo docker-php-ext-install pcntl sysvmsg
             sudo pecl install mongodb && docker-php-ext-enable mongodb pcntl sysvmsg
       - restore_cache:
           keys:
