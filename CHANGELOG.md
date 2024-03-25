@@ -1,3 +1,18 @@
+## 4.0.16-beta2
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Mon Mar 25 13:00:00 CET 2024
+
+### Bugfix
+* Reverted changed operator on msg_receive function (4.0.16-beta1)
+* Check if array is not null before working with its content
+
+## 4.0.16-beta1
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Wed Oct 25 17:30:00 CET 2023
+
+### Bugfix
+* Changed operator on msg_receive function
+
 ## 4.0.15
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Tue Dez 13 12:00:00 CET 2022
