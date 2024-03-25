@@ -368,21 +368,23 @@ class Scheduler
                 'typeMap' => self::TYPE_MAP,
             ]);
 
-            if (
-                (($document['options'] !== [] && $document['options'] !== null) && array_intersect_key($document['options'], $requested) !== $requested)
-                || ($document['data'] !== [] && $data !== $document['data'] && true === $options[self::OPTION_IGNORE_DATA])
-            ) {
-                $this->logger->debug('job ['.$document['_id'].'] options/data changed, reschedule new job', [
-                    'category' => get_class($this),
-                    'data' => $data,
-                ]);
+            if ($document !== [] && $document !== null) {
+                if (
+                    (($document['options'] !== [] && $document['options'] !== null) && array_intersect_key($document['options'], $requested) !== $requested)
+                    || ($document['data'] !== [] && $data !== $document['data'] && true === $options[self::OPTION_IGNORE_DATA])
+                ) {
+                    $this->logger->debug('job [' . $document['_id'] . '] options/data changed, reschedule new job', [
+                        'category' => get_class($this),
+                        'data'     => $data,
+                    ]);
 
-                $this->cancelJob($document['_id']);
+                    $this->cancelJob($document['_id']);
 
-                return $this->addJobOnce($class, $data, $options);
+                    return $this->addJobOnce($class, $data, $options);
+                }
+
+                return new Process($document, $this);
             }
-
-            return new Process($document, $this);
         }
 
         $this->logger->debug('queue job ['.$result->getUpsertedId().'] added to ['.$class.']', [
