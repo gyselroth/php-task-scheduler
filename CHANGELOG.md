@@ -1,3 +1,10 @@
+## 4.0.16-beta3
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Mon Mar 25 16:45:00 CET 2024
+
+### Bugfix
+* Check if job exists before adding again
+
 ## 4.0.16-beta2
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Mon Mar 25 13:00:00 CET 2024
