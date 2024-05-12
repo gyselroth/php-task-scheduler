@@ -1,3 +1,10 @@
+## 4.0.16-beta4
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Sun May 12 14:45:00 CET 2024
+
+### Bugfix
+* Check if job is found before returning new process
+
 ## 4.0.16-beta3
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Mon Mar 25 16:45:00 CET 2024
