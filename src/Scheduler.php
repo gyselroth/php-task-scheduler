@@ -336,7 +336,7 @@ class Scheduler
     /**
      * Only add job if not in queue yet.
      */
-    public function addJobOnce(string $class, $data, array $options = []): Process
+    public function addJobOnce(string $class, $data, array $options = []): ?Process
     {
         $filter = [
             'class' => $class,
@@ -397,7 +397,9 @@ class Scheduler
             'typeMap' => self::TYPE_MAP,
         ]);
 
-        return new Process($document, $this);
+        return ($document === null || $document === [])
+            ? null
+            : new Process($document, $this);
     }
 
     /**
