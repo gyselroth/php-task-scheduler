@@ -46,7 +46,7 @@
 **Date**: Tue Nov 22 12:45:00 CET 2022
 
 ### Change
-* Set parent job state to failed when orphaned child job is updated 
+* Set parent job state to failed when orphaned child job is updated
 
 ## 4.0.12
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
@@ -61,13 +61,13 @@
 
 ### Bugfix
 * changed flag option at msg_receive
- 
+
 ## 4.0.10
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Fri Oct 14 16:45:00 CET 2022
 
 ### Bugfix
-* check option and data before updating an existing job 
+* check option and data before updating an existing job
 
 ## 4.0.9
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
