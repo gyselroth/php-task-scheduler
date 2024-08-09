@@ -1,3 +1,25 @@
+## 4.0.16-beta4
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Sun May 12 14:45:00 CET 2024
+
+### Bugfix
+* Check if job is found before returning new process
+
+## 4.0.16-beta3
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Mon Mar 25 16:45:00 CET 2024
+
+### Bugfix
+* Check if job exists before adding again
+
+## 4.0.16-beta2
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Mon Mar 25 13:00:00 CET 2024
+
+### Bugfix
+* Reverted changed operator on msg_receive function (4.0.16-beta1)
+* Check if array is not null before working with its content
+
 ## 4.0.16-beta1
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Wed Oct 25 17:30:00 CET 2023
@@ -5,12 +27,82 @@
 ### Bugfix
 * Changed operator on msg_receive function
 
-## 4.0.15-beta1
+## 4.0.15
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
-**Date**: Thu Dec 08 18:45:00 CET 2022
+**Date**: Tue Dez 13 12:00:00 CET 2022
 
 ### Bugfix
-* Check if job notification already has been sent 
+* check if job notification already has been sent
+
+## 4.0.14
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Fri Nov 25 11:15:00 CET 2022
+
+### Bugfix
+* set child job state to canceled when ignoring it
+
+## 4.0.13
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Tue Nov 22 12:45:00 CET 2022
+
+### Change
+* Set parent job state to failed when orphaned child job is updated 
+
+## 4.0.12
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Tue Nov 22 09:30:00 CET 2022
+
+### Feature
+* Check Job class for notification method when job status changes
+
+## 4.0.11
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Mon Oct 24 14:50:00 CET 2022
+
+### Bugfix
+* changed flag option at msg_receive
+ 
+## 4.0.10
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Fri Oct 14 16:45:00 CET 2022
+
+### Bugfix
+* check option and data before updating an existing job 
+
+## 4.0.9
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Mon Sep 05 15:10:00 CET 2022
+
+### Bugfix
+* added MSG_NOERROR flag
+
+## 4.0.8
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Mon July 18 14:15:00 CET 2022
+
+### Bugfix
+* search job with correct filter
+
+## 4.0.7
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Mon July 18 12:00:00 CET 2022
+
+### Bugfix
+* defined undefined variable
+
+## 4.0.6
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Tue July 05 11:25:00 CET 2022
+
+### Bugfix
+* check if orphaned job is already re-scheduled
+
+## 4.0.5
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Thu July 01 12:10:00 CET 2022
+
+### Bugfix
+* re-schedule job when worker is not available anymore
 
 ## 4.0.4
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
