@@ -42,6 +42,12 @@ class Queue
     public const OPTION_WAITING_JOBS_FOR_ENDLESS_WORKER = 'waiting_jobs_for_endless_worker';
 
     /**
+     * Check whether a waiting job is running longer than defined time. If a waiting job runs longer and
+     * no job is running restart WorkerManager.
+     */
+    public const OPTION_WAITING_TIME_FOR_ENDLESS_WORKER = 'waiting_time_for_endless_worker';
+
+    /**
      * Database.
      *
      * @var Database
@@ -112,6 +118,28 @@ class Queue
     protected $waiting_jobs_for_endless_worker = 5;
 
     /**
+     * Check whether a waiting job is running longer than defined time. If a waiting job runs longer and
+     * no job is running restart WorkerManager.
+     *
+     * @var int
+     */
+    protected $waiting_time_for_endless_worker = 900;
+
+    /**
+     * Are there waiting jobs without processing jobs.
+     *
+     * @var bool
+     */
+    protected $waiting_jobs_without_processing = false;
+
+    /**
+     * Jobs with waiting status that have run into timeout.
+     *
+     * @var array
+     */
+    protected $waiting_jobs = [];
+
+    /**
      * Init queue.
      */
     public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter = null, array $config = [], ?ContainerInterface $container = null)
@@ -135,6 +163,7 @@ class Queue
                 case self::OPTION_ORPHANED_TIMEOUT:
                 case self::OPTION_ENDLESS_WORKER_TIMEOUT:
                 case self::OPTION_WAITING_JOBS_FOR_ENDLESS_WORKER:
+                case self::OPTION_WAITING_TIME_FOR_ENDLESS_WORKER:
                     if (!is_int($value)) {
                         throw new InvalidArgumentException($option.' needs to be an integer');
                     }
@@ -412,31 +441,53 @@ class Queue
             'category' => get_class($this),
         ]);
 
-        $waiting = $this->db->{$this->scheduler->getJobQueue()}->find([
+        $waiting_jobs = $this->db->{$this->scheduler->getJobQueue()}->find([
             'status' => JobInterface::STATUS_WAITING,
         ])->toArray();
 
-        $processing = $this->db->{$this->scheduler->getJobQueue()}->find([
+        $processing_jobs = $this->db->{$this->scheduler->getJobQueue()}->find([
             'status' => JobInterface::STATUS_PROCESSING,
         ])->toArray();
 
-        $waiting = count($waiting);
-        $processing = count($processing);
+        $number_of_waiting_jobs = count($waiting_jobs);
+        $number_of_processing_jobs = count($processing_jobs);
 
         $this->logger->debug('found [{jobs_waiting}] waiting jobs and [{jobs_processing}] processing jobs', [
             'category' => get_class($this),
-            'jobs_waiting' => $waiting,
-            'jobs_processing' => $processing,
+            'jobs_waiting' => $number_of_waiting_jobs,
+            'jobs_processing' => $number_of_processing_jobs,
         ]);
 
-        if ($waiting > $this->waiting_jobs_for_endless_worker && 0 === $processing) {
-            $this->db->{$this->scheduler->getJobQueue()}->updateMany([
-                'status' => JobInterface::STATUS_WAITING,
-            ], [
-                '$set' => ['status' => JobInterface::STATUS_FAILED, 'worker' => null],
-            ]);
+        if ($number_of_waiting_jobs > $this->waiting_jobs_for_endless_worker && 0 === $number_of_processing_jobs) {
+            $this->endWaitingJobsAndEndWorkerManager();
+        } elseif ($number_of_waiting_jobs > 0 && 0 === $number_of_processing_jobs) {
+            foreach ($waiting_jobs as $job) {
+                if (($job['started']) !== null) {
+                    $started = $job['started']->toDateTime()->getTimestamp();
 
-            $this->exitWorkerManager(SIGCHLD, ['pid' => $this->manager_pid]);
+                    if ((time() - $started) > $this->waiting_time_for_endless_worker) {
+                        if ($this->waiting_jobs_without_processing) {
+                            if (in_array($job['_id'], $this->waiting_jobs)) {
+                                $this->logger->warning('found same waiting job with id ['.(string)$job['_id'].'] after ['.$this->waiting_time_for_endless_worker.'s] without processing jobs. exit WorkerManager.');
+
+                                $this->endWaitingJobsAndEndWorkerManager();
+                            } else {
+                                $this->logger->warning('found waiting job ['.(string)$job['_id'].'] without processing jobs. check again after '.$this->waiting_time_for_endless_worker.'s');
+
+                                $this->waiting_jobs[] = (string)$job['_id'];
+                                $this->waiting_jobs_without_processing = true;
+                            }
+                        } else {
+                            $this->logger->warning('found waiting job ['.(string)$job['_id'].'] without processing jobs. check again after '.$this->waiting_time_for_endless_worker.'s');
+
+                            $this->waiting_jobs[] = (string)$job['_id'];
+                            $this->waiting_jobs_without_processing = true;
+                        }
+                    } else {
+                        $this->logger->info('found waiting job ['.(string)$job['_id'].'] without processing job. but waiting job timeout is not reached.');
+                    }
+                }
+            }
         }
 
         return $this;
@@ -467,5 +518,19 @@ class Queue
         pcntl_signal(SIGCHLD, [$this, 'exitWorkerManager']);
 
         return $this;
+    }
+
+    /*
+     * Fail waiting jobs and exit WorkerManager
+     */
+    protected function endWaitingJobsAndEndWorkerManager(): void
+    {
+        $this->db->{$this->scheduler->getJobQueue()}->updateMany([
+            'status' => JobInterface::STATUS_WAITING,
+        ], [
+            '$set' => ['status' => JobInterface::STATUS_FAILED, 'worker' => null],
+        ]);
+
+        $this->exitWorkerManager(SIGCHLD, ['pid' => $this->manager_pid]);
     }
 }
