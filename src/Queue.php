@@ -472,13 +472,13 @@ class Queue
 
                                 $this->endWaitingJobsAndEndWorkerManager();
                             } else {
-                                $this->logger->warning('found waiting job ['.(string)$job['_id'].'] without processing jobs. check again after '.$this->waiting_time_for_endless_worker.'s');
+                                $this->logger->warning('found waiting job ['.(string)$job['_id'].'] without processing jobs. check again after '.$this->endless_worker_timeout.'s');
 
                                 $this->waiting_jobs[] = (string)$job['_id'];
                                 $this->waiting_jobs_without_processing = true;
                             }
                         } else {
-                            $this->logger->warning('found waiting job ['.(string)$job['_id'].'] without processing jobs. check again after '.$this->waiting_time_for_endless_worker.'s');
+                            $this->logger->warning('found waiting job ['.(string)$job['_id'].'] without processing jobs. check again after '.$this->endless_worker_timeout.'s');
 
                             $this->waiting_jobs[] = (string)$job['_id'];
                             $this->waiting_jobs_without_processing = true;
