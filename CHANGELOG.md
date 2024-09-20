@@ -1,3 +1,10 @@
+## 4.0.17
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Fri Sep 20 11:30:00 CET 2024
+
+### Change
+* Check if there are waiting jobs running into a timeout without any processing jobs
+
 ## 4.0.16-beta4
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Sun May 12 14:45:00 CET 2024
