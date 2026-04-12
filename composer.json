@@ -25,7 +25,7 @@
         "ext-pcntl": "*",
         "ext-posix": "*",
         "ext-sysvmsg": "*",
-        "mongodb/mongodb": "2.2.*",
+        "mongodb/mongodb": "^1.4.0",
         "league/event": "^2.2"
     },
     "repositories": [
@@ -37,7 +37,7 @@
     "require-dev": {
         "phpunit/phpunit": "^8.5",
         "friendsofphp/php-cs-fixer": "*",
-        "helmich/mongomock": "dev-master#efba2b3",
-        "phpstan/phpstan": "2.1.*"
+        "helmich/mongomock": "dev-master#6925c67",
+        "phpstan/phpstan": "^0.8.5"
     }
 }
