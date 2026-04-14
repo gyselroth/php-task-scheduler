@@ -1,60 +1,60 @@
-version: 2.1
+#version: 2.1
 
-jobs:
-  build-php-seven-two:
-    docker:
-      - image: php:7.2-cli
-    steps:
-      - checkout
-      - run:
-          name: deps
-          command: |
-            docker-php-ext-install pcntl sysvmsg
-            pecl install mongodb-1.16.2 && docker-php-ext-enable mongodb pcntl sysvmsg
-            echo -e "extension = mongodb.so" | tee /usr/local/etc/php/php.ini > /dev/null
-            curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-            apt-get update -y
-            apt-get install -y git zip unzip
-      - restore_cache:
-          keys:
-            - composer-v1-{{ checksum "composer.lock" }}
-            - composer-v1-
-      - run:
-          name: make
-          command: make
-      - save_cache:
-         key: composer-v1-{{ checksum "composer.lock" }}
-         paths:
-           - vendor
-  build-php-seven-three:
-    docker:
-      - image: php:7.3-cli
-    steps:
-      - checkout
-      - run:
-          name: deps
-          command: |
-            docker-php-ext-install pcntl sysvmsg
-            pecl install mongodb-1.16.2 && docker-php-ext-enable mongodb pcntl sysvmsg
-            echo -e "extension = mongodb.so" | tee /usr/local/etc/php/php.ini > /dev/null
-            curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-            apt-get update -y
-            apt-get install -y git zip unzip
-      - restore_cache:
-          keys:
-            - composer-v1-{{ checksum "composer.lock" }}
-            - composer-v1-
-      - run:
-          name: make
-          command: make
-      - save_cache:
-          key: composer-v1-{{ checksum "composer.lock" }}
-          paths:
-            - vendor
+#jobs:
+#  build-php-seven-two:
+#    docker:
+#      - image: php:7.2-cli
+#    steps:
+#      - checkout
+#      - run:
+#          name: deps
+#          command: |
+#            docker-php-ext-install pcntl sysvmsg
+#            pecl install mongodb-1.16.2 && docker-php-ext-enable mongodb pcntl sysvmsg
+#            echo -e "extension = mongodb.so" | tee /usr/local/etc/php/php.ini > /dev/null
+#            curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+#            apt-get update -y
+#            apt-get install -y git zip unzip
+#      - restore_cache:
+#          keys:
+#            - composer-v1-{{ checksum "composer.lock" }}
+#            - composer-v1-
+#      - run:
+#          name: make
+#          command: make
+#      - save_cache:
+#         key: composer-v1-{{ checksum "composer.lock" }}
+#         paths:
+#           - vendor
+#  build-php-seven-three:
+#    docker:
+#      - image: php:7.3-cli
+#    steps:
+#      - checkout
+#      - run:
+#          name: deps
+#          command: |
+#            docker-php-ext-install pcntl sysvmsg
+#            pecl install mongodb-1.16.2 && docker-php-ext-enable mongodb pcntl sysvmsg
+#            echo -e "extension = mongodb.so" | tee /usr/local/etc/php/php.ini > /dev/null
+#            curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+#            apt-get update -y
+#            apt-get install -y git zip unzip
+#      - restore_cache:
+#          keys:
+#            - composer-v1-{{ checksum "composer.lock" }}
+#            - composer-v1-
+#      - run:
+#          name: make
+#          command: make
+#      - save_cache:
+#          key: composer-v1-{{ checksum "composer.lock" }}
+#          paths:
+#            - vendor
 
-workflows:
-  version: 2
-  build:
-    jobs:
-      - build-php-seven-two
-      - build-php-seven-three
+#workflows:
+#  version: 2
+#  build:
+#    jobs:
+#      - build-php-seven-two
+#      - build-php-seven-three
