@@ -25,7 +25,7 @@
         "ext-pcntl": "*",
         "ext-posix": "*",
         "ext-sysvmsg": "*",
-        "mongodb/mongodb": "^1.4.0",
+        "mongodb/mongodb": "^2.2",
         "league/event": "^2.2"
     },
     "repositories": [
