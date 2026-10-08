@@ -664,12 +664,25 @@ class WorkerManager
             return false;
         }
 
-        return @msg_send(
+        $sent = @msg_send(
             $this->queue,
             $type,
             $message,
             true,
             true
         );
+
+        if (!$sent) {
+            $this->logger->error(
+                'failed to send worker-manager message',
+                [
+                    'category' => get_class($this),
+                    'type' => $type,
+                    'message' => $message,
+                ]
+            );
+        }
+
+        return $sent;
     }
 }

@@ -216,9 +216,14 @@ class Scheduler
         );
 
         if ($result->getMatchedCount() !== 1) {
-            throw new JobNotFoundException(
-                'job ' . $id . ' was not found'
-            );
+            if (!$this->jobExists($id)) {
+                throw new JobNotFoundException(
+                    'job ' . $id . ' was not found'
+                );
+            }
+
+            // The job exists, but it has already reached a terminal state.
+            return false;
         }
 
         return true;
@@ -405,6 +410,25 @@ class Scheduler
 
         $collection = $this->db->{$this->getJobQueue()};
 
+        // Establish the change-stream resume point before reading current state.
+        // A job completing between the read and watch creation would otherwise
+        // be missed and waitFor() could block indefinitely.
+        $cursor = $collection->watch(
+            [
+                [
+                    '$match' => [
+                        'fullDocument._id' => [
+                            '$in' => $jobs,
+                        ],
+                    ],
+                ],
+            ],
+            [
+                'fullDocument' => 'updateLookup',
+                'maxAwaitTimeMS' => 1000,
+            ]
+        );
+
         /*
          * First check the current state. Otherwise waitFor() can wait
          * forever when the job already finished before watch() started.
@@ -449,22 +473,6 @@ class Scheduler
         if (count($doneIds) >= count($jobs)) {
             return $this;
         }
-
-        $cursor = $collection->watch(
-            [
-                [
-                    '$match' => [
-                        'fullDocument._id' => [
-                            '$in' => $jobs,
-                        ],
-                    ],
-                ],
-            ],
-            [
-                'fullDocument' => 'updateLookup',
-                'maxAwaitTimeMS' => 1000,
-            ]
-        );
 
         $cursor->rewind();
 
@@ -748,10 +756,14 @@ class Scheduler
         int $status
     ): UpdateResult {
         return $this->db->{$this->job_queue}->updateOne(
-            ['_id' => $id],
+            [
+                '_id' => $id,
+                'status' => ['$in' => JobInterface::PENDING_JOBS],
+            ],
             [
                 '$set' => [
                     'status' => $status,
+                    'ended' => new UTCDateTime(),
                 ],
             ]
         );
