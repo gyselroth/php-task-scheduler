@@ -74,9 +74,14 @@ class SchedulerValidator
                         );
                     }
 
-                    if ($value < 0) {
+                    /*
+                     * 0  = no retries
+                     * >0 = a limited number of retries
+                     * -1 = unlimited retries
+                     */
+                    if ($value < -1) {
                         throw new InvalidArgumentException(
-                            'option ' . $option . ' must not be negative'
+                            'option ' . $option . ' must be -1 or a non-negative integer'
                         );
                     }
 

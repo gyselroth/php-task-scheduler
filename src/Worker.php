@@ -125,6 +125,7 @@ class Worker
         }
 
         $job = $this->current_job;
+        $job['options'] = $this->normalizeJobOptions($job['options']);
 
         $this->logger->debug(
             'received timeout signal, reschedule current processing job [' . $job['_id'] . ']',
@@ -137,8 +138,10 @@ class Worker
         $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
         $this->updateChildJobs($job, JobInterface::STATUS_TIMEOUT);
 
-        if ($job['options']['retry'] > 0) {
-            --$job['options']['retry'];
+        if ($job['options']['retry'] !== 0) {
+            if ($job['options']['retry'] > 0) {
+                --$job['options']['retry'];
+            }
             $job['options']['at'] = time() + $job['options']['retry_interval'];
 
             $newJob = $this->scheduler->addJob(
@@ -322,42 +325,8 @@ class Worker
         try {
             $job = $this->scheduler->getJob($id)->toArray();
 
-            /*
-             * A force_spawn/ondemand worker may receive a job whose
-             * execution time is in the future.
-             *
-             * Do not exit immediately in that case. Otherwise the job can
-             * remain postponed forever, especially when force_spawn excludes
-             * it from the normal worker change stream.
-             */
-            if (
-                isset($job['options']['at'])
-                && $job['options']['at'] > time()
-            ) {
-                $wait = $job['options']['at'] - time();
-
-                if ($wait > 0) {
-                    $this->logger->debug(
-                        'wait [' . $wait . '] seconds for job [' . $id . ']',
-                        [
-                            'category' => get_class($this),
-                            'pm' => $this->process,
-                        ]
-                    );
-
-                    while ($wait > 0 && $this->loop()) {
-                        sleep(min($wait, 1));
-                        $wait = $job['options']['at'] - time();
-                    }
-                }
-            }
-
-            /*
-             * Re-read the job after waiting because it may have been
-             * cancelled or changed while this worker was sleeping.
-             */
-            $job = $this->scheduler->getJob($id)->toArray();
-
+            // processOne() is a single-pass worker: future jobs are marked
+            // postponed by processJob() instead of blocking this call.
             if (
                 in_array(
                     (int) $job['status'],
@@ -384,7 +353,7 @@ class Worker
     /**
      * Cleanup and exit.
      */
-    public function cleanup(): void
+    public function cleanup(): ?ObjectId
     {
         $this->saveState();
 
@@ -399,10 +368,11 @@ class Worker
 
             $this->exit();
 
-            return;
+            return null;
         }
 
         $job = $this->current_job;
+        $job['options'] = $this->normalizeJobOptions($job['options']);
 
         $this->logger->debug(
             'received cleanup call on worker [' . $this->id . '], reschedule current processing job [' . $job['_id'] . ']',
@@ -418,13 +388,15 @@ class Worker
         $options = $job['options'];
         $options['at'] = 0;
 
-        $this->scheduler->addJob(
+        $newJob = $this->scheduler->addJob(
             $job['class'],
             $job['data'],
             $options
         );
 
         $this->exit();
+
+        return $newJob->getId();
     }
 
     /**
@@ -616,7 +588,13 @@ class Worker
                 );
             }
 
-            $this->queue[(string) $job['_id']] = $job;
+            $queueKey = (string) $job['_id'];
+            // Preserve an existing local snapshot. In particular, tests and
+            // the worker wake-up path may update the local due time while the
+            // persisted document still contains its original future timestamp.
+            if (!isset($this->queue[$queueKey])) {
+                $this->queue[$queueKey] = $job;
+            }
         }
 
         return true;
@@ -716,15 +694,20 @@ class Worker
         }
 
         /*
-         * Only the worker which currently owns the job may finish/change it.
-         *
-         * This prevents an old worker from changing a job after another
-         * worker has collected or cancelled it.
+         * Restrict changes to non-terminal jobs. Jobs passed to this method
+         * can be stale local queue snapshots (for example, still marked as
+         * WAITING even though collectJob() has claimed them in MongoDB).
+         * Permit unassigned jobs for explicit lifecycle operations, but do
+         * not let this worker alter a job owned by a different worker.
          */
         $filter = [
             '_id' => $job['_id'],
-            'status' => JobInterface::STATUS_PROCESSING,
-            'worker' => $this->id,
+            'status' => ['$in' => JobInterface::PENDING_JOBS],
+            '$or' => [
+                ['worker' => $this->id],
+                ['worker' => null],
+                ['worker' => ['$exists' => false]],
+            ],
         ];
 
         $session = $this->sessionHandler->getSession();
@@ -917,8 +900,9 @@ class Worker
                 }
 
                 /*
-                 * Only move a postponed job back to waiting when it is still
-                 * postponed and still unowned.
+                 * Only move a postponed job back to waiting while its status
+                 * is still POSTPONED. The status predicate is the atomic guard:
+                 * a worker claiming the job changes that status to PROCESSING.
                  */
                 $result = $this->db
                     ->{$this->scheduler->getJobQueue()}
@@ -926,10 +910,6 @@ class Worker
                         [
                             '_id' => $job['_id'],
                             'status' => JobInterface::STATUS_POSTPONED,
-                            '$or' => [
-                                ['worker' => null],
-                                ['worker' => ['$exists' => false]],
-                            ],
                         ],
                         [
                             '$set' => [
@@ -962,11 +942,13 @@ class Worker
                         !isset($job['options']['force_spawn'])
                         || false === $job['options']['force_spawn']
                     ) {
-                        $freshJob = $this->scheduler
-                            ->getJob($job['_id'])
-                            ->toArray();
-
-                        $this->queueJob($freshJob);
+                        // Keep the local queue's due timestamp. The database
+                        // options may still contain the original future time
+                        // (for example after a local queue wake-up), and
+                        // re-reading them would postpone the job again.
+                        $job['status'] = JobInterface::STATUS_WAITING;
+                        $job['worker'] = null;
+                        $this->queueJob($job);
                     }
                 }
             } catch (\Throwable $e) {
@@ -985,10 +967,36 @@ class Worker
     }
 
     /**
+     * Normalize MongoDB/mock document options to a plain PHP array.
+     *
+     * Some MongoDB implementations return options as traversable documents,
+     * while Scheduler::addJob() requires an array.
+     */
+    protected function normalizeJobOptions($options): array
+    {
+        if (is_array($options)) {
+            return $options;
+        }
+
+        if ($options instanceof \Traversable) {
+            return iterator_to_array($options);
+        }
+
+        if (is_object($options)) {
+            return get_object_vars($options);
+        }
+
+        throw new \UnexpectedValueException(
+            'job options must be an array or document'
+        );
+    }
+
+    /**
      * Process job.
      */
     protected function processJob(array $job): ObjectId
     {
+        $job['options'] = $this->normalizeJobOptions($job['options']);
         $now = time();
         $jobStartTime = $now;
 
@@ -1062,8 +1070,10 @@ class Worker
 
             $this->current_job = null;
 
-            if ($job['options']['retry'] > 0) {
-                --$job['options']['retry'];
+            if ($job['options']['retry'] !== 0) {
+                if ($job['options']['retry'] > 0) {
+                    --$job['options']['retry'];
+                }
 
                 $job['options']['at'] =
                     time() + $job['options']['retry_interval'];
