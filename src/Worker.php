@@ -547,12 +547,9 @@ class Worker
                         $set['notification_sent'] = true;
                     }
                 } else {
-                    $this->logger->info(
-                        'method notification() does not exist on instance',
-                        [
-                            'category' => get_class($this),
-                        ]
-                    );
+                    $this->logger->info('method notification() does not exist on instance', [
+                        'category' => get_class($this),
+                    ]);
                 }
             }
 
@@ -567,27 +564,20 @@ class Worker
         } catch (\Throwable $e) {
             $session->abortTransaction();
 
-            $this->logger->error(
-                'failed to update job [' . $job['_id'] . ']',
-                [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                    'exception' => $e,
-                ]
-            );
+            $this->logger->error('failed to update job [' . $job['_id'] . ']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+                'exception' => $e,
+            ]);
 
             return false;
         }
 
         if ($result->getModifiedCount() >= 1) {
-            $this->logger->debug(
-                'updated job [' . $job['_id'] .
-                '] with status [' . $status . ']',
-                [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                ]
-            );
+            $this->logger->debug('updated job [' . $job['_id'] . '] with status [' . $status . ']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
         }
 
         return $result->isAcknowledged();
@@ -622,29 +612,20 @@ class Worker
         } catch (\Throwable $e) {
             $session->abortTransaction();
 
-            $this->logger->error(
-                'failed to update child jobs for parent [' .
-                $job['_id'] . ']',
-                [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                    'exception' => $e,
-                ]
-            );
+            $this->logger->error('failed to update child jobs for parent [' . $job['_id'] . ']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+                'exception' => $e,
+            ]);
 
             return false;
         }
 
         if ($result->getModifiedCount() >= 1) {
-            $this->logger->debug(
-                'updated [' . $result->getModifiedCount() .
-                '] child jobs for parent job [' . $job['_id'] .
-                '] with status [' . $status . ']',
-                [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                ]
-            );
+            $this->logger->debug('updated [' . $result->getModifiedCount() . '] child jobs for parent job [' . $job['_id'] . '] with status [' . $status . ']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
         }
 
         return $result->isAcknowledged();
@@ -682,14 +663,10 @@ class Worker
                     continue;
                 }
 
-                $this->logger->info(
-                    'postponed job [' . $job['_id'] . '] [' .
-                    $job['class'] . '] can now be executed',
-                    [
-                        'category' => get_class($this),
-                        'pm' => $this->process,
-                    ]
-                );
+                $this->logger->info('postponed job [' . $job['_id'] . '] [' . $job['class'] . '] can now be executed', [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]);
 
                 unset($this->queue[$key]);
 
@@ -718,14 +695,10 @@ class Worker
                 $session->commitTransaction();
 
                 if (1 === $result->getModifiedCount()) {
-                    $this->logger->info(
-                        'set job status of job [' . $job['_id'] .
-                        '] to waiting by worker [' . $this->id . ']',
-                        [
-                            'category' => get_class($this),
-                            'pm' => $this->process,
-                        ]
-                    );
+                    $this->logger->info('set job status of job [' . $job['_id'] . '] to waiting by worker [' . $this->id . ']', [
+                        'category' => get_class($this),
+                        'pm' => $this->process,
+                    ]);
                 }
             } catch (\Throwable $e) {
                 try {
@@ -733,15 +706,11 @@ class Worker
                 } catch (\Throwable $ignored) {
                 }
 
-                $this->logger->error(
-                    'failed to process postponed job [' .
-                    $job['_id'] . ']',
-                    [
-                        'category' => get_class($this),
-                        'pm' => $this->process,
-                        'exception' => $e,
-                    ]
-                );
+                $this->logger->error('failed to process postponed job [' . $job['_id'] . ']', [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                    'exception' => $e,
+                ]);
             }
         }
 
@@ -765,31 +734,22 @@ class Worker
 
             $this->queue[(string) $job['_id']] = $job;
 
-            $this->logger->debug(
-                'execution of job [' . $job['_id'] . '] [' .
-                $job['class'] . '] is postponed at [' .
-                $job['options']['at'] . ']',
-                [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                ]
-            );
+            $this->logger->debug('execution of job [' . $job['_id'] . '] [' . $job['class'] . '] is postponed at [' . $job['options']['at'] . ']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
 
             $this->removeWorker($job);
 
             return $job['_id'];
         }
 
-        $this->logger->debug(
-            'execute job [' . $job['_id'] . '] [' .
-            $job['class'] . '] on worker [' . $this->id . ']',
-            [
-                'category' => get_class($this),
-                'pm' => $this->process,
-                'options' => $job['options'],
-                'params' => $job['data'],
-            ]
-        );
+        $this->logger->debug('execute job [' . $job['_id'] . '] [' . $job['class'] . '] on worker [' . $this->id . ']', [
+            'category' => get_class($this),
+            'pm' => $this->process,
+            'options' => $job['options'],
+            'params' => $job['data'],
+        ]);
 
         $this->current_job = $job;
 
@@ -803,16 +763,11 @@ class Worker
         } catch (\Throwable $e) {
             pcntl_alarm(0);
 
-            $this->logger->error(
-                'failed execute job [' . $job['_id'] .
-                '] of type [' . $job['class'] .
-                '] on worker [' . $this->id . ']',
-                [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                    'exception' => $e,
-                ]
-            );
+            $this->logger->error('failed execute job [' . $job['_id'] . '] of type [' . $job['class'] . '] on worker [' . $this->id . ']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+                'exception' => $e,
+            ]);
 
             $this->updateJob(
                 $job,
@@ -822,15 +777,10 @@ class Worker
             $this->current_job = null;
 
             if (0 !== $job['options']['retry']) {
-                $this->logger->debug(
-                    'failed job [' . $job['_id'] .
-                    '] has a retry interval of [' .
-                    $job['options']['retry'] . ']',
-                    [
-                        'category' => get_class($this),
-                        'pm' => $this->process,
-                    ]
-                );
+                $this->logger->debug('failed job [' . $job['_id'] . '] has a retry interval of [' . $job['options']['retry'] . ']', [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]);
 
                 --$job['options']['retry'];
                 $job['options']['at'] =
@@ -849,15 +799,10 @@ class Worker
         pcntl_alarm(0);
 
         if ($job['options']['interval'] > 0) {
-            $this->logger->debug(
-                'job [' . $job['_id'] .
-                '] has an interval of [' .
-                $job['options']['interval'] . 's]',
-                [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                ]
-            );
+            $this->logger->debug('job [' . $job['_id'] . '] has an interval of [' . $job['options']['interval'] . 's]', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
 
             $interval_reference =
                 (
@@ -880,14 +825,10 @@ class Worker
         }
 
         if ($job['options']['interval'] <= -1) {
-            $this->logger->debug(
-                'job [' . $job['_id'] .
-                '] has an endless interval',
-                [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                ]
-            );
+            $this->logger->debug('job [' . $job['_id'] . '] has an endless interval', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
 
             unset($job['options']['at']);
 
@@ -962,13 +903,9 @@ class Worker
     {
         foreach ($this->scheduler->getChildProcs($jobId) as $proc) {
             if (JobInterface::STATUS_TIMEOUT === $proc->getStatus()) {
-                $this->logger->info(
-                    'child job with id [' . $proc->getId() .
-                    '] timed out',
-                    [
-                        'category' => get_class($this),
-                    ]
-                );
+                $this->logger->info('child job with id [' . $proc->getId() . '] timed out', [
+                    'category' => get_class($this),
+                ]);
 
                 throw new JobTimeout(
                     'child job timed out'
@@ -976,13 +913,9 @@ class Worker
             }
 
             if (JobInterface::STATUS_FAILED === $proc->getStatus()) {
-                $this->logger->info(
-                    'child job with id [' . $proc->getId() .
-                    '] failed',
-                    [
-                        'category' => get_class($this),
-                    ]
-                );
+                $this->logger->info('child job with id [' . $proc->getId() . '] failed', [
+                    'category' => get_class($this),
+                ]);
 
                 throw new ChildJobFailure(
                     'child job failed'
@@ -1020,27 +953,20 @@ class Worker
         } catch (\Throwable $e) {
             $session->abortTransaction();
 
-            $this->logger->error(
-                'failed to remove worker from job [' .
-                $job['_id'] . ']',
-                [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                    'exception' => $e,
-                ]
-            );
+            $this->logger->error('failed to remove worker from job [' . $job['_id'] . ']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+                'exception' => $e,
+            ]);
 
             return;
         }
 
         if ($result->getModifiedCount() >= 1) {
-            $this->logger->debug(
-                'removed worker of job [' . $job['_id'] . ']',
-                [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                ]
-            );
+            $this->logger->debug('removed worker of job [' . $job['_id'] . ']', [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]);
         }
     }
 }

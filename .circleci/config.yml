@@ -13,6 +13,11 @@ jobs:
             pecl install mongodb-1.16.2 && docker-php-ext-enable mongodb pcntl sysvmsg
             echo -e "extension = mongodb.so" | tee /usr/local/etc/php/php.ini > /dev/null
             curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+            sed -i -e 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list
+            sed -i -e 's|security.debian.org|archive.debian.org/|g' /etc/apt/sources.list
+            sed -i -e '/stretch-updates/d' /etc/apt/sources.list
+
             apt-get update -y
             apt-get install -y git zip unzip
       - restore_cache:
@@ -38,6 +43,11 @@ jobs:
             pecl install mongodb-1.16.2 && docker-php-ext-enable mongodb pcntl sysvmsg
             echo -e "extension = mongodb.so" | tee /usr/local/etc/php/php.ini > /dev/null
             curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+            sed -i -e 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list
+            sed -i -e 's|security.debian.org|archive.debian.org/|g' /etc/apt/sources.list
+            sed -i -e '/stretch-updates/d' /etc/apt/sources.list
+
             apt-get update -y
             apt-get install -y git zip unzip
       - restore_cache:
