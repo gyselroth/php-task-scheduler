@@ -62,7 +62,7 @@ class Process
      */
     public function getOptions(): array
     {
-        return $this->job['options'];
+        return (array) $this->job['options'];
     }
 
     /**
