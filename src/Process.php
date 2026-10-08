@@ -62,7 +62,9 @@ class Process
      */
     public function getOptions(): array
     {
-        return (array) $this->job['options'];
+        return isset($this->job['options']) && is_array($this->job['options'])
+            ? $this->job['options']
+            : [];
     }
 
     /**
@@ -70,7 +72,7 @@ class Process
      */
     public function getClass(): string
     {
-        return $this->job['class'];
+        return (string) ($this->job['class'] ?? '');
     }
 
     /**
@@ -78,7 +80,7 @@ class Process
      */
     public function getData()
     {
-        return $this->job['data'];
+        return $this->job['data'] ?? null;
     }
 
     /**
@@ -86,14 +88,26 @@ class Process
      */
     public function getId(): ObjectId
     {
+        if (!isset($this->job['_id']) || !($this->job['_id'] instanceof ObjectId)) {
+            throw new \UnexpectedValueException('Process does not contain a valid ObjectId');
+        }
+
         return $this->job['_id'];
     }
 
     /**
-     * Restart job.
+     * Get worker ID.
      */
-    public function getWorker(): ObjectId
+    public function getWorker(): ?ObjectId
     {
+        if (!isset($this->job['worker']) || $this->job['worker'] === null) {
+            return null;
+        }
+
+        if (!$this->job['worker'] instanceof ObjectId) {
+            throw new \UnexpectedValueException('Process does not contain a valid worker ObjectId');
+        }
+
         return $this->job['worker'];
     }
 
@@ -102,13 +116,15 @@ class Process
      */
     public function getProgress(): float
     {
-        return $this->job['progress'] ?? 0.0;
+        return isset($this->job['progress'])
+            ? (float) $this->job['progress']
+            : 0.0;
     }
 
     /**
-     * Wait for job beeing executed.
+     * Wait for job being executed.
      */
-    public function wait(): Process
+    public function wait(): self
     {
         $this->scheduler->waitFor([$this], Scheduler::OPTION_THROW_EXCEPTION);
 
@@ -120,6 +136,8 @@ class Process
      */
     public function getStatus(): int
     {
-        return (int) $this->job['status'];
+        return isset($this->job['status'])
+            ? (int) $this->job['status']
+            : JobInterface::STATUS_WAITING;
     }
 }

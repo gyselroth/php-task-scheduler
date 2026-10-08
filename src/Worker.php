@@ -49,7 +49,7 @@ class Worker
     /**
      * Container.
      *
-     * @var ContainerInterface
+     * @var ContainerInterface|null
      */
     protected $container;
 
@@ -63,12 +63,12 @@ class Worker
     /**
      * Current processing job.
      *
-     * @var null|array
+     * @var array|null
      */
     protected $current_job;
 
     /**
-     * Process ID (fork posix pid).
+     * Process ID.
      *
      * @var int
      */
@@ -91,8 +91,13 @@ class Worker
     /**
      * Init worker.
      */
-    public function __construct(ObjectId $id, Scheduler $scheduler, Database $db, LoggerInterface $logger, ?ContainerInterface $container = null)
-    {
+    public function __construct(
+        ObjectId $id,
+        Scheduler $scheduler,
+        Database $db,
+        LoggerInterface $logger,
+        ?ContainerInterface $container = null
+    ) {
         $this->id = $id;
         $this->process = getmypid();
         $this->scheduler = $scheduler;
@@ -108,64 +113,71 @@ class Worker
     public function timeout(): ?ObjectId
     {
         if (null === $this->current_job) {
-            $this->logger->debug('reached worker timeout signal, no job is currently processing, ignore it', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
+            $this->logger->debug(
+                'reached worker timeout signal, no job is currently processing, ignore it',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]
+            );
 
             return null;
         }
 
-        $this->logger->debug('received timeout signal, reschedule current processing job ['.$this->current_job['_id'].']', [
-            'category' => get_class($this),
-            'pm' => $this->process,
-        ]);
-
-        $this->updateJob($this->current_job, JobInterface::STATUS_TIMEOUT);
-        $this->updateChildJobs($this->current_job, JobInterface::STATUS_TIMEOUT);
         $job = $this->current_job;
 
-        if (0 !== $job['options']['retry']) {
-            $this->logger->debug('failed job ['.$job['_id'].'] has a retry interval of ['.$job['options']['retry'].']', [
+        $this->logger->debug(
+            'received timeout signal, reschedule current processing job [' . $job['_id'] . ']',
+            [
                 'category' => get_class($this),
                 'pm' => $this->process,
-            ]);
+            ]
+        );
 
+        $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
+        $this->updateChildJobs($job, JobInterface::STATUS_TIMEOUT);
+
+        if ($job['options']['retry'] > 0) {
             --$job['options']['retry'];
             $job['options']['at'] = time() + $job['options']['retry_interval'];
-            $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
+
+            $newJob = $this->scheduler->addJob(
+                $job['class'],
+                $job['data'],
+                $job['options']
+            );
 
             $this->killProcess();
 
-            return $job->getId();
+            return $newJob->getId();
         }
 
         if ($job['options']['interval'] > 0) {
-            $this->logger->debug('job ['.$job['_id'].'] has an interval of ['.$job['options']['interval'].'s]', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
-
             $job['options']['at'] = time() + $job['options']['interval'];
-            $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
+
+            $newJob = $this->scheduler->addJob(
+                $job['class'],
+                $job['data'],
+                $job['options']
+            );
 
             $this->killProcess();
 
-            return $job->getId();
+            return $newJob->getId();
         }
 
         if ($job['options']['interval'] <= -1) {
-            $this->logger->debug('job ['.$job['_id'].'] has an endless interval', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
-
             unset($job['options']['at']);
-            $job = $this->scheduler->addJob($job['class'], $job['data'], $job['options']);
+
+            $newJob = $this->scheduler->addJob(
+                $job['class'],
+                $job['data'],
+                $job['options']
+            );
 
             $this->killProcess();
 
-            return $job->getId();
+            return $newJob->getId();
         }
 
         $this->killProcess();
@@ -174,12 +186,13 @@ class Worker
     }
 
     /**
-     * Start worker.
+     * Start worker and process all jobs.
      */
     public function processAll(): void
     {
         $this->logger->info('start job listener', [
             'category' => get_class($this),
+            'pm' => $this->process,
         ]);
 
         $this->catchSignal();
@@ -189,20 +202,58 @@ class Worker
         );
 
         /*
-         * Load jobs which already exist before opening the change stream.
+         * IMPORTANT:
          *
-         * This prevents jobs which are already in the queue from being
-         * ignored when the worker starts.
+         * Open the change stream BEFORE loading existing jobs.
+         *
+         * Otherwise a job inserted between find() and watch() can be
+         * missed completely.
          */
-        $jobs = $collection->find([
-            'worker' => null,
-            '$or' => [
-                ['status' => JobInterface::STATUS_WAITING],
-                ['status' => JobInterface::STATUS_POSTPONED],
+        $cursorWatch = $collection->watch(
+            [
+                [
+                    '$match' => [
+                        'fullDocument.options.force_spawn' => false,
+                        'fullDocument.worker' => null,
+                        '$or' => [
+                            [
+                                'fullDocument.status' =>
+                                    JobInterface::STATUS_WAITING,
+                            ],
+                            [
+                                'fullDocument.status' =>
+                                    JobInterface::STATUS_POSTPONED,
+                            ],
+                        ],
+                    ],
+                ],
             ],
-        ], [
-            'limit' => 300,
-            'typeMap' => $this->scheduler::TYPE_MAP
+            [
+                'fullDocument' => 'updateLookup',
+            ]
+        );
+
+        /*
+         * Load jobs which already existed before the worker started.
+         *
+         * Duplicates between this query and the change stream are harmless
+         * because collectJob() performs an atomic status/worker check.
+         */
+        $jobs = $collection->find(
+            [
+                'worker' => null,
+                '$or' => [
+                    [
+                        'status' => JobInterface::STATUS_WAITING,
+                    ],
+                    [
+                        'status' => JobInterface::STATUS_POSTPONED,
+                    ],
+                ],
+            ],
+            [
+                'limit' => 300,
+                'typeMap' => Scheduler::TYPE_MAP,
             ]
         )->toArray();
 
@@ -210,48 +261,37 @@ class Worker
             $this->queueJob((array) $job);
         }
 
-        /*
-         * Open the change stream after the initial queue has been loaded.
-         *
-         * MongoDB change stream cursors are tailable cursors. They should
-         * therefore not be handled like a normal finite MongoDB cursor.
-         */
-        $cursor_watch = $collection->watch([
-            [
-                '$match' => [
-                    'fullDocument.options.force_spawn' => false,
-                    'fullDocument.worker' => null,
-                    '$or' => [
-                        ['fullDocument.status' => JobInterface::STATUS_WAITING],
-                        ['fullDocument.status' => JobInterface::STATUS_POSTPONED]
-                    ]
-                ]
-            ]
-        ], ['fullDocument' => 'updateLookup']);
-
         while ($this->loop()) {
             $this->processLocalQueue();
 
             try {
-                if ($cursor_watch->valid()) {
-                    $change = $cursor_watch->current();
+                if ($cursorWatch->valid()) {
+                    $change = $cursorWatch->current();
 
                     if (null !== $change) {
                         $change = (array) $change;
 
-                        if (isset($change['fullDocument']) && null !== $change['fullDocument']) {
+                        if (
+                            isset($change['fullDocument'])
+                            && null !== $change['fullDocument']
+                        ) {
                             $this->queueJob(
                                 (array) $change['fullDocument']
                             );
                         }
                     }
 
-                    $cursor_watch->next();
+                    $cursorWatch->next();
                 } else {
-                    $cursor_watch->next();
+                    /*
+                     * Change streams are tailable/awaitable cursors.
+                     * Calling next() allows the driver to wait for new data.
+                     */
+                    $cursorWatch->next();
                 }
             } catch (\Throwable $e) {
-                $this->logger->error('failed processing MongoDB change stream',
+                $this->logger->error(
+                    'failed processing MongoDB change stream',
                     [
                         'category' => get_class($this),
                         'pm' => $this->process,
@@ -265,61 +305,126 @@ class Worker
     }
 
     /**
-     * Process one.
+     * Process exactly one job.
      */
     public function processOne(ObjectId $id): void
     {
         $this->catchSignal();
 
-        $this->logger->debug('process job ['.$id.'] and exit', [
-            'category' => get_class($this),
-        ]);
+        $this->logger->debug(
+            'process job [' . $id . '] and exit',
+            [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]
+        );
 
         try {
             $job = $this->scheduler->getJob($id)->toArray();
+
+            /*
+             * A force_spawn/ondemand worker may receive a job whose
+             * execution time is in the future.
+             *
+             * Do not exit immediately in that case. Otherwise the job can
+             * remain postponed forever, especially when force_spawn excludes
+             * it from the normal worker change stream.
+             */
+            if (
+                isset($job['options']['at'])
+                && $job['options']['at'] > time()
+            ) {
+                $wait = $job['options']['at'] - time();
+
+                if ($wait > 0) {
+                    $this->logger->debug(
+                        'wait [' . $wait . '] seconds for job [' . $id . ']',
+                        [
+                            'category' => get_class($this),
+                            'pm' => $this->process,
+                        ]
+                    );
+
+                    while ($wait > 0 && $this->loop()) {
+                        sleep(min($wait, 1));
+                        $wait = $job['options']['at'] - time();
+                    }
+                }
+            }
+
+            /*
+             * Re-read the job after waiting because it may have been
+             * cancelled or changed while this worker was sleeping.
+             */
+            $job = $this->scheduler->getJob($id)->toArray();
+
+            if (
+                in_array(
+                    (int) $job['status'],
+                    JobInterface::FAILED_JOBS,
+                    true
+                )
+            ) {
+                return;
+            }
+
             $this->queueJob($job);
         } catch (\Throwable $e) {
-            $this->logger->error('failed process job ['.$id.']', [
-                'category' => get_class($this),
-                'exception' => $e,
-            ]);
+            $this->logger->error(
+                'failed process job [' . $id . ']',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                    'exception' => $e,
+                ]
+            );
         }
     }
 
     /**
      * Cleanup and exit.
      */
-    public function cleanup()
+    public function cleanup(): void
     {
         $this->saveState();
 
         if (null === $this->current_job) {
-            $this->logger->debug('received cleanup call on worker ['.$this->id.'], no job is currently processing, exit now', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
+            $this->logger->debug(
+                'received cleanup call on worker [' . $this->id . '], no job is currently processing, exit now',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]
+            );
 
             $this->exit();
 
-            return null;
+            return;
         }
 
-        $this->logger->debug('received cleanup call on worker ['.$this->id.'], reschedule current processing job ['.$this->current_job['_id'].']', [
-            'category' => get_class($this),
-            'pm' => $this->process,
-        ]);
+        $job = $this->current_job;
 
-        $this->updateJob($this->current_job, JobInterface::STATUS_CANCELED);
-        $this->updateChildJobs($this->current_job, JobInterface::STATUS_CANCELED);
+        $this->logger->debug(
+            'received cleanup call on worker [' . $this->id . '], reschedule current processing job [' . $job['_id'] . ']',
+            [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]
+        );
 
-        $options = $this->current_job['options'];
+        $this->updateJob($job, JobInterface::STATUS_CANCELED);
+        $this->updateChildJobs($job, JobInterface::STATUS_CANCELED);
+
+        $options = $job['options'];
         $options['at'] = 0;
 
-        $result = $this->scheduler->addJob($this->current_job['class'], $this->current_job['data'], $options)->getId();
+        $this->scheduler->addJob(
+            $job['class'],
+            $job['data'],
+            $options
+        );
 
         $this->exit();
-
-        return $result;
     }
 
     /**
@@ -332,33 +437,43 @@ class Worker
         }
 
         $session = $this->sessionHandler->getSession();
-        $session->startTransaction($this->sessionHandler->getOptions());
+        $session->startTransaction(
+            $this->sessionHandler->getOptions()
+        );
 
         try {
             foreach ($this->queue as $job) {
-                $this->db->selectCollection($this->scheduler->getJobQueue())->updateOne(
-                    ['_id' => $job['_id']],
-                    ['$setOnInsert' => $job],
-                    ['upsert' => true]
-                );
+                $this->db
+                    ->selectCollection($this->scheduler->getJobQueue())
+                    ->updateOne(
+                        ['_id' => $job['_id']],
+                        ['$setOnInsert' => $job],
+                        ['upsert' => true]
+                    );
             }
 
             $session->commitTransaction();
         } catch (\Throwable $e) {
-            $session->abortTransaction();
+            try {
+                $session->abortTransaction();
+            } catch (\Throwable $ignored) {
+            }
 
-            $this->logger->error('failed to save local worker queue', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-                'exception' => $e,
-            ]);
+            $this->logger->error(
+                'failed to save local worker queue',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                    'exception' => $e,
+                ]
+            );
         }
 
         return $this;
     }
 
     /**
-     * Catch signals and cleanup.
+     * Catch signals.
      */
     protected function catchSignal(): self
     {
@@ -376,53 +491,130 @@ class Worker
      */
     protected function queueJob(array $job): bool
     {
-        if (!isset($job['_id'], $job['status'])) {
+        if (
+            !isset($job['_id'], $job['status'])
+            || !isset($job['options'])
+        ) {
             return false;
         }
 
+        /*
+         * Do not execute a child job when its parent has already failed.
+         */
         if (isset($job['data']['parent'])) {
             try {
-                $parentJob = $this->scheduler->getJob($job['data']['parent'])->toArray();
+                $parentJob = $this->scheduler
+                    ->getJob($job['data']['parent'])
+                    ->toArray();
 
-                if (in_array($parentJob['status'], JobInterface::FAILED_JOBS, true)) {
-                    $this->logger->debug('parent job ['.$parentJob['_id'].'] not running anymore. do not queue job with id: ['.$job['_id'].']', [
-                        'category' => get_class($this),
-                    ]);
-
-                    $this->db->{$this->scheduler->getJobQueue()}->updateOne(
-                        ['_id' => $job['_id']],
-                        ['$set' => ['status' => JobInterface::STATUS_CANCELED]]
+                if (
+                    in_array(
+                        (int) $parentJob['status'],
+                        JobInterface::FAILED_JOBS,
+                        true
+                    )
+                ) {
+                    $this->logger->debug(
+                        'parent job [' . $parentJob['_id'] . '] not running anymore. do not queue child job [' . $job['_id'] . ']',
+                        [
+                            'category' => get_class($this),
+                            'pm' => $this->process,
+                        ]
                     );
+
+                    $this->db
+                        ->{$this->scheduler->getJobQueue()}
+                        ->updateOne(
+                            [
+                                '_id' => $job['_id'],
+                                'status' => [
+                                    '$in' => JobInterface::PENDING_JOBS,
+                                ],
+                            ],
+                            [
+                                '$set' => [
+                                    'status' =>
+                                        JobInterface::STATUS_CANCELED,
+                                    'ended' => new UTCDateTime(),
+                                ],
+                            ]
+                        );
 
                     return false;
                 }
             } catch (\Throwable $e) {
-                $this->logger->error('failed to check parent job for job [' . $job['_id'] . ']', [
-                    'category' => get_class($this),
-                    'exception' => $e
-                ]);
+                $this->logger->error(
+                    'failed to check parent job for job [' . $job['_id'] . ']',
+                    [
+                        'category' => get_class($this),
+                        'pm' => $this->process,
+                        'exception' => $e,
+                    ]
+                );
 
                 return false;
             }
         }
 
-        $this->logger->debug('queue job ['.$job['_id'].'] in queue with status ['.$job['status'].']', [
-            'category' => get_class($this),
-        ]);
+        $this->logger->debug(
+            'queue job [' . $job['_id'] . '] in queue with status [' . $job['status'] . ']',
+            [
+                'category' => get_class($this),
+                'pm' => $this->process,
+            ]
+        );
 
-        if (true === $this->collectJob($job, JobInterface::STATUS_PROCESSING)) {
-            $this->scheduler->emitEvent($this->scheduler->getJob($job['_id']));
+        if (
+            true === $this->collectJob(
+                $job,
+                JobInterface::STATUS_PROCESSING
+            )
+        ) {
+            $this->scheduler->emitEvent(
+                $this->scheduler->getJob($job['_id'])
+            );
 
             $this->processJob($job);
 
-            $this->scheduler->emitEvent($this->scheduler->getJob($job['_id']));
-        } elseif (JobInterface::STATUS_POSTPONED === $job['status']) {
-            $this->scheduler->emitEvent($this->scheduler->getJob($job['_id']));
+            /*
+             * processJob() may have changed the job considerably.
+             * Always re-read it before emitting the final event.
+             */
+            try {
+                $this->scheduler->emitEvent(
+                    $this->scheduler->getJob($job['_id'])
+                );
+            } catch (\Throwable $e) {
+                $this->logger->warning(
+                    'failed to emit final event for job [' . $job['_id'] . ']',
+                    [
+                        'category' => get_class($this),
+                        'pm' => $this->process,
+                        'exception' => $e,
+                    ]
+                );
+            }
 
-            $this->logger->debug('found postponed job ['.$job['_id'].'] to requeue', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
+            return true;
+        }
+
+        if (
+            JobInterface::STATUS_POSTPONED === (int) $job['status']
+        ) {
+            try {
+                $this->scheduler->emitEvent(
+                    $this->scheduler->getJob($job['_id'])
+                );
+            } catch (\Throwable $e) {
+                $this->logger->warning(
+                    'failed to emit postponed event for job [' . $job['_id'] . ']',
+                    [
+                        'category' => get_class($this),
+                        'pm' => $this->process,
+                        'exception' => $e,
+                    ]
+                );
+            }
 
             $this->queue[(string) $job['_id']] = $job;
         }
@@ -431,32 +623,20 @@ class Worker
     }
 
     /**
-     * Update job status.
+     * Collect job atomically.
      */
-    protected function collectJob(array $job, int $status, $from_status = JobInterface::STATUS_WAITING): bool {
-        $this->logger->debug('try to collect job ['.$job['_id'].'] with status ['.$from_status.'] by worker ['.$this->id.']', [
-            'category' => get_class($this),
-            'pm' => $this->process,
-        ]);
-
-        $live_job = $this->db->{$this->scheduler->getJobQueue()}->findOne([
-            '_id' => $job['_id'],
-        ], [
-            'typeMap' => $this->scheduler::TYPE_MAP,
-        ]);
-
-        if (null === $live_job) {
-            return false;
-        }
-
-        if ((int) $live_job['status'] === $status || (isset($live_job['worker']) && $this->id !== $live_job['worker'])) {
-            $this->logger->debug('job ['.$job['_id'].'] is either already collected with new status ['.$status.'] or has a worker set; worker ['.$this->id.']', [
+    protected function collectJob(
+        array $job,
+        int $status,
+        int $from_status = JobInterface::STATUS_WAITING
+    ): bool {
+        $this->logger->debug(
+            'try to collect job [' . $job['_id'] . '] with status [' . $from_status . '] by worker [' . $this->id . ']',
+            [
                 'category' => get_class($this),
                 'pm' => $this->process,
-            ]);
-
-            return false;
-        }
+            ]
+        );
 
         $set = [
             'status' => $status,
@@ -471,44 +651,50 @@ class Worker
         }
 
         $session = $this->sessionHandler->getSession();
-        $session->startTransaction($this->sessionHandler->getOptions());
+        $session->startTransaction(
+            $this->sessionHandler->getOptions()
+        );
 
         try {
-            $result = $this->db->{$this->scheduler->getJobQueue()}->updateOne([
-                '_id' => $job['_id'],
-                'status' => $from_status,
-                '$or' => [
-                    ['worker' => null],
-                    ['worker' => ['$exists' => false]],
-                    ['worker' => $this->id],
-                ]
-            ], [
-                '$set' => $set,
-            ]);
+            $result = $this->db
+                ->{$this->scheduler->getJobQueue()}
+                ->updateOne(
+                    [
+                        '_id' => $job['_id'],
+                        'status' => $from_status,
+                        '$or' => [
+                            ['worker' => null],
+                            ['worker' => ['$exists' => false]],
+                            [
+                                'worker' => $this->id,
+                            ],
+                        ],
+                    ],
+                    [
+                        '$set' => $set,
+                    ]
+                );
 
             $session->commitTransaction();
         } catch (\Throwable $e) {
-            $session->abortTransaction();
+            try {
+                $session->abortTransaction();
+            } catch (\Throwable $ignored) {
+            }
 
-            $this->logger->error('failed to collect job [' . $job['_id'] . ']', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-                'exception' => $e,
-            ]);
+            $this->logger->error(
+                'failed to collect job [' . $job['_id'] . ']',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                    'exception' => $e,
+                ]
+            );
 
             return false;
         }
 
-        if (1 === $result->getModifiedCount()) {
-            $this->logger->debug('job ['.$job['_id'].'] collected; update status from ['.$live_job['status'].'] to ['.$status.'] by worker ['.$this->id.']', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
-
-            return true;
-        }
-
-        return false;
+        return 1 === $result->getModifiedCount();
     }
 
     /**
@@ -528,104 +714,180 @@ class Worker
             }
         }
 
+        /*
+         * Only the worker which currently owns the job may finish/change it.
+         *
+         * This prevents an old worker from changing a job after another
+         * worker has collected or cancelled it.
+         */
+        $filter = [
+            '_id' => $job['_id'],
+            'status' => JobInterface::STATUS_PROCESSING,
+            'worker' => $this->id,
+        ];
+
         $session = $this->sessionHandler->getSession();
-        $session->startTransaction($this->sessionHandler->getOptions());
+        $session->startTransaction(
+            $this->sessionHandler->getOptions()
+        );
 
         try {
-            if ($this->container !== null) {
-                $instance = $this->container->get($job['class']);
-                $live_job = $this->scheduler
-                    ->getJob($job['_id'])
-                    ->toArray();
-
-                if (method_exists($instance, 'notification')) {
-                    if (
-                        $job['status'] !== $status
-                        && !isset($job['notification_sent'])
-                    ) {
-                        $instance->notification($status, $live_job);
-                        $set['notification_sent'] = true;
-                    }
-                } else {
-                    $this->logger->info('method notification() does not exist on instance', [
-                        'category' => get_class($this),
-                    ]);
-                }
-            }
-
             $result = $this->db
                 ->{$this->scheduler->getJobQueue()}
                 ->updateOne(
-                    ['_id' => $job['_id']],
+                    $filter,
                     ['$set' => $set]
                 );
 
             $session->commitTransaction();
         } catch (\Throwable $e) {
-            $session->abortTransaction();
+            try {
+                $session->abortTransaction();
+            } catch (\Throwable $ignored) {
+            }
 
-            $this->logger->error('failed to update job [' . $job['_id'] . ']', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-                'exception' => $e,
-            ]);
+            $this->logger->error(
+                'failed to update job [' . $job['_id'] . ']',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                    'exception' => $e,
+                ]
+            );
 
             return false;
         }
 
-        if ($result->getModifiedCount() >= 1) {
-            $this->logger->debug('updated job [' . $job['_id'] . '] with status [' . $status . ']', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
+        if (0 === $result->getModifiedCount()) {
+            $this->logger->warning(
+                'job [' . $job['_id'] . '] was not updated because it is no longer owned by worker [' . $this->id . ']',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]
+            );
+
+            return false;
         }
 
-        return $result->isAcknowledged();
+        /*
+         * Notifications happen AFTER the database transaction.
+         *
+         * An external notification cannot be rolled back together with
+         * MongoDB, so it must not execute inside the transaction.
+         */
+        $this->notifyJob($job, $status);
+
+        return true;
     }
 
     /**
-     * Cancel child jobs.
+     * Send job notification.
+     */
+    protected function notifyJob(array $job, int $status): void
+    {
+        if (null === $this->container) {
+            return;
+        }
+
+        try {
+            $instance = $this->container->get($job['class']);
+
+            if (!method_exists($instance, 'notification')) {
+                return;
+            }
+
+            $liveJob = $this->scheduler
+                ->getJob($job['_id'])
+                ->toArray();
+
+            if (isset($liveJob['notification_sent'])) {
+                return;
+            }
+
+            $instance->notification($status, $liveJob);
+
+            $this->db
+                ->{$this->scheduler->getJobQueue()}
+                ->updateOne(
+                    [
+                        '_id' => $job['_id'],
+                        'notification_sent' => [
+                            '$exists' => false,
+                        ],
+                    ],
+                    [
+                        '$set' => [
+                            'notification_sent' => true,
+                        ],
+                    ]
+                );
+        } catch (\Throwable $e) {
+            $this->logger->error(
+                'failed to send notification for job [' . $job['_id'] . ']',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                    'exception' => $e,
+                ]
+            );
+        }
+    }
+
+    /**
+     * Update child jobs.
      */
     protected function updateChildJobs(array $job, int $status): bool
     {
+        /*
+         * Do not touch jobs which are already terminal.
+         */
+        $filter = [
+            'data.parent' => $job['_id'],
+            'status' => [
+                '$in' => [
+                    JobInterface::STATUS_WAITING,
+                    JobInterface::STATUS_POSTPONED,
+                    JobInterface::STATUS_PROCESSING,
+                ],
+            ],
+        ];
+
+        $set = [
+            'status' => $status,
+            'ended' => new UTCDateTime(),
+        ];
+
         $session = $this->sessionHandler->getSession();
-        $session->startTransaction($this->sessionHandler->getOptions());
+        $session->startTransaction(
+            $this->sessionHandler->getOptions()
+        );
 
         try {
             $result = $this->db
                 ->{$this->scheduler->getJobQueue()}
                 ->updateMany(
-                    [
-                        'status' => [
-                            '$ne' => JobInterface::STATUS_DONE,
-                        ],
-                        'data.parent' => $job['_id'],
-                    ],
-                    [
-                        '$set' => [
-                            'status' => $status,
-                        ],
-                    ]
+                    $filter,
+                    ['$set' => $set]
                 );
 
             $session->commitTransaction();
         } catch (\Throwable $e) {
-            $session->abortTransaction();
+            try {
+                $session->abortTransaction();
+            } catch (\Throwable $ignored) {
+            }
 
-            $this->logger->error('failed to update child jobs for parent [' . $job['_id'] . ']', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-                'exception' => $e,
-            ]);
+            $this->logger->error(
+                'failed to update child jobs for parent [' . $job['_id'] . ']',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                    'exception' => $e,
+                ]
+            );
 
             return false;
-        }
-
-        if ($result->getModifiedCount() >= 1) {
-            $this->logger->debug('updated [' . $result->getModifiedCount() . '] child jobs for parent job [' . $job['_id'] . '] with status [' . $status . ']', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
         }
 
         return $result->isAcknowledged();
@@ -640,77 +902,79 @@ class Worker
             return true;
         }
 
-        $session = $this->sessionHandler->getSession();
         $now = time();
 
         foreach ($this->queue as $key => $job) {
             try {
-                $session->startTransaction(
-                    $this->sessionHandler->getOptions()
-                );
-
-                $this->db
-                    ->{$this->scheduler->getJobQueue()}
-                    ->updateOne(
-                        ['_id' => $job['_id']],
-                        ['$setOnInsert' => $job],
-                        ['upsert' => true]
-                    );
-
-                $session->commitTransaction();
-
-                if ($job['options']['at'] > $now) {
+                if (
+                    !isset($job['options']['at'])
+                    || $job['options']['at'] > $now
+                ) {
                     continue;
                 }
 
-                $this->logger->info('postponed job [' . $job['_id'] . '] [' . $job['class'] . '] can now be executed', [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                ]);
-
-                unset($this->queue[$key]);
-
-                $job['options']['at'] = 0;
-
-                $session->startTransaction(
-                    $this->sessionHandler->getOptions()
-                );
-
+                /*
+                 * Only move a postponed job back to waiting when it is still
+                 * postponed and still unowned.
+                 */
                 $result = $this->db
                     ->{$this->scheduler->getJobQueue()}
                     ->updateOne(
                         [
                             '_id' => $job['_id'],
                             'status' => JobInterface::STATUS_POSTPONED,
-                            'worker' => null,
+                            '$or' => [
+                                ['worker' => null],
+                                ['worker' => ['$exists' => false]],
+                            ],
                         ],
                         [
                             '$set' => [
                                 'status' =>
                                     JobInterface::STATUS_WAITING,
+                                'worker' => null,
                             ],
                         ]
                     );
 
-                $session->commitTransaction();
+                unset($this->queue[$key]);
 
                 if (1 === $result->getModifiedCount()) {
-                    $this->logger->info('set job status of job [' . $job['_id'] . '] to waiting by worker [' . $this->id . ']', [
-                        'category' => get_class($this),
-                        'pm' => $this->process,
-                    ]);
+                    $this->logger->info(
+                        'set job status of job [' . $job['_id'] . '] to waiting',
+                        [
+                            'category' => get_class($this),
+                            'pm' => $this->process,
+                        ]
+                    );
+
+                    /*
+                     * In processAll(), the MongoDB change stream will pick
+                     * this up again.
+                     *
+                     * For processOne(), there is no change stream, therefore
+                     * execute the job directly.
+                     */
+                    if (
+                        !isset($job['options']['force_spawn'])
+                        || false === $job['options']['force_spawn']
+                    ) {
+                        $freshJob = $this->scheduler
+                            ->getJob($job['_id'])
+                            ->toArray();
+
+                        $this->queueJob($freshJob);
+                    }
                 }
             } catch (\Throwable $e) {
-                try {
-                    $session->abortTransaction();
-                } catch (\Throwable $ignored) {
-                }
-
-                $this->logger->error('failed to process postponed job [' . $job['_id'] . ']', [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                    'exception' => $e,
-                ]);
+                $this->logger->error(
+                    'failed to process postponed job [' . $job['_id'] . ']',
+                    [
+                        'category' => get_class($this),
+                        'pm' => $this->process,
+                        'exception' => $e,
+                    ]
+                );
             }
         }
 
@@ -722,7 +986,8 @@ class Worker
      */
     protected function processJob(array $job): ObjectId
     {
-        $now = $job_start_time = time();
+        $now = time();
+        $jobStartTime = $now;
 
         if ($job['options']['at'] > $now) {
             $this->updateJob(
@@ -734,111 +999,117 @@ class Worker
 
             $this->queue[(string) $job['_id']] = $job;
 
-            $this->logger->debug('execution of job [' . $job['_id'] . '] [' . $job['class'] . '] is postponed at [' . $job['options']['at'] . ']', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
+            $this->logger->debug(
+                'execution of job [' . $job['_id'] . '] [' . $job['class'] . '] is postponed at [' . $job['options']['at'] . ']',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]
+            );
 
             $this->removeWorker($job);
 
             return $job['_id'];
         }
 
-        $this->logger->debug('execute job [' . $job['_id'] . '] [' . $job['class'] . '] on worker [' . $this->id . ']', [
-            'category' => get_class($this),
-            'pm' => $this->process,
-            'options' => $job['options'],
-            'params' => $job['data'],
-        ]);
+        $this->logger->debug(
+            'execute job [' . $job['_id'] . '] [' . $job['class'] . '] on worker [' . $this->id . ']',
+            [
+                'category' => get_class($this),
+                'pm' => $this->process,
+                'options' => $job['options'],
+                'params' => $job['data'],
+            ]
+        );
 
         $this->current_job = $job;
 
-        pcntl_alarm($job['options']['timeout']);
+        if ($job['options']['timeout'] > 0) {
+            pcntl_alarm($job['options']['timeout']);
+        }
 
         try {
             $this->executeJob($job);
             $this->current_job = null;
         } catch (JobTimeout $e) {
+            pcntl_alarm(0);
+
             return $job['_id'];
         } catch (\Throwable $e) {
             pcntl_alarm(0);
 
-            $this->logger->error('failed execute job [' . $job['_id'] . '] of type [' . $job['class'] . '] on worker [' . $this->id . ']', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-                'exception' => $e,
-            ]);
+            $this->logger->error(
+                'failed execute job [' . $job['_id'] . '] of type [' . $job['class'] . '] on worker [' . $this->id . ']',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                    'exception' => $e,
+                ]
+            );
 
             $this->updateJob(
                 $job,
                 JobInterface::STATUS_FAILED
             );
 
+            $this->updateChildJobs(
+                $job,
+                JobInterface::STATUS_FAILED
+            );
+
             $this->current_job = null;
 
-            if (0 !== $job['options']['retry']) {
-                $this->logger->debug('failed job [' . $job['_id'] . '] has a retry interval of [' . $job['options']['retry'] . ']', [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                ]);
-
+            if ($job['options']['retry'] > 0) {
                 --$job['options']['retry'];
+
                 $job['options']['at'] =
                     time() + $job['options']['retry_interval'];
 
-                $job = $this->scheduler->addJob(
+                $newJob = $this->scheduler->addJob(
                     $job['class'],
                     $job['data'],
-                    (array) $job['options']
+                    $job['options']
                 );
 
-                return $job->getId();
+                return $newJob->getId();
             }
+
+            return $job['_id'];
         }
 
         pcntl_alarm(0);
 
         if ($job['options']['interval'] > 0) {
-            $this->logger->debug('job [' . $job['_id'] . '] has an interval of [' . $job['options']['interval'] . 's]', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
-
-            $interval_reference =
+            $intervalReference =
                 (
                     !isset($job['options']['interval_reference'])
                     || 'end' === $job['options']['interval_reference']
                 )
                     ? time()
-                    : $job_start_time;
+                    : $jobStartTime;
 
             $job['options']['at'] =
-                $interval_reference + $job['options']['interval'];
+                $intervalReference + $job['options']['interval'];
 
-            $job = $this->scheduler->addJob(
+            $newJob = $this->scheduler->addJob(
                 $job['class'],
                 $job['data'],
-                (array) $job['options']
+                $job['options']
             );
 
-            return $job->getId();
+            return $newJob->getId();
         }
 
         if ($job['options']['interval'] <= -1) {
-            $this->logger->debug('job [' . $job['_id'] . '] has an endless interval', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
-
             unset($job['options']['at']);
 
-            $job = $this->scheduler->addJob(
+            $newJob = $this->scheduler->addJob(
                 $job['class'],
                 $job['data'],
-                (array) $job['options']
+                $job['options']
             );
 
-            return $job->getId();
+            return $newJob->getId();
         }
 
         return $job['_id'];
@@ -851,7 +1122,7 @@ class Worker
     {
         if (!class_exists($job['class'])) {
             throw new InvalidJobException(
-                'job class does not exist'
+                'job class [' . $job['class'] . '] does not exist'
             );
         }
 
@@ -867,13 +1138,23 @@ class Worker
             );
         }
 
-        $instance
+        $result = $instance
             ->setData($job['data'])
             ->setId($job['_id'])
             ->setScheduler($this->scheduler)
             ->start();
 
         unset($instance);
+
+        /*
+         * The interface explicitly declares start(): bool.
+         * A false return value must not silently become DONE.
+         */
+        if (false === $result) {
+            throw new InvalidJobException(
+                'job [' . $job['class'] . '] returned false from start()'
+            );
+        }
 
         $this->checkChildJobs($job['_id']);
 
@@ -902,30 +1183,38 @@ class Worker
     protected function checkChildJobs(ObjectId $jobId): void
     {
         foreach ($this->scheduler->getChildProcs($jobId) as $proc) {
-            if (JobInterface::STATUS_TIMEOUT === $proc->getStatus()) {
-                $this->logger->info('child job with id [' . $proc->getId() . '] timed out', [
-                    'category' => get_class($this),
-                ]);
-
-                throw new JobTimeout(
-                    'child job timed out'
+            if (
+                in_array(
+                    $proc->getStatus(),
+                    JobInterface::FAILED_JOBS,
+                    true
+                )
+            ) {
+                $this->logger->info(
+                    'child job with id [' . $proc->getId() . '] failed',
+                    [
+                        'category' => get_class($this),
+                        'pm' => $this->process,
+                    ]
                 );
-            }
 
-            if (JobInterface::STATUS_FAILED === $proc->getStatus()) {
-                $this->logger->info('child job with id [' . $proc->getId() . '] failed', [
-                    'category' => get_class($this),
-                ]);
+                if (
+                    JobInterface::STATUS_TIMEOUT === $proc->getStatus()
+                ) {
+                    throw new JobTimeout(
+                        'child job timed out'
+                    );
+                }
 
                 throw new ChildJobFailure(
-                    'child job failed'
+                    'child job failed or was canceled'
                 );
             }
         }
     }
 
     /**
-     * Remove worker.
+     * Remove worker from job.
      */
     protected function removeWorker(array $job): void
     {
@@ -941,6 +1230,7 @@ class Worker
                     [
                         '_id' => $job['_id'],
                         'worker' => $this->id,
+                        'status' => JobInterface::STATUS_POSTPONED,
                     ],
                     [
                         '$set' => [
@@ -951,22 +1241,31 @@ class Worker
 
             $session->commitTransaction();
         } catch (\Throwable $e) {
-            $session->abortTransaction();
+            try {
+                $session->abortTransaction();
+            } catch (\Throwable $ignored) {
+            }
 
-            $this->logger->error('failed to remove worker from job [' . $job['_id'] . ']', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-                'exception' => $e,
-            ]);
+            $this->logger->error(
+                'failed to remove worker from job [' . $job['_id'] . ']',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                    'exception' => $e,
+                ]
+            );
 
             return;
         }
 
         if ($result->getModifiedCount() >= 1) {
-            $this->logger->debug('removed worker of job [' . $job['_id'] . ']', [
-                'category' => get_class($this),
-                'pm' => $this->process,
-            ]);
+            $this->logger->debug(
+                'removed worker of job [' . $job['_id'] . ']',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]
+            );
         }
     }
 }
