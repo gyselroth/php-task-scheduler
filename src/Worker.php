@@ -448,7 +448,7 @@ class Worker
                     ->updateOne(
                         ['_id' => $job['_id']],
                         ['$setOnInsert' => $job],
-                        ['upsert' => true]
+                        ['upsert' => true, 'session' => $session]
                     );
             }
 
@@ -672,7 +672,8 @@ class Worker
                     ],
                     [
                         '$set' => $set,
-                    ]
+                    ],
+                    ['session' => $session]
                 );
 
             $session->commitTransaction();
@@ -736,7 +737,8 @@ class Worker
                 ->{$this->scheduler->getJobQueue()}
                 ->updateOne(
                     $filter,
-                    ['$set' => $set]
+                    ['$set' => $set],
+                    ['session' => $session]
                 );
 
             $session->commitTransaction();
@@ -868,7 +870,8 @@ class Worker
                 ->{$this->scheduler->getJobQueue()}
                 ->updateMany(
                     $filter,
-                    ['$set' => $set]
+                    ['$set' => $set],
+                    ['session' => $session]
                 );
 
             $session->commitTransaction();
@@ -1236,7 +1239,8 @@ class Worker
                         '$set' => [
                             'worker' => null,
                         ],
-                    ]
+                    ],
+                    ['session' => $session]
                 );
 
             $session->commitTransaction();

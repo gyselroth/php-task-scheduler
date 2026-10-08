@@ -29,7 +29,15 @@ trait EventsTrait
      */
     public function on(string $event, Closure $handler)
     {
-        if (!in_array($event, Scheduler::VALID_EVENTS, false) || '*' === $event) {
+        if ('*' === $event) {
+            foreach (Scheduler::VALID_EVENTS as $validEvent) {
+                $this->emitter->addListener($validEvent, $handler);
+            }
+
+            return $this;
+        }
+
+        if (!in_array($event, Scheduler::VALID_EVENTS, true)) {
             $event = 'taskscheduler.on'.ucfirst($event);
         }
 

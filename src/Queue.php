@@ -402,11 +402,18 @@ class Queue
             return;
         }
 
-        @msg_send(
+        if (!@msg_send(
             $this->queue,
             WorkerManager::TYPE_WORKER_ORPHANED_JOB,
-            $job->toArray()
-        );
+            $job->toArray(),
+            true,
+            true
+        )) {
+            $this->logger->error(
+                'failed to send orphaned-job notification to worker manager',
+                ['category' => get_class($this), 'job' => (string) $job->getId()]
+            );
+        }
     }
 
     protected function failJobAndNotifyJobClass(Process $job): UpdateResult
@@ -598,11 +605,21 @@ class Queue
             ['category' => get_class($this)]
         );
 
-        @msg_send(
+        if (!@msg_send(
             $this->queue,
             WorkerManager::TYPE_JOB,
-            $job
-        );
+            $job,
+            true,
+            true
+        )) {
+            $this->logger->error(
+                'failed to send job to worker manager',
+                [
+                    'category' => get_class($this),
+                    'job' => (string) $job['_id'],
+                ]
+            );
+        }
 
         return $this;
     }
