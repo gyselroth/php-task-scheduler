@@ -304,6 +304,9 @@ class Scheduler
                $data,
         array $options = []
     ): ?Process {
+        // Keep the caller's option set separate from defaults added by
+        // prepareInsert(); addJobOnce only compares explicitly requested options.
+        $requestedOptions = $options;
         $document = $this->prepareInsert(
             $class,
             $data,
@@ -369,7 +372,7 @@ class Scheduler
 
         if ($this->jobNeedsReschedule(
             $process,
-            $document['options'],
+            $requestedOptions,
             $data
         )) {
             $this->cancelJob($process->getId());
@@ -601,7 +604,6 @@ class Scheduler
         $result = $this->db->{$this->job_queue}->updateOne(
             [
                 '_id' => $job->getId(),
-                'status' => JobInterface::STATUS_PROCESSING,
             ],
             [
                 '$set' => [
@@ -793,10 +795,9 @@ class Scheduler
             }
         }
 
-        if (
-            !$requestedOptions[self::OPTION_IGNORE_DATA]
-            && $process->getData() != $requestedData
-        ) {
+        // The data is part of the requested job identity even when it is
+        // omitted from the initial lookup filter by OPTION_IGNORE_DATA.
+        if ($process->getData() != $requestedData) {
             return true;
         }
 
