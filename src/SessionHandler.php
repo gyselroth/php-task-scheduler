@@ -13,16 +13,21 @@ declare(strict_types=1);
 namespace TaskScheduler;
 
 use MongoDB\Database;
+use MongoDB\Driver\ReadConcern;
+use MongoDB\Driver\ReadPreference;
+use MongoDB\Driver\Session;
+use MongoDB\Driver\WriteConcern;
 use Psr\Log\LoggerInterface;
 
 class SessionHandler
 {
     /**
-     * Scheduler.
+     * Transaction options.
      *
      * @var array
      */
-    public $transactionOptions;
+    protected $transactionOptions = [];
+
     /**
      * Database.
      *
@@ -31,35 +36,71 @@ class SessionHandler
     protected $db;
 
     /**
-     * LoggerInterface.
+     * Logger.
      *
      * @var LoggerInterface
      */
     protected $logger;
 
-    public function __construct(Database $db, LoggerInterface $logger)
-    {
+    public function __construct(
+        Database $db,
+        LoggerInterface $logger
+    ) {
         $this->db = $db;
         $this->logger = $logger;
+
         $this->setOptions();
     }
 
+    /**
+     * Configure transaction options.
+     */
     public function setOptions(): void
     {
         $this->transactionOptions = [
-            'readConcern' => new \MongoDB\Driver\ReadConcern(\MongoDB\Driver\ReadConcern::LOCAL),
-            'writeConcern' => new \MongoDB\Driver\WriteConcern(\MongoDB\Driver\WriteConcern::MAJORITY, 1000),
-            'readPreference' => new \MongoDB\Driver\ReadPreference(\MongoDB\Driver\ReadPreference::RP_PRIMARY),
+            /*
+             * Transactions should use majority read concern.
+             *
+             * This gives the transaction a consistent view of data which
+             * has been acknowledged by the replica set majority.
+             */
+            'readConcern' => new ReadConcern(
+                ReadConcern::MAJORITY
+            ),
+
+            /*
+             * A scheduler should not acknowledge a state transition if it
+             * can immediately disappear after a primary failover.
+             */
+            'writeConcern' => new WriteConcern(
+                WriteConcern::MAJORITY,
+                1000
+            ),
+
+            /*
+             * Worker/job state must always be read from the primary.
+             */
+            'readPreference' => new ReadPreference(
+                ReadPreference::PRIMARY
+            ),
         ];
     }
 
+    /**
+     * Get transaction options.
+     */
     public function getOptions(): array
     {
         return $this->transactionOptions;
     }
 
-    public function getSession(): \MongoDB\Driver\Session
+    /**
+     * Start a new MongoDB session.
+     */
+    public function getSession(): Session
     {
-        return $this->db->getManager()->startSession();
+        return $this->db
+            ->getManager()
+            ->startSession();
     }
 }

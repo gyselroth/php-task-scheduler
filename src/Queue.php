@@ -26,124 +26,46 @@ class Queue
     use InjectTrait;
     use EventsTrait;
 
-    /**
-     * Orphaned timeout.
-     */
     public const OPTION_ORPHANED_TIMEOUT = 'orphaned_timeout';
-
-    /**
-     * Endless worker timeout.
-     */
     public const OPTION_ENDLESS_WORKER_TIMEOUT = 'endless_worker_timeout';
-
-    /**
-     * Minimum waiting jobs for endless worker timout.
-     */
     public const OPTION_WAITING_JOBS_FOR_ENDLESS_WORKER = 'waiting_jobs_for_endless_worker';
-
-    /**
-     * Check whether a waiting job is running longer than defined time. If a waiting job runs longer and
-     * no job is running restart WorkerManager.
-     */
     public const OPTION_WAITING_TIME_FOR_ENDLESS_WORKER = 'waiting_time_for_endless_worker';
 
-    /**
-     * Database.
-     *
-     * @var Database
-     */
     protected $db;
 
-    /**
-     * Logger.
-     *
-     * @var LoggerInterface
-     */
     protected $logger;
 
-    /**
-     * Container.
-     *
-     * @var ContainerInterface
-     */
     protected $container;
 
-    /**
-     * Worker factory.
-     *
-     * @var WorkerFactoryInterface
-     */
     protected $factory;
 
-    /**
-     * Worker manager pid.
-     *
-     * @var int
-     */
-    protected $manager_pid;
+    protected $manager_pid = null;
 
-    /**
-     * Sysmfsg queue.
-     *
-     * @var resource
-     */
     protected $queue;
 
-    /**
-     * Scheduler.
-     *
-     * @var Scheduler
-     */
     protected $scheduler;
 
-    /**
-     * Orphaned timeout.
-     *
-     * @var int
-     */
     protected $orphaned_timeout = 30;
 
-    /**
-     * Endless worker timeout.
-     *
-     * @var int
-     */
     protected $endless_worker_timeout = 600;
 
-    /**
-     * Minimum waiting jobs endless worker restart.
-     *
-     * @var int
-     */
     protected $waiting_jobs_for_endless_worker = 5;
 
-    /**
-     * Check whether a waiting job is running longer than defined time. If a waiting job runs longer and
-     * no job is running restart WorkerManager.
-     *
-     * @var int
-     */
     protected $waiting_time_for_endless_worker = 900;
 
-    /**
-     * Are there waiting jobs without processing jobs.
-     *
-     * @var bool
-     */
     protected $waiting_jobs_without_processing = false;
 
-    /**
-     * Jobs with waiting status that have run into timeout.
-     *
-     * @var array
-     */
     protected $waiting_jobs = [];
 
-    /**
-     * Init queue.
-     */
-    public function __construct(Scheduler $scheduler, Database $db, WorkerFactoryInterface $factory, LoggerInterface $logger, ?Emitter $emitter = null, array $config = [], ?ContainerInterface $container = null)
-    {
+    public function __construct(
+        Scheduler $scheduler,
+        Database $db,
+        WorkerFactoryInterface $factory,
+        LoggerInterface $logger,
+        ?Emitter $emitter = null,
+        array $config = [],
+        ?ContainerInterface $container = null
+    ) {
         $this->scheduler = $scheduler;
         $this->db = $db;
         $this->logger = $logger;
@@ -153,9 +75,6 @@ class Queue
         $this->container = $container;
     }
 
-    /**
-     * Set options.
-     */
     public function setOptions(array $config = []): self
     {
         foreach ($config as $option => $value) {
@@ -164,272 +83,407 @@ class Queue
                 case self::OPTION_ENDLESS_WORKER_TIMEOUT:
                 case self::OPTION_WAITING_JOBS_FOR_ENDLESS_WORKER:
                 case self::OPTION_WAITING_TIME_FOR_ENDLESS_WORKER:
-                    if (!is_int($value)) {
-                        throw new InvalidArgumentException($option.' needs to be an integer');
+                    if (!is_int($value) || $value < 0) {
+                        throw new InvalidArgumentException(
+                            $option . ' needs to be a non-negative integer'
+                        );
                     }
 
                     $this->{$option} = $value;
 
                     break;
+
                 default:
-                    throw new InvalidArgumentException('invalid option '.$option.' given');
+                    throw new InvalidArgumentException(
+                        'invalid option ' . $option . ' given'
+                    );
             }
         }
 
         return $this;
     }
 
-    /**
-     * Startup (blocking process).
-     */
     public function process(): void
     {
         try {
-            $this->queue = msg_get_queue(ftok(__FILE__, 't'));
+            $key = ftok(__FILE__, 't');
+
+            if ($key === -1) {
+                throw new SpawnForkException(
+                    'failed to create System V message queue key'
+                );
+            }
+
+            $this->queue = msg_get_queue($key);
+
+            if ($this->queue === false) {
+                throw new SpawnForkException(
+                    'failed to create System V message queue'
+                );
+            }
+
             $this->catchSignal();
             $this->initWorkerManager();
             $this->main();
-        } catch (\Exception $e) {
-            $this->logger->error('main() throw an exception, cleanup and exit', [
-                'class' => get_class($this),
-                'exception' => $e,
-            ]);
+        } catch (\Throwable $e) {
+            $this->logger->error(
+                'main() threw an exception, cleanup and exit',
+                [
+                    'category' => get_class($this),
+                    'exception' => $e,
+                ]
+            );
 
             $this->cleanup(SIGTERM);
         }
     }
 
-    /**
-     * Wait for worker manager.
-     */
     public function exitWorkerManager(int $sig, array $pid): void
     {
-        $this->logger->debug('fork manager ['.$pid['pid'].'] exit with ['.$sig.']', [
-            'category' => get_class($this),
-        ]);
+        $managerPid = isset($pid['pid'])
+            ? (int) $pid['pid']
+            : 0;
 
-        pcntl_waitpid($pid['pid'], $status, WNOHANG | WUNTRACED);
+        $this->logger->debug(
+            'fork manager [' . $managerPid . '] exit with [' . $sig . ']',
+            ['category' => get_class($this)]
+        );
+
+        if ($managerPid > 0) {
+            pcntl_waitpid($managerPid, $status, WNOHANG | WUNTRACED);
+        }
+
+        $this->manager_pid = null;
+
         $this->cleanup(SIGTERM);
     }
 
-    /**
-     * Cleanup.
-     */
     public function cleanup(int $sig): void
     {
-        if (null !== $this->manager_pid) {
-            $this->logger->debug('received exit signal ['.$sig.'], forward signal to the fork manager ['.$sig.']', [
-                'category' => get_class($this),
-            ]);
+        if ($this->manager_pid !== null && $this->manager_pid > 0) {
+            $managerPid = $this->manager_pid;
+            $this->manager_pid = null;
 
-            posix_kill($this->manager_pid, $sig);
+            $this->logger->debug(
+                'received exit signal [' . $sig . '], forward signal to worker manager',
+                ['category' => get_class($this)]
+            );
+
+            @posix_kill($managerPid, $sig);
         }
 
         $this->exit();
     }
 
-    /**
-     * Fork a worker manager.
-     */
-    protected function initWorkerManager()
+    protected function initWorkerManager(): void
     {
         $pid = pcntl_fork();
+
+        if ($pid === -1) {
+            throw new SpawnForkException(
+                'failed to spawn fork manager'
+            );
+        }
+
+        if ($pid === 0) {
+            try {
+                $manager = $this->factory->buildManager();
+                $manager->process();
+            } catch (\Throwable $e) {
+                $this->logger->error(
+                    'worker manager crashed',
+                    [
+                        'category' => get_class($this),
+                        'exception' => $e,
+                    ]
+                );
+
+                exit(1);
+            }
+
+            exit(0);
+        }
+
         $this->manager_pid = $pid;
-
-        if (-1 === $pid) {
-            throw new SpawnForkException('failed to spawn fork manager');
-        }
-
-        if (!$pid) {
-            $manager = $this->factory->buildManager();
-            $manager->process();
-            exit();
-        }
     }
 
-    /**
-     * Fetch events.
-     */
-    protected function fetchEvents()
+    protected function fetchEvents(): void
     {
-        while ($this->loop()) {
-            if (msg_receive($this->queue, 0, $type, 16384, $msg, true, MSG_IPC_NOWAIT | MSG_NOERROR)) {
-                $this->logger->debug('received systemv message type ['.$type.']', [
-                    'category' => get_class($this),
-                ]);
+        while (true) {
+            $received = msg_receive(
+                $this->queue,
+                0,
+                $type,
+                16384,
+                $msg,
+                true,
+                MSG_IPC_NOWAIT | MSG_NOERROR
+            );
 
-                switch ($type) {
-                    case WorkerManager::TYPE_JOB:
-                        //handled by worker manager
-                        break;
-                    case WorkerManager::TYPE_WORKER_SPAWN:
-                        $this->emitter->emit('taskscheduler.onWorkerSpawn', $msg['_id']);
-
-                        break;
-                    case WorkerManager::TYPE_WORKER_KILL:
-                        $this->emitter->emit('taskscheduler.onWorkerKill', $msg['_id']);
-
-                        break;
-                    default:
-                        $this->logger->warning('received unknown systemv message type ['.$type.']', [
-                            'category' => get_class($this),
-                        ]);
-                }
-            } else {
+            if (!$received) {
                 return;
+            }
+
+            $this->logger->debug(
+                'received systemv message type [' . $type . ']',
+                ['category' => get_class($this)]
+            );
+
+            switch ($type) {
+                case WorkerManager::TYPE_JOB:
+                    break;
+
+                case WorkerManager::TYPE_WORKER_SPAWN:
+                    if (isset($msg['_id'])) {
+                        $this->emitter->emit(
+                            'taskscheduler.onWorkerSpawn',
+                            $msg['_id']
+                        );
+                    }
+
+                    break;
+
+                case WorkerManager::TYPE_WORKER_KILL:
+                    if (isset($msg['_id'])) {
+                        $this->emitter->emit(
+                            'taskscheduler.onWorkerKill',
+                            $msg['_id']
+                        );
+                    }
+
+                    break;
+
+                default:
+                    $this->logger->warning(
+                        'received unknown systemv message type [' . $type . ']',
+                        ['category' => get_class($this)]
+                    );
             }
         }
     }
 
-    /**
-     * Fork handling, blocking process.
-     */
     protected function main(): void
     {
-        $this->logger->info('start job listener', [
-            'category' => get_class($this),
-        ]);
+        $this->logger->info(
+            'start job listener',
+            ['category' => get_class($this)]
+        );
 
         $this->catchSignal();
 
-        $cursor_watch = $this->db->{$this->scheduler->getJobQueue()}->watch([], ['fullDocument' => 'updateLookup']);
-        $cursor_fetch = $this->db->{$this->scheduler->getJobQueue()}->find([
+        $collection = $this->db->{$this->scheduler->getJobQueue()};
+
+        $cursorWatch = $collection->watch(
+            [],
+            [
+                'fullDocument' => 'updateLookup',
+                'maxAwaitTimeMS' => 1000,
+            ]
+        );
+
+        $cursorFetch = $collection->find([
             '$or' => [
                 ['status' => JobInterface::STATUS_WAITING],
                 ['status' => JobInterface::STATUS_POSTPONED],
             ],
         ]);
 
-        foreach ($cursor_fetch as $job) {
+        foreach ($cursorFetch as $job) {
             $this->fetchEvents();
             $this->handleJob((array) $job);
         }
 
-        $start_job = $start_worker = time();
+        $startOrphanCheck = time();
+        $startWorkerCheck = time();
 
-        $cursor_watch->rewind();
+        $cursorWatch->rewind();
+
         while ($this->loop()) {
-            if (!$cursor_watch->valid()) {
-                if (time() - $start_job >= $this->orphaned_timeout) {
-                    $this->rescheduleOrphanedJobs();
-                    $start_job = time();
+            $cursorWatch->next();
+
+            if ($cursorWatch->valid()) {
+                $event = $cursorWatch->current();
+
+                if ($event !== null && isset($event['fullDocument'])) {
+                    $this->fetchEvents();
+                    $this->handleJob((array) $event['fullDocument']);
                 }
+            }
 
-                if (time() - $start_worker >= $this->endless_worker_timeout) {
-                    $this->checkEndlessRunningWorkers();
-                    $start_worker = time();
-                }
+            $now = time();
 
-                $cursor_watch->next();
+            if ($now - $startOrphanCheck >= $this->orphaned_timeout) {
+                $this->rescheduleOrphanedJobs();
+                $startOrphanCheck = $now;
+            }
 
-                continue;
+            if ($now - $startWorkerCheck >= $this->endless_worker_timeout) {
+                $this->checkEndlessRunningWorkers();
+                $startWorkerCheck = $now;
             }
 
             $this->fetchEvents();
-            $event = $cursor_watch->current();
-            $cursor_watch->next();
-
-            if (null === $event || !isset($event['fullDocument'])) {
-                continue;
-            }
-            $this->handleJob((array) $event['fullDocument']);
         }
     }
 
     protected function rescheduleOrphanedJobs(): self
     {
-        $this->logger->debug('looking for orphaned jobs', [
-            'category' => get_class($this),
-        ]);
+        $this->logger->debug(
+            'looking for orphaned jobs',
+            ['category' => get_class($this)]
+        );
 
-        $alive_utc_datetime = new UTCDateTime((time() - $this->orphaned_timeout) * 1000);
+        $aliveUtcDatetime = new UTCDateTime(
+            (time() - $this->orphaned_timeout) * 1000
+        );
 
-        foreach ($this->scheduler->getOrphanedProcs($alive_utc_datetime) as $orphaned_proc) {
-            $has_child_procs = false;
+        foreach ($this->scheduler->getOrphanedProcs($aliveUtcDatetime) as $orphanedProc) {
+            $hasChildProcs = false;
 
-            foreach($this->scheduler->getChildProcs($orphaned_proc->getId()) as $child_proc) {
-                $has_child_procs = true;
+            foreach ($this->scheduler->getChildProcs($orphanedProc->getId()) as $childProc) {
+                $hasChildProcs = true;
+                break;
             }
 
-            if ($has_child_procs) {
-                $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
-                    'status' => JobInterface::STATUS_PROCESSING,
-                    'alive' => ['$lt' => $alive_utc_datetime],
-                    'data.parent' => $orphaned_proc->getId()
-                ], [
-                    '$set' => ['status' => JobInterface::STATUS_FAILED],
-                ]);
+            if ($hasChildProcs) {
+                $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany(
+                    [
+                        'status' => JobInterface::STATUS_PROCESSING,
+                        'alive' => ['$lt' => $aliveUtcDatetime],
+                        'data.parent' => $orphanedProc->getId(),
+                    ],
+                    [
+                        '$set' => [
+                            'status' => JobInterface::STATUS_FAILED,
+                            'ended' => new UTCDateTime(),
+                        ],
+                    ]
+                );
 
-                $this->logger->warning('found [{jobs}] orphaned child job, set state to failed', [
-                    'category' => get_class($this),
-                    'jobs' => $result->getMatchedCount(),
-                ]);
+                $this->logger->warning(
+                    'found [{jobs}] orphaned child jobs, set state to failed',
+                    [
+                        'category' => get_class($this),
+                        'jobs' => $result->getMatchedCount(),
+                    ]
+                );
 
                 if ($result->getMatchedCount() === 0) {
-                    $this->logger->warning('no orphaned child jobs found for orphaned parent job ['.$orphaned_proc->getId().'] set state of parent job to done', [
-                        'category' => get_class($this),
-                    ]);
-
-                    $this->db->{$this->scheduler->getJobQueue()}->updateMany([
-                        '_id' => $orphaned_proc->getId(),
-                    ], [
-                        '$set' => [
-                            'status' => JobInterface::STATUS_DONE,
-                            'ended' => $set['ended'] = new UTCDateTime()
+                    $this->db->{$this->scheduler->getJobQueue()}->updateOne(
+                        [
+                            '_id' => $orphanedProc->getId(),
+                            'status' => JobInterface::STATUS_PROCESSING,
                         ],
-                    ]);
+                        [
+                            '$set' => [
+                                'status' => JobInterface::STATUS_DONE,
+                                'ended' => new UTCDateTime(),
+                            ],
+                        ]
+                    );
 
-                    msg_send($this->queue, WorkerManager::TYPE_WORKER_ORPHANED_JOB, $orphaned_proc->toArray());
+                    $this->sendOrphanedJobEvent($orphanedProc);
                 } else {
-                    $this->failJobAndNotifyJobClass($orphaned_proc);
-
-                    $this->logger->warning('set state of parent job ['.$orphaned_proc->getId().'] to failed', [
-                        'category' => get_class($this),
-                    ]);
+                    $this->failJobAndNotifyJobClass($orphanedProc);
                 }
-            } else {
-                $result = $this->failJobAndNotifyJobClass($orphaned_proc);
 
-                $this->logger->warning('found [{jobs}] orphaned parent job with jobId ['.$orphaned_proc->getId().'], reset state to failed', [
-                    'category' => get_class($this),
-                    'jobs' => $result->getMatchedCount(),
-                ]);
+                continue;
             }
+
+            $this->failJobAndNotifyJobClass($orphanedProc);
         }
 
         return $this;
     }
 
+    protected function sendOrphanedJobEvent(Process $job): void
+    {
+        if ($this->queue === null) {
+            return;
+        }
+
+        @msg_send(
+            $this->queue,
+            WorkerManager::TYPE_WORKER_ORPHANED_JOB,
+            $job->toArray()
+        );
+    }
+
     protected function failJobAndNotifyJobClass(Process $job): UpdateResult
     {
-        $job_id = $job->getId();
+        $jobId = $job->getId();
 
-        $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany([
-            '_id' => $job_id,
-        ], [
-            '$set' => ['status' => JobInterface::STATUS_FAILED],
-        ]);
+        $result = $this->db->{$this->scheduler->getJobQueue()}->updateOne(
+            [
+                '_id' => $jobId,
+                'status' => [
+                    '$in' => [
+                        JobInterface::STATUS_PROCESSING,
+                        JobInterface::STATUS_WAITING,
+                    ],
+                ],
+            ],
+            [
+                '$set' => [
+                    'status' => JobInterface::STATUS_FAILED,
+                    'ended' => new UTCDateTime(),
+                ],
+            ]
+        );
 
-        if ($this->container !== null) {
+        if ($result->getMatchedCount() !== 1 || $this->container === null) {
+            return $result;
+        }
+
+        try {
             $instance = $this->container->get($job->getClass());
-            sleep(rand(1, 5));
-            $job = $this->scheduler->getJob($job_id)->toArray();
-
-            if (method_exists($instance, 'notification')) {
-                if (!isset($job['notification_sent'])) {
-                    $instance->notification(JobInterface::STATUS_FAILED, $job);
-
-                    $this->db->{$this->scheduler->getJobQueue()}->updateMany([
-                        '_id' => $job_id,
-                    ], [
-                        '$set' => ['notification_sent' => true],
-                    ]);
-                }
-            } else {
-                $this->logger->info('method notification() does not exists on instance', [
+        } catch (\Throwable $e) {
+            $this->logger->error(
+                'could not resolve job class for notification',
+                [
                     'category' => get_class($this),
-                ]);
-            }
+                    'class' => $job->getClass(),
+                    'exception' => $e,
+                ]
+            );
+
+            return $result;
+        }
+
+        if (!method_exists($instance, 'notification')) {
+            $this->logger->info(
+                'method notification() does not exist on instance',
+                ['category' => get_class($this)]
+            );
+
+            return $result;
+        }
+
+        $currentJob = $this->scheduler->getJob($jobId)->toArray();
+
+        if (isset($currentJob['notification_sent'])) {
+            return $result;
+        }
+
+        try {
+            $instance->notification(
+                JobInterface::STATUS_FAILED,
+                $currentJob
+            );
+
+            $this->db->{$this->scheduler->getJobQueue()}->updateOne(
+                ['_id' => $jobId],
+                ['$set' => ['notification_sent' => true]]
+            );
+        } catch (\Throwable $e) {
+            $this->logger->error(
+                'job failure notification failed',
+                [
+                    'category' => get_class($this),
+                    'job' => (string) $jobId,
+                    'exception' => $e,
+                ]
+            );
         }
 
         return $result;
@@ -437,82 +491,126 @@ class Queue
 
     protected function checkEndlessRunningWorkers(): self
     {
-        $this->logger->debug('looking for endless running workers', [
-            'category' => get_class($this),
-        ]);
+        $this->logger->debug(
+            'looking for endless running workers',
+            ['category' => get_class($this)]
+        );
 
-        $waiting_jobs = $this->db->{$this->scheduler->getJobQueue()}->find([
+        $collection = $this->db->{$this->scheduler->getJobQueue()};
+
+        $waitingJobs = $collection->find([
             'status' => JobInterface::STATUS_WAITING,
         ])->toArray();
 
-        $processing_jobs = $this->db->{$this->scheduler->getJobQueue()}->find([
+        $processingJobs = $collection->find([
             'status' => JobInterface::STATUS_PROCESSING,
         ])->toArray();
 
-        $number_of_waiting_jobs = count($waiting_jobs);
-        $number_of_processing_jobs = count($processing_jobs);
+        $numberWaiting = count($waitingJobs);
+        $numberProcessing = count($processingJobs);
 
-        $this->logger->debug('found [{jobs_waiting}] waiting jobs and [{jobs_processing}] processing jobs', [
-            'category' => get_class($this),
-            'jobs_waiting' => $number_of_waiting_jobs,
-            'jobs_processing' => $number_of_processing_jobs,
-        ]);
+        $this->logger->debug(
+            'found [{jobs_waiting}] waiting jobs and [{jobs_processing}] processing jobs',
+            [
+                'category' => get_class($this),
+                'jobs_waiting' => $numberWaiting,
+                'jobs_processing' => $numberProcessing,
+            ]
+        );
 
-        if ($number_of_waiting_jobs > $this->waiting_jobs_for_endless_worker && 0 === $number_of_processing_jobs) {
+        if ($numberWaiting > $this->waiting_jobs_for_endless_worker && $numberProcessing === 0) {
             $this->endWaitingJobsAndEndWorkerManager();
-        } elseif ($number_of_waiting_jobs > 0 && 0 === $number_of_processing_jobs) {
-            foreach ($waiting_jobs as $job) {
-                if (($job['started']) !== null) {
-                    $started = $job['started']->toDateTime()->getTimestamp();
 
-                    if ((time() - $started) > $this->waiting_time_for_endless_worker) {
-                        if ($this->waiting_jobs_without_processing) {
-                            if (in_array($job['_id'], $this->waiting_jobs)) {
-                                $this->logger->warning('found same waiting job with id ['.(string)$job['_id'].'] after ['.$this->waiting_time_for_endless_worker.'s] without processing jobs. exit WorkerManager.');
+            return $this;
+        }
 
-                                $this->endWaitingJobsAndEndWorkerManager();
-                            } else {
-                                $this->logger->warning('found waiting job ['.(string)$job['_id'].'] without processing jobs. check again after '.$this->endless_worker_timeout.'s');
+        if ($numberWaiting === 0 || $numberProcessing > 0) {
+            $this->waiting_jobs_without_processing = false;
+            $this->waiting_jobs = [];
 
-                                $this->waiting_jobs[] = (string)$job['_id'];
-                                $this->waiting_jobs_without_processing = true;
-                            }
-                        } else {
-                            $this->logger->warning('found waiting job ['.(string)$job['_id'].'] without processing jobs. check again after '.$this->endless_worker_timeout.'s');
+            return $this;
+        }
 
-                            $this->waiting_jobs[] = (string)$job['_id'];
-                            $this->waiting_jobs_without_processing = true;
-                        }
-                    } else {
-                        $this->logger->info('found waiting job ['.(string)$job['_id'].'] without processing job. but waiting job timeout is not reached.');
-                    }
+        $timedOutJobIds = [];
+
+        foreach ($waitingJobs as $job) {
+            if (
+                !isset($job['started'])
+                || $job['started'] === null
+            ) {
+                continue;
+            }
+
+            if (!method_exists($job['started'], 'toDateTime')) {
+                continue;
+            }
+
+            $started = $job['started']->toDateTime()->getTimestamp();
+
+            if (time() - $started <= $this->waiting_time_for_endless_worker) {
+                continue;
+            }
+
+            $timedOutJobIds[] = (string) $job['_id'];
+        }
+
+        if (count($timedOutJobIds) === 0) {
+            return $this;
+        }
+
+        if ($this->waiting_jobs_without_processing) {
+            foreach ($timedOutJobIds as $jobId) {
+                if (in_array($jobId, $this->waiting_jobs, true)) {
+                    $this->logger->warning(
+                        'found same waiting job with id [' . $jobId . '] after [' .
+                        $this->waiting_time_for_endless_worker .
+                        's] without processing jobs. exit WorkerManager.',
+                        ['category' => get_class($this)]
+                    );
+
+                    $this->endWaitingJobsAndEndWorkerManager();
+
+                    return $this;
                 }
             }
         }
 
+        $this->waiting_jobs = $timedOutJobIds;
+        $this->waiting_jobs_without_processing = true;
+
+        $this->logger->warning(
+            'found waiting jobs without processing jobs. check again after [' .
+            $this->endless_worker_timeout . ']s',
+            ['category' => get_class($this)]
+        );
+
         return $this;
     }
 
-    /**
-     * Handle job.
-     */
     protected function handleJob(array $job): self
     {
-        $this->logger->debug('received job ['.$job['_id'].'], write in systemv message queue', [
-            'category' => get_class($this),
-        ]);
+        if (!isset($job['_id'], $job['status'])) {
+            return $this;
+        }
 
-        msg_send($this->queue, WorkerManager::TYPE_JOB, $job);
+        $this->logger->debug(
+            'received job [' . $job['_id'] . '], write in systemv message queue',
+            ['category' => get_class($this)]
+        );
+
+        @msg_send(
+            $this->queue,
+            WorkerManager::TYPE_JOB,
+            $job
+        );
 
         return $this;
     }
 
-    /**
-     * Catch signals and cleanup.
-     */
     protected function catchSignal(): self
     {
         pcntl_async_signals(true);
+
         pcntl_signal(SIGTERM, [$this, 'cleanup']);
         pcntl_signal(SIGINT, [$this, 'cleanup']);
         pcntl_signal(SIGCHLD, [$this, 'exitWorkerManager']);
@@ -520,17 +618,34 @@ class Queue
         return $this;
     }
 
-    /*
-     * Fail waiting jobs and exit WorkerManager
-     */
     protected function endWaitingJobsAndEndWorkerManager(): void
     {
-        $this->db->{$this->scheduler->getJobQueue()}->updateMany([
-            'status' => JobInterface::STATUS_WAITING,
-        ], [
-            '$set' => ['status' => JobInterface::STATUS_FAILED, 'worker' => null],
-        ]);
+        $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany(
+            [
+                'status' => JobInterface::STATUS_WAITING,
+            ],
+            [
+                '$set' => [
+                    'status' => JobInterface::STATUS_FAILED,
+                    'worker' => null,
+                    'ended' => new UTCDateTime(),
+                ],
+            ]
+        );
 
-        $this->exitWorkerManager(SIGCHLD, ['pid' => $this->manager_pid]);
+        $this->logger->warning(
+            'failed [{jobs}] waiting jobs because no worker was processing jobs',
+            [
+                'category' => get_class($this),
+                'jobs' => $result->getModifiedCount(),
+            ]
+        );
+
+        if ($this->manager_pid !== null) {
+            $this->exitWorkerManager(
+                SIGTERM,
+                ['pid' => $this->manager_pid]
+            );
+        }
     }
 }
