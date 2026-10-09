@@ -85,37 +85,31 @@ class WorkerManager
                 case self::OPTION_MAX_CHILDREN:
                 case self::OPTION_MIN_CHILDREN:
                     if (!is_int($value) || $value < 0) {
-                        throw new InvalidArgumentException($option . ' needs to be a non-negative integer');
+                        throw new InvalidArgumentException($option.' needs to be a non-negative integer');
                     }
 
                     $this->{$option} = $value;
 
                     break;
-
                 case self::OPTION_PM:
                     if (!in_array($value, [
                         self::PM_STATIC,
                         self::PM_DYNAMIC,
                         self::PM_ONDEMAND,
                     ], true)) {
-                        throw new InvalidArgumentException(
-                            $value . ' is not a valid process handling type (static, dynamic, ondemand)'
-                        );
+                        throw new InvalidArgumentException($value.' is not a valid process handling type (static, dynamic, ondemand)');
                     }
 
                     $this->{$option} = $value;
 
                     break;
-
                 default:
-                    throw new InvalidArgumentException('invalid option ' . $option . ' given');
+                    throw new InvalidArgumentException('invalid option '.$option.' given');
             }
         }
 
         if ($this->min_children > $this->max_children) {
-            throw new InvalidArgumentException(
-                'option min_children must not be greater than option max_children'
-            );
+            throw new InvalidArgumentException('option min_children must not be greater than option max_children');
         }
 
         return $this;
@@ -123,15 +117,15 @@ class WorkerManager
 
     public function process(): void
     {
-        $key = ftok(__DIR__ . DIRECTORY_SEPARATOR . 'Queue.php', 't');
+        $key = ftok(__DIR__.DIRECTORY_SEPARATOR.'Queue.php', 't');
 
-        if ($key === -1) {
+        if (-1 === $key) {
             throw new SpawnForkException('failed to create System V message queue key');
         }
 
         $this->queue = msg_get_queue($key);
 
-        if ($this->queue === false) {
+        if (false === $this->queue) {
             throw new SpawnForkException('failed to create System V message queue');
         }
 
@@ -154,7 +148,7 @@ class WorkerManager
         }
 
         $this->logger->debug(
-            'worker [' . $childPid . '] exit with [' . $sig . ']',
+            'worker ['.$childPid.'] exit with ['.$sig.']',
             ['category' => get_class($this)]
         );
 
@@ -165,8 +159,7 @@ class WorkerManager
                 continue;
             }
 
-            unset($this->forks[$id]);
-            unset($this->job_map[$id]);
+            unset($this->forks[$id], $this->job_map[$id]);
 
             $this->sendMessage(self::TYPE_WORKER_KILL, [
                 '_id' => new ObjectId($id),
@@ -190,13 +183,13 @@ class WorkerManager
     public function cleanup(int $sig): void
     {
         $this->logger->debug(
-            'received signal [' . $sig . ']',
+            'received signal ['.$sig.']',
             ['category' => get_class($this)]
         );
 
         foreach ($this->getForks() as $id => $pid) {
             $this->logger->debug(
-                'forward signal [' . $sig . '] to worker [' . $id . '] running with pid [' . $pid . ']',
+                'forward signal ['.$sig.'] to worker ['.$id.'] running with pid ['.$pid.']',
                 ['category' => get_class($this)]
             );
 
@@ -211,7 +204,7 @@ class WorkerManager
     protected function spawnInitialWorkers(): void
     {
         $this->logger->debug(
-            'spawn initial [' . $this->min_children . '] workers',
+            'spawn initial ['.$this->min_children.'] workers',
             ['category' => get_class($this)]
         );
 
@@ -227,12 +220,12 @@ class WorkerManager
 
     protected function spawnMinimumWorkers(): void
     {
-        if ($this->pm === self::PM_ONDEMAND) {
+        if (self::PM_ONDEMAND === $this->pm) {
             return;
         }
 
         $this->logger->debug(
-            'verify that the minimum number [' . $this->min_children . '] of workers are running',
+            'verify that the minimum number ['.$this->min_children.'] of workers are running',
             ['category' => get_class($this)]
         );
 
@@ -251,15 +244,15 @@ class WorkerManager
         $id = new ObjectId();
         $pid = pcntl_fork();
 
-        if ($pid === -1) {
+        if (-1 === $pid) {
             throw new SpawnForkException('failed to spawn new worker');
         }
 
-        if ($pid === 0) {
+        if (0 === $pid) {
             try {
                 $worker = $this->factory->buildWorker($id);
 
-                if ($job === null) {
+                if (null === $job) {
                     $worker->processAll();
                 } else {
                     $worker->processOne($job);
@@ -287,13 +280,11 @@ class WorkerManager
 
             @posix_kill($pid, SIGTERM);
 
-            throw new SpawnForkException(
-                'failed to notify queue about spawned worker [' . $id . ']'
-            );
+            throw new SpawnForkException('failed to notify queue about spawned worker ['.$id.']');
         }
 
         $this->logger->debug(
-            'spawned worker [' . $id . '] with pid [' . $pid . ']',
+            'spawned worker ['.$id.'] with pid ['.$pid.']',
             ['category' => get_class($this)]
         );
 
@@ -325,26 +316,25 @@ class WorkerManager
                 )
             ) {
                 $this->logger->debug(
-                    'received systemv message type [' . $type . ']',
+                    'received systemv message type ['.$type.']',
                     ['category' => get_class($this)]
                 );
 
                 switch ($type) {
                     case self::TYPE_JOB:
                         $this->handleJob($msg);
-                        break;
 
+                        break;
                     case self::TYPE_WORKER_SPAWN:
                     case self::TYPE_WORKER_KILL:
                         break;
-
                     case self::TYPE_WORKER_ORPHANED_JOB:
                         $this->handleOrphanedJob($msg);
-                        break;
 
+                        break;
                     default:
                         $this->logger->warning(
-                            'received unknown systemv message type [' . $type . ']',
+                            'received unknown systemv message type ['.$type.']',
                             ['category' => get_class($this)]
                         );
                 }
@@ -364,7 +354,7 @@ class WorkerManager
         }
 
         $this->logger->debug(
-            'handle event [' . $event['status'] . '] for job [' . $event['_id'] . ']',
+            'handle event ['.$event['status'].'] for job ['.$event['_id'].']',
             ['category' => get_class($this)]
         );
 
@@ -372,14 +362,12 @@ class WorkerManager
             case JobInterface::STATUS_WAITING:
             case JobInterface::STATUS_POSTPONED:
                 return $this->handleNewJob($event);
-
             case JobInterface::STATUS_PROCESSING:
                 if (isset($event['worker'])) {
                     $this->job_map[(string) $event['worker']] = (string) $event['_id'];
                 }
 
                 return $this;
-
             case JobInterface::STATUS_DONE:
                 $worker = array_search(
                     (string) $event['_id'],
@@ -387,12 +375,11 @@ class WorkerManager
                     true
                 );
 
-                if ($worker !== false) {
+                if (false !== $worker) {
                     unset($this->job_map[$worker]);
                 }
 
                 return $this;
-
             case JobInterface::STATUS_CANCELED:
             case JobInterface::STATUS_FAILED:
             case JobInterface::STATUS_TIMEOUT:
@@ -402,18 +389,18 @@ class WorkerManager
                     true
                 );
 
-                if ($worker === false) {
+                if (false === $worker) {
                     return $this;
                 }
 
                 $this->logger->debug(
-                    'received failure event for job [' . $event['_id'] . '] running on worker [' . $worker . ']',
+                    'received failure event for job ['.$event['_id'].'] running on worker ['.$worker.']',
                     ['category' => get_class($this)]
                 );
 
                 if (isset($this->forks[$worker])) {
                     $this->logger->debug(
-                        'found running worker [' . $worker . '] on this queue node, terminate it now',
+                        'found running worker ['.$worker.'] on this queue node, terminate it now',
                         ['category' => get_class($this)]
                     );
 
@@ -422,15 +409,14 @@ class WorkerManager
                     @posix_kill($this->forks[$worker], SIGKILL);
                 }
 
-                if ((int) $event['status'] === JobInterface::STATUS_CANCELED) {
+                if (JobInterface::STATUS_CANCELED === (int) $event['status']) {
                     $this->sendCancellationNotification($event);
                 }
 
                 return $this;
-
             default:
                 $this->logger->warning(
-                    'received event [' . $event['_id'] . '] with unknown status [' . $event['status'] . ']',
+                    'received event ['.$event['_id'].'] with unknown status ['.$event['status'].']',
                     ['category' => get_class($this)]
                 );
 
@@ -440,7 +426,7 @@ class WorkerManager
 
     protected function sendCancellationNotification(array $event): void
     {
-        if ($this->container === null) {
+        if (null === $this->container) {
             return;
         }
 
@@ -519,7 +505,7 @@ class WorkerManager
             unset($this->onhold[$id]);
 
             $this->logger->debug(
-                'release job [' . $id . '] from local queue',
+                'release job ['.$id.'] from local queue',
                 ['category' => get_class($this)]
             );
 
@@ -543,6 +529,7 @@ class WorkerManager
         if ($forceSpawn) {
             if ($at > time()) {
                 $this->onhold[(string) $job['_id']] = $job;
+
                 return $this;
             }
 
@@ -554,6 +541,7 @@ class WorkerManager
         if (self::PM_ONDEMAND === $this->pm) {
             if ($at > time() || $this->count() >= $this->max_children) {
                 $this->onhold[(string) $job['_id']] = $job;
+
                 return $this;
             }
 
@@ -592,13 +580,13 @@ class WorkerManager
         $workerId = (string) $job['worker'];
 
         $this->logger->debug(
-            'check if worker still exists [' . $workerId . ']',
+            'check if worker still exists ['.$workerId.']',
             ['category' => get_class($this)]
         );
 
         if (isset($this->forks[$workerId])) {
             $this->logger->debug(
-                'worker with id [' . $workerId . '] still exists; job should be restarted automatically',
+                'worker with id ['.$workerId.'] still exists; job should be restarted automatically',
                 ['category' => get_class($this)]
             );
 
@@ -606,7 +594,7 @@ class WorkerManager
         }
 
         $this->logger->warning(
-            'worker with id [' . $workerId . '] does not exist anymore',
+            'worker with id ['.$workerId.'] does not exist anymore',
             ['category' => get_class($this)]
         );
 
@@ -618,7 +606,7 @@ class WorkerManager
 
         if (count($rescheduled) > 0) {
             $this->logger->debug(
-                'orphaned job [' . $job['_id'] . '] is already rescheduled',
+                'orphaned job ['.$job['_id'].'] is already rescheduled',
                 ['category' => get_class($this)]
             );
 
@@ -660,7 +648,7 @@ class WorkerManager
 
     protected function sendMessage(int $type, array $message): bool
     {
-        if ($this->queue === null) {
+        if (null === $this->queue) {
             return false;
         }
 

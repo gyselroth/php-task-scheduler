@@ -39,7 +39,7 @@ class Queue
 
     protected $factory;
 
-    protected $manager_pid = null;
+    protected $manager_pid;
 
     protected $queue;
 
@@ -84,19 +84,14 @@ class Queue
                 case self::OPTION_WAITING_JOBS_FOR_ENDLESS_WORKER:
                 case self::OPTION_WAITING_TIME_FOR_ENDLESS_WORKER:
                     if (!is_int($value) || $value < 0) {
-                        throw new InvalidArgumentException(
-                            $option . ' needs to be a non-negative integer'
-                        );
+                        throw new InvalidArgumentException($option.' needs to be a non-negative integer');
                     }
 
                     $this->{$option} = $value;
 
                     break;
-
                 default:
-                    throw new InvalidArgumentException(
-                        'invalid option ' . $option . ' given'
-                    );
+                    throw new InvalidArgumentException('invalid option '.$option.' given');
             }
         }
 
@@ -108,18 +103,14 @@ class Queue
         try {
             $key = ftok(__FILE__, 't');
 
-            if ($key === -1) {
-                throw new SpawnForkException(
-                    'failed to create System V message queue key'
-                );
+            if (-1 === $key) {
+                throw new SpawnForkException('failed to create System V message queue key');
             }
 
             $this->queue = msg_get_queue($key);
 
-            if ($this->queue === false) {
-                throw new SpawnForkException(
-                    'failed to create System V message queue'
-                );
+            if (false === $this->queue) {
+                throw new SpawnForkException('failed to create System V message queue');
             }
 
             $this->catchSignal();
@@ -145,7 +136,7 @@ class Queue
             : 0;
 
         $this->logger->debug(
-            'fork manager [' . $managerPid . '] exit with [' . $sig . ']',
+            'fork manager ['.$managerPid.'] exit with ['.$sig.']',
             ['category' => get_class($this)]
         );
 
@@ -160,12 +151,12 @@ class Queue
 
     public function cleanup(int $sig): void
     {
-        if ($this->manager_pid !== null && $this->manager_pid > 0) {
+        if (null !== $this->manager_pid && $this->manager_pid > 0) {
             $managerPid = $this->manager_pid;
             $this->manager_pid = null;
 
             $this->logger->debug(
-                'received exit signal [' . $sig . '], forward signal to worker manager',
+                'received exit signal ['.$sig.'], forward signal to worker manager',
                 ['category' => get_class($this)]
             );
 
@@ -179,13 +170,11 @@ class Queue
     {
         $pid = pcntl_fork();
 
-        if ($pid === -1) {
-            throw new SpawnForkException(
-                'failed to spawn fork manager'
-            );
+        if (-1 === $pid) {
+            throw new SpawnForkException('failed to spawn fork manager');
         }
 
-        if ($pid === 0) {
+        if (0 === $pid) {
             try {
                 $manager = $this->factory->buildManager();
                 $manager->process();
@@ -225,14 +214,13 @@ class Queue
             }
 
             $this->logger->debug(
-                'received systemv message type [' . $type . ']',
+                'received systemv message type ['.$type.']',
                 ['category' => get_class($this)]
             );
 
             switch ($type) {
                 case WorkerManager::TYPE_JOB:
                     break;
-
                 case WorkerManager::TYPE_WORKER_SPAWN:
                     if (isset($msg['_id'])) {
                         $this->emitter->emit(
@@ -242,7 +230,6 @@ class Queue
                     }
 
                     break;
-
                 case WorkerManager::TYPE_WORKER_KILL:
                     if (isset($msg['_id'])) {
                         $this->emitter->emit(
@@ -252,10 +239,9 @@ class Queue
                     }
 
                     break;
-
                 default:
                     $this->logger->warning(
-                        'received unknown systemv message type [' . $type . ']',
+                        'received unknown systemv message type ['.$type.']',
                         ['category' => get_class($this)]
                     );
             }
@@ -304,7 +290,7 @@ class Queue
             if ($cursorWatch->valid()) {
                 $event = $cursorWatch->current();
 
-                if ($event !== null && isset($event['fullDocument'])) {
+                if (null !== $event && isset($event['fullDocument'])) {
                     $this->fetchEvents();
                     $this->handleJob((array) $event['fullDocument']);
                 }
@@ -342,6 +328,7 @@ class Queue
 
             foreach ($this->scheduler->getChildProcs($orphanedProc->getId()) as $childProc) {
                 $hasChildProcs = true;
+
                 break;
             }
 
@@ -368,7 +355,7 @@ class Queue
                     ]
                 );
 
-                if ($result->getMatchedCount() === 0) {
+                if (0 === $result->getMatchedCount()) {
                     $this->db->{$this->scheduler->getJobQueue()}->updateOne(
                         [
                             '_id' => $orphanedProc->getId(),
@@ -398,7 +385,7 @@ class Queue
 
     protected function sendOrphanedJobEvent(Process $job): void
     {
-        if ($this->queue === null) {
+        if (null === $this->queue) {
             return;
         }
 
@@ -438,7 +425,7 @@ class Queue
             ]
         );
 
-        if ($result->getMatchedCount() !== 1 || $this->container === null) {
+        if (1 !== $result->getMatchedCount() || null === $this->container) {
             return $result;
         }
 
@@ -525,13 +512,13 @@ class Queue
             ]
         );
 
-        if ($numberWaiting > $this->waiting_jobs_for_endless_worker && $numberProcessing === 0) {
+        if ($numberWaiting > $this->waiting_jobs_for_endless_worker && 0 === $numberProcessing) {
             $this->endWaitingJobsAndEndWorkerManager();
 
             return $this;
         }
 
-        if ($numberWaiting === 0 || $numberProcessing > 0) {
+        if (0 === $numberWaiting || $numberProcessing > 0) {
             $this->waiting_jobs_without_processing = false;
             $this->waiting_jobs = [];
 
@@ -543,7 +530,7 @@ class Queue
         foreach ($waitingJobs as $job) {
             if (
                 !isset($job['started'])
-                || $job['started'] === null
+                || null === $job['started']
             ) {
                 continue;
             }
@@ -561,7 +548,7 @@ class Queue
             $timedOutJobIds[] = (string) $job['_id'];
         }
 
-        if (count($timedOutJobIds) === 0) {
+        if (0 === count($timedOutJobIds)) {
             return $this;
         }
 
@@ -569,8 +556,8 @@ class Queue
             foreach ($timedOutJobIds as $jobId) {
                 if (in_array($jobId, $this->waiting_jobs, true)) {
                     $this->logger->warning(
-                        'found same waiting job with id [' . $jobId . '] after [' .
-                        $this->waiting_time_for_endless_worker .
+                        'found same waiting job with id ['.$jobId.'] after ['.
+                        $this->waiting_time_for_endless_worker.
                         's] without processing jobs. exit WorkerManager.',
                         ['category' => get_class($this)]
                     );
@@ -586,8 +573,8 @@ class Queue
         $this->waiting_jobs_without_processing = true;
 
         $this->logger->warning(
-            'found waiting jobs without processing jobs. check again after [' .
-            $this->endless_worker_timeout . ']s',
+            'found waiting jobs without processing jobs. check again after ['.
+            $this->endless_worker_timeout.']s',
             ['category' => get_class($this)]
         );
 
@@ -601,7 +588,7 @@ class Queue
         }
 
         $this->logger->debug(
-            'received job [' . $job['_id'] . '], write in systemv message queue',
+            'received job ['.$job['_id'].'], write in systemv message queue',
             ['category' => get_class($this)]
         );
 
@@ -658,7 +645,7 @@ class Queue
             ]
         );
 
-        if ($this->manager_pid !== null) {
+        if (null !== $this->manager_pid) {
             $this->exitWorkerManager(
                 SIGTERM,
                 ['pid' => $this->manager_pid]

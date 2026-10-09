@@ -77,9 +77,7 @@ class SessionHandler
                 1000
             ),
 
-            /*
-             * Worker/job state must always be read from the primary.
-             */
+            // Worker/job state must always be read from the primary.
             'readPreference' => new ReadPreference(
                 ReadPreference::PRIMARY
             ),
