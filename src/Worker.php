@@ -1048,18 +1048,13 @@ class Worker
                 ]
             );
 
-            $this->updateJob(
-                $job,
-                JobInterface::STATUS_FAILED
-            );
-
-            $this->updateChildJobs(
-                $job,
-                JobInterface::STATUS_FAILED
-            );
-
-            $this->current_job = null;
-
+            /*
+             * Create the retry before publishing the FAILED state. The worker
+             * manager reacts to FAILED change-stream events by terminating the
+             * worker. If FAILED is written first, the manager can SIGKILL this
+             * process before addJob() has created the retry.
+             */
+            $newJob = null;
             if (0 !== $job['options']['retry']) {
                 if ($job['options']['retry'] > 0) {
                     --$job['options']['retry'];
@@ -1073,11 +1068,21 @@ class Worker
                     $job['data'],
                     $job['options']
                 );
-
-                return $newJob->getId();
             }
 
-            return $job['_id'];
+            $this->updateJob(
+                $job,
+                JobInterface::STATUS_FAILED
+            );
+
+            $this->updateChildJobs(
+                $job,
+                JobInterface::STATUS_FAILED
+            );
+
+            $this->current_job = null;
+
+            return null !== $newJob ? $newJob->getId() : $job['_id'];
         }
 
         pcntl_alarm(0);
