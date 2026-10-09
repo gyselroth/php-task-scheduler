@@ -117,27 +117,21 @@ class Scheduler
         foreach ($config as $option => $value) {
             switch ($option) {
                 case self::OPTION_JOB_QUEUE:
-                    if (!is_string($value) || $value === '') {
-                        throw new InvalidArgumentException(
-                            $option . ' needs to be a non-empty string'
-                        );
+                    if (!is_string($value) || '' === $value) {
+                        throw new InvalidArgumentException($option.' needs to be a non-empty string');
                     }
 
                     $this->{$option} = $value;
 
                     break;
-
                 case self::OPTION_DEFAULT_INTERVAL_REFERENCE:
                     if (!in_array($value, ['start', 'end'], true)) {
-                        throw new InvalidArgumentException(
-                            $option . ' must be either "start" or "end"'
-                        );
+                        throw new InvalidArgumentException($option.' must be either "start" or "end"');
                     }
 
                     $this->{$option} = $value;
 
                     break;
-
                 case self::OPTION_DEFAULT_AT:
                 case self::OPTION_DEFAULT_RETRY_INTERVAL:
                 case self::OPTION_DEFAULT_INTERVAL:
@@ -146,32 +140,23 @@ class Scheduler
                 case self::OPTION_PROGRESS_RATE_LIMIT:
                 case self::OPTION_ORPHANED_RATE_LIMIT:
                     if (!is_int($value)) {
-                        throw new InvalidArgumentException(
-                            $option . ' needs to be an integer'
-                        );
+                        throw new InvalidArgumentException($option.' needs to be an integer');
                     }
 
                     $this->{$option} = $value;
 
                     break;
-
                 default:
-                    throw new InvalidArgumentException(
-                        'invalid option ' . $option . ' given'
-                    );
+                    throw new InvalidArgumentException('invalid option '.$option.' given');
             }
         }
 
         if ($this->progress_rate_limit < 0) {
-            throw new InvalidArgumentException(
-                'progress_rate_limit must not be negative'
-            );
+            throw new InvalidArgumentException('progress_rate_limit must not be negative');
         }
 
         if ($this->orphaned_rate_limit < 0) {
-            throw new InvalidArgumentException(
-                'orphaned_rate_limit must not be negative'
-            );
+            throw new InvalidArgumentException('orphaned_rate_limit must not be negative');
         }
 
         return $this;
@@ -199,10 +184,8 @@ class Scheduler
             ['typeMap' => self::TYPE_MAP]
         );
 
-        if ($result === null) {
-            throw new JobNotFoundException(
-                'job ' . $id . ' was not found'
-            );
+        if (null === $result) {
+            throw new JobNotFoundException('job '.$id.' was not found');
         }
 
         return new Process($result, $this);
@@ -215,11 +198,9 @@ class Scheduler
             JobInterface::STATUS_CANCELED
         );
 
-        if ($result->getMatchedCount() !== 1) {
+        if (1 !== $result->getMatchedCount()) {
             if (!$this->jobExists($id)) {
-                throw new JobNotFoundException(
-                    'job ' . $id . ' was not found'
-                );
+                throw new JobNotFoundException('job '.$id.' was not found');
             }
 
             // The job exists, but it has already reached a terminal state.
@@ -238,7 +219,7 @@ class Scheduler
 
     public function getJobs(array $query = []): Generator
     {
-        if (count($query) === 0) {
+        if (0 === count($query)) {
             $query = [
                 'status' => [
                     '$in' => [
@@ -273,7 +254,7 @@ class Scheduler
         );
 
         $this->logger->debug(
-            'queue job [' . $result->getInsertedId() . '] added to [' . $class . ']',
+            'queue job ['.$result->getInsertedId().'] added to ['.$class.']',
             [
                 'category' => get_class($this),
                 'params' => $options,
@@ -286,10 +267,8 @@ class Scheduler
             ['typeMap' => self::TYPE_MAP]
         );
 
-        if ($document === null) {
-            throw new JobNotFoundException(
-                'inserted job could not be loaded again'
-            );
+        if (null === $document) {
+            throw new JobNotFoundException('inserted job could not be loaded again');
         }
 
         $process = new Process($document, $this);
@@ -301,7 +280,7 @@ class Scheduler
 
     public function addJobOnce(
         string $class,
-               $data,
+        $data,
         array $options = []
     ): ?Process {
         // Keep the caller's option set separate from defaults added by
@@ -334,18 +313,18 @@ class Scheduler
             ['upsert' => true]
         );
 
-        if ($result->getUpsertedId() !== null) {
+        if (null !== $result->getUpsertedId()) {
             $inserted = $this->db->{$this->job_queue}->findOne(
                 ['_id' => $result->getUpsertedId()],
                 ['typeMap' => self::TYPE_MAP]
             );
 
-            if ($inserted === null) {
+            if (null === $inserted) {
                 return null;
             }
 
             $this->logger->debug(
-                'queue job [' . $result->getUpsertedId() . '] added to [' . $class . ']',
+                'queue job ['.$result->getUpsertedId().'] added to ['.$class.']',
                 [
                     'category' => get_class($this),
                     'params' => $options,
@@ -364,7 +343,7 @@ class Scheduler
             ['typeMap' => self::TYPE_MAP]
         );
 
-        if ($existing === null) {
+        if (null === $existing) {
             return null;
         }
 
@@ -391,7 +370,7 @@ class Scheduler
         array $stack,
         int $options = 0
     ): self {
-        if (count($stack) === 0) {
+        if (0 === count($stack)) {
             return $this;
         }
 
@@ -400,9 +379,7 @@ class Scheduler
 
         foreach ($stack as $job) {
             if (!$job instanceof Process) {
-                throw new InvalidArgumentException(
-                    'waitFor() requires a stack of Process[]'
-                );
+                throw new InvalidArgumentException('waitFor() requires a stack of Process[]');
             }
 
             $id = (string) $job->getId();
@@ -442,10 +419,8 @@ class Scheduler
                 ['typeMap' => self::TYPE_MAP]
             );
 
-            if ($current === null) {
-                throw new JobNotFoundException(
-                    'job ' . $jobId . ' was not found'
-                );
+            if (null === $current) {
+                throw new JobNotFoundException('job '.$jobId.' was not found');
             }
 
             if ((int) $current['status'] >= JobInterface::STATUS_DONE) {
@@ -466,7 +441,7 @@ class Scheduler
             );
 
             if (
-                $current !== null
+                null !== $current
                 && (int) $current['status'] >= JobInterface::STATUS_DONE
             ) {
                 $doneIds[(string) $jobId] = true;
@@ -482,16 +457,18 @@ class Scheduler
         while ($this->loop()) {
             if (!$cursor->valid()) {
                 $cursor->next();
+
                 continue;
             }
 
             $event = $cursor->current();
 
             if (
-                $event === null
+                null === $event
                 || !isset($event['fullDocument'])
             ) {
                 $cursor->next();
+
                 continue;
             }
 
@@ -500,6 +477,7 @@ class Scheduler
 
             if (!isset($orig[$id])) {
                 $cursor->next();
+
                 continue;
             }
 
@@ -546,13 +524,15 @@ class Scheduler
         while ($this->loop()) {
             if (!$cursor->valid()) {
                 $cursor->next();
+
                 continue;
             }
 
             $result = $cursor->current();
 
-            if ($result === null || !isset($result['fullDocument'])) {
+            if (null === $result || !isset($result['fullDocument'])) {
                 $cursor->next();
+
                 continue;
             }
 
@@ -563,7 +543,7 @@ class Scheduler
 
             $this->emit($process);
 
-            if ($callback($process) === true) {
+            if (true === $callback($process)) {
                 return $this;
             }
 
@@ -583,9 +563,7 @@ class Scheduler
         float $progress
     ): self {
         if ($progress < 0 || $progress > 100) {
-            throw new LogicException(
-                'progress may only be between 0 to 100'
-            );
+            throw new LogicException('progress may only be between 0 to 100');
         }
 
         $current = microtime(true);
@@ -613,7 +591,7 @@ class Scheduler
             ]
         );
 
-        if ($result->getMatchedCount() === 0) {
+        if (0 === $result->getMatchedCount()) {
             return $this;
         }
 
@@ -686,17 +664,17 @@ class Scheduler
                 case self::OPTION_RETRY_INTERVAL:
                 case self::OPTION_TIMEOUT:
                     $options[$option] = (int) $value;
-                    break;
 
+                    break;
                 case self::OPTION_IGNORE_DATA:
                 case self::OPTION_FORCE_SPAWN:
                     $options[$option] = (bool) $value;
-                    break;
 
+                    break;
                 case self::OPTION_INTERVAL_REFERENCE:
                     $options[$option] = (string) $value;
-                    break;
 
+                    break;
                 default:
                     break;
             }
@@ -707,7 +685,7 @@ class Scheduler
 
     protected function prepareInsert(
         string $class,
-               $data,
+        $data,
         array &$options = []
     ): array {
         $defaults = [
@@ -738,9 +716,7 @@ class Scheduler
 
         if (isset($options[self::OPTION_ID])) {
             if (!$options[self::OPTION_ID] instanceof ObjectId) {
-                throw new InvalidArgumentException(
-                    'option id must be an ObjectId'
-                );
+                throw new InvalidArgumentException('option id must be an ObjectId');
             }
 
             $document['_id'] = $options[self::OPTION_ID];
@@ -773,23 +749,23 @@ class Scheduler
 
     protected function jobExists(ObjectId $id): bool
     {
-        return $this->db->{$this->job_queue}->findOne(
-                ['_id' => $id],
-                ['projection' => ['_id' => 1]]
-            ) !== null;
+        return null !== $this->db->{$this->job_queue}->findOne(
+            ['_id' => $id],
+            ['projection' => ['_id' => 1]]
+        );
     }
 
     protected function jobNeedsReschedule(
         Process $process,
         array $requestedOptions,
-                $requestedData
+        $requestedData
     ): bool {
         $existingOptions = $process->getOptions();
 
         foreach ($requestedOptions as $key => $value) {
             if (
                 !array_key_exists($key, $existingOptions)
-                || $existingOptions[$key] != $value
+                || $existingOptions[$key] !== $value
             ) {
                 return true;
             }
@@ -797,7 +773,7 @@ class Scheduler
 
         // The data is part of the requested job identity even when it is
         // omitted from the initial lookup filter by OPTION_IGNORE_DATA.
-        if ($process->getData() != $requestedData) {
+        if ($process->getData() !== $requestedData) {
             return true;
         }
 
@@ -827,7 +803,7 @@ class Scheduler
         $this->emit($process);
 
         if (
-            (int) $document['status'] === JobInterface::STATUS_FAILED
+            JobInterface::STATUS_FAILED === (int) $document['status']
             && ($options & self::OPTION_THROW_EXCEPTION)
             && isset($document['exception']['class'])
         ) {
@@ -841,9 +817,7 @@ class Scheduler
                 throw new $exceptionClass($message, $code);
             }
 
-            throw new \RuntimeException(
-                'Job failed with invalid exception class: ' . $exceptionClass
-            );
+            throw new \RuntimeException('Job failed with invalid exception class: '.$exceptionClass);
         }
     }
 }

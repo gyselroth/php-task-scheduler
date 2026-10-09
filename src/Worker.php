@@ -49,7 +49,7 @@ class Worker
     /**
      * Container.
      *
-     * @var ContainerInterface|null
+     * @var null|ContainerInterface
      */
     protected $container;
 
@@ -63,7 +63,7 @@ class Worker
     /**
      * Current processing job.
      *
-     * @var array|null
+     * @var null|array
      */
     protected $current_job;
 
@@ -128,7 +128,7 @@ class Worker
         $job['options'] = $this->normalizeJobOptions($job['options']);
 
         $this->logger->debug(
-            'received timeout signal, reschedule current processing job [' . $job['_id'] . ']',
+            'received timeout signal, reschedule current processing job ['.$job['_id'].']',
             [
                 'category' => get_class($this),
                 'pm' => $this->process,
@@ -138,7 +138,7 @@ class Worker
         $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
         $this->updateChildJobs($job, JobInterface::STATUS_TIMEOUT);
 
-        if ($job['options']['retry'] !== 0) {
+        if (0 !== $job['options']['retry']) {
             if ($job['options']['retry'] > 0) {
                 --$job['options']['retry'];
             }
@@ -220,12 +220,10 @@ class Worker
                         'fullDocument.worker' => null,
                         '$or' => [
                             [
-                                'fullDocument.status' =>
-                                    JobInterface::STATUS_WAITING,
+                                'fullDocument.status' => JobInterface::STATUS_WAITING,
                             ],
                             [
-                                'fullDocument.status' =>
-                                    JobInterface::STATUS_POSTPONED,
+                                'fullDocument.status' => JobInterface::STATUS_POSTPONED,
                             ],
                         ],
                     ],
@@ -315,7 +313,7 @@ class Worker
         $this->catchSignal();
 
         $this->logger->debug(
-            'process job [' . $id . '] and exit',
+            'process job ['.$id.'] and exit',
             [
                 'category' => get_class($this),
                 'pm' => $this->process,
@@ -340,7 +338,7 @@ class Worker
             $this->queueJob($job);
         } catch (\Throwable $e) {
             $this->logger->error(
-                'failed process job [' . $id . ']',
+                'failed process job ['.$id.']',
                 [
                     'category' => get_class($this),
                     'pm' => $this->process,
@@ -359,7 +357,7 @@ class Worker
 
         if (null === $this->current_job) {
             $this->logger->debug(
-                'received cleanup call on worker [' . $this->id . '], no job is currently processing, exit now',
+                'received cleanup call on worker ['.$this->id.'], no job is currently processing, exit now',
                 [
                     'category' => get_class($this),
                     'pm' => $this->process,
@@ -375,7 +373,7 @@ class Worker
         $job['options'] = $this->normalizeJobOptions($job['options']);
 
         $this->logger->debug(
-            'received cleanup call on worker [' . $this->id . '], reschedule current processing job [' . $job['_id'] . ']',
+            'received cleanup call on worker ['.$this->id.'], reschedule current processing job ['.$job['_id'].']',
             [
                 'category' => get_class($this),
                 'pm' => $this->process,
@@ -470,9 +468,7 @@ class Worker
             return false;
         }
 
-        /*
-         * Do not execute a child job when its parent has already failed.
-         */
+        // Do not execute a child job when its parent has already failed.
         if (isset($job['data']['parent'])) {
             try {
                 $parentJob = $this->scheduler
@@ -487,7 +483,7 @@ class Worker
                     )
                 ) {
                     $this->logger->debug(
-                        'parent job [' . $parentJob['_id'] . '] not running anymore. do not queue child job [' . $job['_id'] . ']',
+                        'parent job ['.$parentJob['_id'].'] not running anymore. do not queue child job ['.$job['_id'].']',
                         [
                             'category' => get_class($this),
                             'pm' => $this->process,
@@ -505,8 +501,7 @@ class Worker
                             ],
                             [
                                 '$set' => [
-                                    'status' =>
-                                        JobInterface::STATUS_CANCELED,
+                                    'status' => JobInterface::STATUS_CANCELED,
                                     'ended' => new UTCDateTime(),
                                 ],
                             ]
@@ -516,7 +511,7 @@ class Worker
                 }
             } catch (\Throwable $e) {
                 $this->logger->error(
-                    'failed to check parent job for job [' . $job['_id'] . ']',
+                    'failed to check parent job for job ['.$job['_id'].']',
                     [
                         'category' => get_class($this),
                         'pm' => $this->process,
@@ -529,7 +524,7 @@ class Worker
         }
 
         $this->logger->debug(
-            'queue job [' . $job['_id'] . '] in queue with status [' . $job['status'] . ']',
+            'queue job ['.$job['_id'].'] in queue with status ['.$job['status'].']',
             [
                 'category' => get_class($this),
                 'pm' => $this->process,
@@ -558,7 +553,7 @@ class Worker
                 );
             } catch (\Throwable $e) {
                 $this->logger->warning(
-                    'failed to emit final event for job [' . $job['_id'] . ']',
+                    'failed to emit final event for job ['.$job['_id'].']',
                     [
                         'category' => get_class($this),
                         'pm' => $this->process,
@@ -579,7 +574,7 @@ class Worker
                 );
             } catch (\Throwable $e) {
                 $this->logger->warning(
-                    'failed to emit postponed event for job [' . $job['_id'] . ']',
+                    'failed to emit postponed event for job ['.$job['_id'].']',
                     [
                         'category' => get_class($this),
                         'pm' => $this->process,
@@ -609,7 +604,7 @@ class Worker
         int $from_status = JobInterface::STATUS_WAITING
     ): bool {
         $this->logger->debug(
-            'try to collect job [' . $job['_id'] . '] with status [' . $from_status . '] by worker [' . $this->id . ']',
+            'try to collect job ['.$job['_id'].'] with status ['.$from_status.'] by worker ['.$this->id.']',
             [
                 'category' => get_class($this),
                 'pm' => $this->process,
@@ -662,7 +657,7 @@ class Worker
             }
 
             $this->logger->error(
-                'failed to collect job [' . $job['_id'] . ']',
+                'failed to collect job ['.$job['_id'].']',
                 [
                     'category' => get_class($this),
                     'pm' => $this->process,
@@ -732,7 +727,7 @@ class Worker
             }
 
             $this->logger->error(
-                'failed to update job [' . $job['_id'] . ']',
+                'failed to update job ['.$job['_id'].']',
                 [
                     'category' => get_class($this),
                     'pm' => $this->process,
@@ -745,7 +740,7 @@ class Worker
 
         if (0 === $result->getModifiedCount()) {
             $this->logger->warning(
-                'job [' . $job['_id'] . '] was not updated because it is no longer owned by worker [' . $this->id . ']',
+                'job ['.$job['_id'].'] was not updated because it is no longer owned by worker ['.$this->id.']',
                 [
                     'category' => get_class($this),
                     'pm' => $this->process,
@@ -809,7 +804,7 @@ class Worker
                 );
         } catch (\Throwable $e) {
             $this->logger->error(
-                'failed to send notification for job [' . $job['_id'] . ']',
+                'failed to send notification for job ['.$job['_id'].']',
                 [
                     'category' => get_class($this),
                     'pm' => $this->process,
@@ -824,9 +819,7 @@ class Worker
      */
     protected function updateChildJobs(array $job, int $status): bool
     {
-        /*
-         * Do not touch jobs which are already terminal.
-         */
+        // Do not touch jobs which are already terminal.
         $filter = [
             'data.parent' => $job['_id'],
             'status' => [
@@ -865,7 +858,7 @@ class Worker
             }
 
             $this->logger->error(
-                'failed to update child jobs for parent [' . $job['_id'] . ']',
+                'failed to update child jobs for parent ['.$job['_id'].']',
                 [
                     'category' => get_class($this),
                     'pm' => $this->process,
@@ -913,8 +906,7 @@ class Worker
                         ],
                         [
                             '$set' => [
-                                'status' =>
-                                    JobInterface::STATUS_WAITING,
+                                'status' => JobInterface::STATUS_WAITING,
                                 'worker' => null,
                             ],
                         ]
@@ -924,7 +916,7 @@ class Worker
 
                 if (1 === $result->getModifiedCount()) {
                     $this->logger->info(
-                        'set job status of job [' . $job['_id'] . '] to waiting',
+                        'set job status of job ['.$job['_id'].'] to waiting',
                         [
                             'category' => get_class($this),
                             'pm' => $this->process,
@@ -953,7 +945,7 @@ class Worker
                 }
             } catch (\Throwable $e) {
                 $this->logger->error(
-                    'failed to process postponed job [' . $job['_id'] . ']',
+                    'failed to process postponed job ['.$job['_id'].']',
                     [
                         'category' => get_class($this),
                         'pm' => $this->process,
@@ -986,9 +978,7 @@ class Worker
             return get_object_vars($options);
         }
 
-        throw new \UnexpectedValueException(
-            'job options must be an array or document'
-        );
+        throw new \UnexpectedValueException('job options must be an array or document');
     }
 
     /**
@@ -1011,7 +1001,7 @@ class Worker
             $this->queue[(string) $job['_id']] = $job;
 
             $this->logger->debug(
-                'execution of job [' . $job['_id'] . '] [' . $job['class'] . '] is postponed at [' . $job['options']['at'] . ']',
+                'execution of job ['.$job['_id'].'] ['.$job['class'].'] is postponed at ['.$job['options']['at'].']',
                 [
                     'category' => get_class($this),
                     'pm' => $this->process,
@@ -1024,7 +1014,7 @@ class Worker
         }
 
         $this->logger->debug(
-            'execute job [' . $job['_id'] . '] [' . $job['class'] . '] on worker [' . $this->id . ']',
+            'execute job ['.$job['_id'].'] ['.$job['class'].'] on worker ['.$this->id.']',
             [
                 'category' => get_class($this),
                 'pm' => $this->process,
@@ -1050,7 +1040,7 @@ class Worker
             pcntl_alarm(0);
 
             $this->logger->error(
-                'failed execute job [' . $job['_id'] . '] of type [' . $job['class'] . '] on worker [' . $this->id . ']',
+                'failed execute job ['.$job['_id'].'] of type ['.$job['class'].'] on worker ['.$this->id.']',
                 [
                     'category' => get_class($this),
                     'pm' => $this->process,
@@ -1070,7 +1060,7 @@ class Worker
 
             $this->current_job = null;
 
-            if ($job['options']['retry'] !== 0) {
+            if (0 !== $job['options']['retry']) {
                 if ($job['options']['retry'] > 0) {
                     --$job['options']['retry'];
                 }
@@ -1134,9 +1124,7 @@ class Worker
     protected function executeJob(array $job): bool
     {
         if (!class_exists($job['class'])) {
-            throw new InvalidJobException(
-                'job class [' . $job['class'] . '] does not exist'
-            );
+            throw new InvalidJobException('job class ['.$job['class'].'] does not exist');
         }
 
         if (null === $this->container) {
@@ -1146,9 +1134,7 @@ class Worker
         }
 
         if (!($instance instanceof JobInterface)) {
-            throw new InvalidJobException(
-                'job must implement JobInterface'
-            );
+            throw new InvalidJobException('job must implement JobInterface');
         }
 
         $result = $instance
@@ -1164,9 +1150,7 @@ class Worker
          * A false return value must not silently become DONE.
          */
         if (false === $result) {
-            throw new InvalidJobException(
-                'job [' . $job['class'] . '] returned false from start()'
-            );
+            throw new InvalidJobException('job ['.$job['class'].'] returned false from start()');
         }
 
         $this->checkChildJobs($job['_id']);
@@ -1204,7 +1188,7 @@ class Worker
                 )
             ) {
                 $this->logger->info(
-                    'child job with id [' . $proc->getId() . '] failed',
+                    'child job with id ['.$proc->getId().'] failed',
                     [
                         'category' => get_class($this),
                         'pm' => $this->process,
@@ -1214,14 +1198,10 @@ class Worker
                 if (
                     JobInterface::STATUS_TIMEOUT === $proc->getStatus()
                 ) {
-                    throw new JobTimeout(
-                        'child job timed out'
-                    );
+                    throw new JobTimeout('child job timed out');
                 }
 
-                throw new ChildJobFailure(
-                    'child job failed or was canceled'
-                );
+                throw new ChildJobFailure('child job failed or was canceled');
             }
         }
     }
@@ -1261,7 +1241,7 @@ class Worker
             }
 
             $this->logger->error(
-                'failed to remove worker from job [' . $job['_id'] . ']',
+                'failed to remove worker from job ['.$job['_id'].']',
                 [
                     'category' => get_class($this),
                     'pm' => $this->process,
@@ -1274,7 +1254,7 @@ class Worker
 
         if ($result->getModifiedCount() >= 1) {
             $this->logger->debug(
-                'removed worker of job [' . $job['_id'] . ']',
+                'removed worker of job ['.$job['_id'].']',
                 [
                     'category' => get_class($this),
                     'pm' => $this->process,

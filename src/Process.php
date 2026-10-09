@@ -100,7 +100,7 @@ class Process
      */
     public function getWorker(): ?ObjectId
     {
-        if (!isset($this->job['worker']) || $this->job['worker'] === null) {
+        if (!isset($this->job['worker']) || null === $this->job['worker']) {
             return null;
         }
 
