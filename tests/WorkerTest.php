@@ -355,19 +355,23 @@ class WorkerTest extends TestCase
         $this->assertSame(JobInterface::STATUS_TIMEOUT, $job->getStatus());
     }
 
-    public function testTimeoutJobWithInterval()
+    public function testTimeoutJobWithIntervalAndNoRetriesDoesNotReschedule()
     {
         $job = $this->scheduler->addJob(SuccessJobMock::class, ['foo' => 'bar'], [
             Scheduler::OPTION_TIMEOUT => 10,
             Scheduler::OPTION_INTERVAL => 10,
+            Scheduler::OPTION_RETRY => 0,
         ])->toArray();
 
         $current = self::getProperty('current_job');
         $current->setValue($this->worker, $job);
-        $new = $this->worker->timeout();
-        $this->assertInstanceOf(ObjectId::class, $new);
-        $this->assertNotSame($job['_id'], $new);
-        $this->assertTrue($this->scheduler->getJob($new)->getOptions()['at'] > time());
+
+        $this->assertNull($this->worker->timeout());
+        $this->assertCount(0, iterator_to_array($this->scheduler->getJobs()));
+        $this->assertSame(
+            JobInterface::STATUS_TIMEOUT,
+            $this->scheduler->getJob($job['_id'])->getStatus()
+        );
     }
 
     public function testTimeoutJobWithRetry()
@@ -472,6 +476,27 @@ class WorkerTest extends TestCase
         $this->assertSame(JobInterface::STATUS_WAITING, $interval_job->getStatus());
         $this->assertSame(100, $interval_job->getOptions()['interval']);
         $this->assertTrue($interval_job->getOptions()['at'] > time());
+    }
+
+    public function testSuccessfulIntervalJobResetsRetryCountFromJobData()
+    {
+        // Simulate a retry job after one failed attempt: the current retry
+        // counter is 1, while data.options.retry retains the configured value 2.
+        $job = $this->scheduler->addJob(SuccessJobMock::class, [
+            'foo' => 'bar',
+            'options' => [Scheduler::OPTION_RETRY => 2],
+        ], [
+            Scheduler::OPTION_RETRY => 1,
+            Scheduler::OPTION_INTERVAL => 100,
+        ]);
+
+        $this->worker->processOne($job->getId());
+
+        $scheduledJobs = iterator_to_array($this->scheduler->getJobs());
+        $this->assertCount(1, $scheduledJobs);
+        $nextJob = reset($scheduledJobs);
+        $this->assertSame(2, $nextJob->getOptions()[Scheduler::OPTION_RETRY]);
+        $this->assertArrayNotHasKey('retry_original', $nextJob->getOptions());
     }
 
     public function testProcessJobIntervalReferenceStart()
