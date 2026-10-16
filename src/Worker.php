@@ -161,38 +161,8 @@ class Worker
             return $newJob->getId();
         }
 
-        if ($job['options']['interval'] > 0) {
-            $job['options']['at'] = time() + $job['options']['interval'];
-
-            $newJob = $this->scheduler->addJob(
-                $job['class'],
-                $job['data'],
-                $job['options']
-            );
-
-            $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
-            $this->updateChildJobs($job, JobInterface::STATUS_TIMEOUT);
-            $this->killProcess();
-
-            return $newJob->getId();
-        }
-
-        if ($job['options']['interval'] <= -1) {
-            unset($job['options']['at']);
-
-            $newJob = $this->scheduler->addJob(
-                $job['class'],
-                $job['data'],
-                $job['options']
-            );
-
-            $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
-            $this->updateChildJobs($job, JobInterface::STATUS_TIMEOUT);
-            $this->killProcess();
-
-            return $newJob->getId();
-        }
-
+        // A timed-out job is only rescheduled when retries remain.
+        // Do not fall back to interval scheduling when retry is exhausted.
         $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
         $this->updateChildJobs($job, JobInterface::STATUS_TIMEOUT);
         $this->killProcess();

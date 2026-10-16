@@ -573,33 +573,17 @@ class WorkerManager
 
     protected function handleOrphanedJob(array $job): void
     {
-        if (!isset($job['worker'], $job['_id'])) {
+        if (!isset($job['_id'], $job['class'])) {
             return;
         }
 
-        $workerId = (string) $job['worker'];
-
-        $this->logger->debug(
-            'check if worker still exists ['.$workerId.']',
-            ['category' => get_class($this)]
-        );
-
-        if (isset($this->forks[$workerId])) {
-            $this->logger->debug(
-                'worker with id ['.$workerId.'] still exists; job should be restarted automatically',
-                ['category' => get_class($this)]
-            );
-
-            return;
-        }
-
+        $workerId = isset($job['worker']) ? (string) $job['worker'] : 'unknown';
         $this->logger->warning(
-            'worker with id ['.$workerId.'] does not exist anymore',
+            'reschedule orphaned job ['.$job['_id'].'] from worker ['.$workerId.']',
             ['category' => get_class($this)]
         );
 
         $collection = $this->db->{$this->scheduler->getJobQueue()};
-
         $rescheduled = $collection->find([
             'data.orphaned_parent_id' => $job['_id'],
         ])->toArray();
@@ -613,36 +597,60 @@ class WorkerManager
             return;
         }
 
-        if (!isset($job['data']) || !is_array($job['data'])) {
-            $job['data'] = [];
+        // BSON documents may arrive as objects; Scheduler::addJob requires arrays.
+        $data = $job['data'] ?? [];
+        if ($data instanceof \Traversable) {
+            $data = iterator_to_array($data);
+        } elseif (is_object($data)) {
+            $data = get_object_vars($data);
         }
+        if (!is_array($data)) {
+            $data = [];
+        }
+        $data['orphaned_parent_id'] = $job['_id'];
 
-        $job['data']['orphaned_parent_id'] = $job['_id'];
+        $options = $job['options'] ?? [];
+        if ($options instanceof \Traversable) {
+            $options = iterator_to_array($options);
+        } elseif (is_object($options)) {
+            $options = get_object_vars($options);
+        }
+        if (!is_array($options)) {
+            $options = [];
+        }
+        $options = $this->scheduler->setJobOptionsType($options);
 
-        $interval = isset($job['options']['interval'])
-            ? (int) $job['options']['interval']
+        // An orphaned job is treated as a failed attempt: consume one retry
+        // and schedule it using retry_interval. -1 means unlimited retries.
+        $retry = isset($options[Scheduler::OPTION_RETRY])
+            ? (int) $options[Scheduler::OPTION_RETRY]
             : 0;
 
-        if ($interval > 0) {
-            $job['options']['at'] = time() + $interval;
+        if (0 !== $retry) {
+            if ($retry > 0) {
+                $options[Scheduler::OPTION_RETRY] = $retry - 1;
+            }
+            $retryInterval = isset($options[Scheduler::OPTION_RETRY_INTERVAL])
+                ? max(0, (int) $options[Scheduler::OPTION_RETRY_INTERVAL])
+                : 0;
+            $options[Scheduler::OPTION_AT] = time() + $retryInterval;
 
-            $this->scheduler->addJob(
-                $job['class'],
-                $job['data'],
-                $this->scheduler->setJobOptionsType($job['options'])
-            );
+            $this->scheduler->addJob($job['class'], $data, $options);
 
             return;
         }
 
-        if ($interval <= -1) {
-            unset($job['options']['at']);
+        // Preserve recurring-job behavior even when no retries remain.
+        $interval = isset($options[Scheduler::OPTION_INTERVAL])
+            ? (int) $options[Scheduler::OPTION_INTERVAL]
+            : 0;
 
-            $this->scheduler->addJob(
-                $job['class'],
-                $job['data'],
-                $this->scheduler->setJobOptionsType($job['options'])
-            );
+        if ($interval > 0) {
+            $options[Scheduler::OPTION_AT] = time() + $interval;
+            $this->scheduler->addJob($job['class'], $data, $options);
+        } elseif ($interval <= -1) {
+            unset($options[Scheduler::OPTION_AT]);
+            $this->scheduler->addJob($job['class'], $data, $options);
         }
     }
 
