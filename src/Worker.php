@@ -982,6 +982,47 @@ class Worker
     }
 
     /**
+     * Read the original retry limit from the job payload's options.retry.
+     * Job data can be represented as arrays or BSON/stdClass-like documents.
+     */
+    protected function getConfiguredRetryFromData($data): ?int
+    {
+        if ($data instanceof \Traversable) {
+            $data = iterator_to_array($data);
+        } elseif (is_object($data)) {
+            $data = get_object_vars($data);
+        }
+
+        if (!is_array($data) || !array_key_exists('options', $data)) {
+            return null;
+        }
+
+        $options = $data['options'];
+        if ($options instanceof \Traversable) {
+            $options = iterator_to_array($options);
+        } elseif (is_object($options)) {
+            $options = get_object_vars($options);
+        }
+
+        if (!is_array($options) || !array_key_exists(Scheduler::OPTION_RETRY, $options)) {
+            return null;
+        }
+
+        $retry = $options[Scheduler::OPTION_RETRY];
+        if (is_int($retry)) {
+            return $retry >= -1 ? $retry : null;
+        }
+
+        if (is_string($retry) && preg_match('/^-?\d+$/', $retry)) {
+            $retry = (int) $retry;
+
+            return $retry >= -1 ? $retry : null;
+        }
+
+        return null;
+    }
+
+    /**
      * Process job.
      */
     protected function processJob(array $job): ObjectId
@@ -1086,6 +1127,13 @@ class Worker
         }
 
         pcntl_alarm(0);
+
+        // A successful run resets the retry budget for the next scheduled
+        // occurrence from the original configuration stored in data.options.retry.
+        $configuredRetry = $this->getConfiguredRetryFromData($job['data'] ?? null);
+        if (null !== $configuredRetry) {
+            $job['options'][Scheduler::OPTION_RETRY] = $configuredRetry;
+        }
 
         if ($job['options']['interval'] > 0) {
             $intervalReference =
