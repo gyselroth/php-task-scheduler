@@ -579,10 +579,26 @@ class Scheduler
             return $this;
         }
 
+        // Progress updates are only valid while a job is pending. In
+        // particular, a late callback must not mutate a terminal job.
+        // WAITING and POSTPONED remain allowed for backwards compatibility
+        // with jobs that report initial progress before a worker claims them.
+        $filter = [
+            '_id' => $job->getId(),
+            'status' => ['$in' => JobInterface::PENDING_JOBS],
+        ];
+
+        // JobInterface intentionally does not require a worker accessor, but
+        // implementations that expose one can additionally enforce ownership.
+        if (method_exists($job, 'getWorker')) {
+            $workerId = $job->getWorker();
+            if ($workerId instanceof ObjectId) {
+                $filter['worker'] = $workerId;
+            }
+        }
+
         $result = $this->db->{$this->job_queue}->updateOne(
-            [
-                '_id' => $job->getId(),
-            ],
+            $filter,
             [
                 '$set' => [
                     'alive' => new UTCDateTime(),
