@@ -584,73 +584,94 @@ class WorkerManager
         );
 
         $collection = $this->db->{$this->scheduler->getJobQueue()};
-        $rescheduled = $collection->find([
-            'data.orphaned_parent_id' => $job['_id'],
-        ])->toArray();
 
-        if (count($rescheduled) > 0) {
+        // Claim the orphan atomically. A find-then-insert check is racy: two
+        // manager events can both observe that no replacement exists and both
+        // create one. Only the event that changes this field may reschedule it.
+        $claim = $collection->updateOne(
+            [
+                '_id' => $job['_id'],
+                'orphan_reschedule_claimed' => ['$ne' => true],
+            ],
+            ['$set' => ['orphan_reschedule_claimed' => true]]
+        );
+
+        if (1 !== $claim->getModifiedCount()) {
             $this->logger->debug(
-                'orphaned job ['.$job['_id'].'] is already rescheduled',
+                'orphaned job ['.$job['_id'].'] is already being or has been rescheduled',
                 ['category' => get_class($this)]
             );
 
             return;
         }
 
-        // BSON documents may arrive as objects; Scheduler::addJob requires arrays.
-        $data = $job['data'] ?? [];
-        if ($data instanceof \Traversable) {
-            $data = iterator_to_array($data);
-        } elseif (is_object($data)) {
-            $data = get_object_vars($data);
-        }
-        if (!is_array($data)) {
-            $data = [];
-        }
-        $data['orphaned_parent_id'] = $job['_id'];
-
-        $options = $job['options'] ?? [];
-        if ($options instanceof \Traversable) {
-            $options = iterator_to_array($options);
-        } elseif (is_object($options)) {
-            $options = get_object_vars($options);
-        }
-        if (!is_array($options)) {
-            $options = [];
-        }
-        $options = $this->scheduler->setJobOptionsType($options);
-
-        // An orphaned job is treated as a failed attempt: consume one retry
-        // and schedule it using retry_interval. -1 means unlimited retries.
-        $retry = isset($options[Scheduler::OPTION_RETRY])
-            ? (int) $options[Scheduler::OPTION_RETRY]
-            : 0;
-
-        if (0 !== $retry) {
-            if ($retry > 0) {
-                $options[Scheduler::OPTION_RETRY] = $retry - 1;
+        try {
+            // BSON documents may arrive as objects; Scheduler::addJob requires arrays.
+            $data = $job['data'] ?? [];
+            if ($data instanceof \Traversable) {
+                $data = iterator_to_array($data);
+            } elseif (is_object($data)) {
+                $data = get_object_vars($data);
             }
-            $retryInterval = isset($options[Scheduler::OPTION_RETRY_INTERVAL])
-                ? max(0, (int) $options[Scheduler::OPTION_RETRY_INTERVAL])
+            if (!is_array($data)) {
+                $data = [];
+            }
+            $data['orphaned_parent_id'] = $job['_id'];
+
+            $options = $job['options'] ?? [];
+            if ($options instanceof \Traversable) {
+                $options = iterator_to_array($options);
+            } elseif (is_object($options)) {
+                $options = get_object_vars($options);
+            }
+            if (!is_array($options)) {
+                $options = [];
+            }
+            $options = $this->scheduler->setJobOptionsType($options);
+
+            // An orphaned job is treated as a failed attempt: consume one retry
+            // and schedule it using retry_interval. -1 means unlimited retries.
+            $retry = isset($options[Scheduler::OPTION_RETRY])
+                ? (int) $options[Scheduler::OPTION_RETRY]
                 : 0;
-            $options[Scheduler::OPTION_AT] = time() + $retryInterval;
 
-            $this->scheduler->addJob($job['class'], $data, $options);
+            if (0 !== $retry) {
+                if ($retry > 0) {
+                    $options[Scheduler::OPTION_RETRY] = $retry - 1;
+                }
+                $retryInterval = isset($options[Scheduler::OPTION_RETRY_INTERVAL])
+                    ? max(0, (int) $options[Scheduler::OPTION_RETRY_INTERVAL])
+                    : 0;
+                $options[Scheduler::OPTION_AT] = time() + $retryInterval;
 
-            return;
-        }
+                $this->scheduler->addJob($job['class'], $data, $options);
 
-        // Preserve recurring-job behavior even when no retries remain.
-        $interval = isset($options[Scheduler::OPTION_INTERVAL])
-            ? (int) $options[Scheduler::OPTION_INTERVAL]
-            : 0;
+                return;
+            }
 
-        if ($interval > 0) {
-            $options[Scheduler::OPTION_AT] = time() + $interval;
-            $this->scheduler->addJob($job['class'], $data, $options);
-        } elseif ($interval <= -1) {
-            unset($options[Scheduler::OPTION_AT]);
-            $this->scheduler->addJob($job['class'], $data, $options);
+            // Preserve recurring-job behavior even when no retries remain.
+            $interval = isset($options[Scheduler::OPTION_INTERVAL])
+                ? (int) $options[Scheduler::OPTION_INTERVAL]
+                : 0;
+
+            if ($interval > 0) {
+                $options[Scheduler::OPTION_AT] = time() + $interval;
+                $this->scheduler->addJob($job['class'], $data, $options);
+            } elseif ($interval <= -1) {
+                unset($options[Scheduler::OPTION_AT]);
+                $this->scheduler->addJob($job['class'], $data, $options);
+            }
+        } catch (\Throwable $e) {
+            // Let a later orphan event retry if job creation itself failed.
+            $collection->updateOne(
+                [
+                    '_id' => $job['_id'],
+                    'orphan_reschedule_claimed' => true,
+                ],
+                ['$unset' => ['orphan_reschedule_claimed' => '']]
+            );
+
+            throw $e;
         }
     }
 
