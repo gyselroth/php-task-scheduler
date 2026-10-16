@@ -372,12 +372,18 @@ class Queue
                     $this->sendOrphanedJobEvent($orphanedProc);
                 } else {
                     $this->failJobAndNotifyJobClass($orphanedProc);
+                    // Let the worker manager schedule a replacement for the
+                    // orphaned parent after its FAILED state has been persisted.
+                    $this->sendOrphanedJobEvent($orphanedProc);
                 }
 
                 continue;
             }
 
             $this->failJobAndNotifyJobClass($orphanedProc);
+            // A FAILED state alone does not create a retry job. Notify the
+            // manager so it can apply the job's retry/interval policy.
+            $this->sendOrphanedJobEvent($orphanedProc);
         }
 
         return $this;
