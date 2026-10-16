@@ -700,6 +700,7 @@ class Scheduler
         ];
 
         $options = array_merge($defaults, $options);
+
         $options = SchedulerValidator::validateOptions($options);
 
         $document = [
