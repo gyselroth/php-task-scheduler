@@ -588,9 +588,9 @@ class Scheduler
             'status' => ['$in' => JobInterface::PENDING_JOBS],
         ];
 
-        // JobInterface intentionally does not require a worker accessor, but
-        // implementations that expose one can additionally enforce ownership.
-        if (method_exists($job, 'getWorker')) {
+        // Only Process exposes worker ownership; JobInterface deliberately
+        // does not require a getWorker() method.
+        if ($job instanceof Process) {
             $workerId = $job->getWorker();
             if ($workerId instanceof ObjectId) {
                 $filter['worker'] = $workerId;
