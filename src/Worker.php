@@ -135,9 +135,13 @@ class Worker
             ]
         );
 
-        $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
-        $this->updateChildJobs($job, JobInterface::STATUS_TIMEOUT);
-
+        /*
+         * Create the replacement before publishing the timeout state. The
+         * WorkerManager reacts to timeout/failure state changes by terminating
+         * this worker. Publishing the state first creates a race in which the
+         * manager can kill this process before addJob() has persisted the
+         * replacement.
+         */
         if (0 !== $job['options']['retry']) {
             if ($job['options']['retry'] > 0) {
                 --$job['options']['retry'];
@@ -150,6 +154,8 @@ class Worker
                 $job['options']
             );
 
+            $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
+            $this->updateChildJobs($job, JobInterface::STATUS_TIMEOUT);
             $this->killProcess();
 
             return $newJob->getId();
@@ -164,6 +170,8 @@ class Worker
                 $job['options']
             );
 
+            $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
+            $this->updateChildJobs($job, JobInterface::STATUS_TIMEOUT);
             $this->killProcess();
 
             return $newJob->getId();
@@ -178,11 +186,15 @@ class Worker
                 $job['options']
             );
 
+            $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
+            $this->updateChildJobs($job, JobInterface::STATUS_TIMEOUT);
             $this->killProcess();
 
             return $newJob->getId();
         }
 
+        $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
+        $this->updateChildJobs($job, JobInterface::STATUS_TIMEOUT);
         $this->killProcess();
 
         return null;
