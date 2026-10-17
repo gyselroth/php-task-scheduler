@@ -463,6 +463,31 @@ class WorkerTest extends TestCase
         $this->assertEquals($retry_job->getOptions()['at'], time() + 300);
     }
 
+    public function testDoesNotRetryWhenOrphanRecoveryAlreadyFailedTheJob(): void
+    {
+        $job = $this->scheduler->addJob(
+            ErrorJobMock::class,
+            ['foo' => 'bar'],
+            [Scheduler::OPTION_RETRY => 1]
+        )->toArray();
+
+        // The queue's orphan scanner may mark the root FAILED while its worker
+        // is still unwinding checkChildJobs(). Keep the worker's stale snapshot
+        // but persist the terminal state before it enters the failure handler.
+        $this->mongodb->{$this->scheduler->getJobQueue()}->updateOne(
+            ['_id' => $job['_id']],
+            ['$set' => ['status' => JobInterface::STATUS_FAILED]]
+        );
+
+        $method = self::getMethod('processJob');
+        $method->invoke($this->worker, $job);
+
+        $this->assertCount(
+            0,
+            iterator_to_array($this->scheduler->getJobs())
+        );
+    }
+
     public function testProcessErrorJobRetryStopOnNull()
     {
         $job = $this->scheduler->addJob(ErrorJobMock::class, ['foo' => 'bar'], [

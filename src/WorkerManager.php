@@ -585,15 +585,19 @@ class WorkerManager
 
         $collection = $this->db->{$this->scheduler->getJobQueue()};
 
-        // Claim the orphan atomically. A find-then-insert check is racy: two
-        // manager events can both observe that no replacement exists and both
-        // create one. Only the event that changes this field may reschedule it.
+        // Share the atomic claim with Worker::processJob(). An orphan event
+        // and the still-unwinding worker can observe the same failure; only one
+        // of them may create the replacement job.
         $claim = $collection->updateOne(
             [
                 '_id' => $job['_id'],
+                'reschedule_claimed' => ['$ne' => true],
                 'orphan_reschedule_claimed' => ['$ne' => true],
             ],
-            ['$set' => ['orphan_reschedule_claimed' => true]]
+            ['$set' => [
+                'reschedule_claimed' => true,
+                'orphan_reschedule_claimed' => true,
+            ]]
         );
 
         if (1 !== $claim->getModifiedCount()) {
@@ -668,7 +672,10 @@ class WorkerManager
                     '_id' => $job['_id'],
                     'orphan_reschedule_claimed' => true,
                 ],
-                ['$unset' => ['orphan_reschedule_claimed' => '']]
+                ['$unset' => [
+                    'reschedule_claimed' => '',
+                    'orphan_reschedule_claimed' => '',
+                ]]
             );
 
             throw $e;
