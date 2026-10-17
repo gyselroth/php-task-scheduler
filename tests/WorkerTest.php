@@ -367,10 +367,68 @@ class WorkerTest extends TestCase
         $current->setValue($this->worker, $job);
 
         $this->assertNull($this->worker->timeout());
+        // getJobs() returns only active jobs; the timed-out original is excluded.
+        // With retry = 0, no replacement job should be scheduled.
         $this->assertCount(0, iterator_to_array($this->scheduler->getJobs()));
         $this->assertSame(
             JobInterface::STATUS_TIMEOUT,
             $this->scheduler->getJob($job['_id'])->getStatus()
+        );
+    }
+
+    public function testChildTimeoutMarksChildParentAndRemainingChildrenAsTimeout(): void
+    {
+        $parent = $this->scheduler->addJob(
+            SuccessJobMock::class,
+            ['foo' => 'parent'],
+            [Scheduler::OPTION_RETRY => 0]
+        )->toArray();
+
+        $child = $this->scheduler->addJob(
+            SuccessJobMock::class,
+            ['foo' => 'first-child', 'parent' => $parent['_id']],
+            [Scheduler::OPTION_RETRY => 0]
+        )->toArray();
+
+        $sibling = $this->scheduler->addJob(
+            SuccessJobMock::class,
+            ['foo' => 'remaining-child', 'parent' => $parent['_id']],
+            [Scheduler::OPTION_RETRY => 0]
+        )->toArray();
+
+        $collection = $this->mongodb->{$this->scheduler->getJobQueue()};
+        $collection->updateOne(
+            ['_id' => $parent['_id']],
+            ['$set' => ['status' => JobInterface::STATUS_PROCESSING]]
+        );
+        $collection->updateOne(
+            ['_id' => $child['_id']],
+            ['$set' => ['status' => JobInterface::STATUS_PROCESSING]]
+        );
+
+        // Simulate the first child timing out while the parent is still active.
+        $current = self::getProperty('current_job');
+        $child['status'] = JobInterface::STATUS_PROCESSING;
+        $current->setValue($this->worker, $child);
+
+        pcntl_async_signals(true);
+        pcntl_signal(SIGTERM, static function (): void {
+            // Prevent the unit test process from terminating when timeout()
+            // requests that the worker exits.
+        });
+
+        $this->assertNull($this->worker->timeout());
+        $this->assertSame(
+            JobInterface::STATUS_TIMEOUT,
+            $this->scheduler->getJob($child['_id'])->getStatus()
+        );
+        $this->assertSame(
+            JobInterface::STATUS_TIMEOUT,
+            $this->scheduler->getJob($parent['_id'])->getStatus()
+        );
+        $this->assertSame(
+            JobInterface::STATUS_TIMEOUT,
+            $this->scheduler->getJob($sibling['_id'])->getStatus()
         );
     }
 
