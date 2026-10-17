@@ -1209,6 +1209,28 @@ class Worker
     }
 
     /**
+     * Atomically claim retry scheduling for a failed job.
+     *
+     * The queue's orphan scanner and the worker can observe the same failure
+     * concurrently. They must share one claim on the original job, otherwise
+     * each path can create its own retry and leave duplicate POSTPONED jobs.
+     */
+    protected function claimReschedule(array $job): bool
+    {
+        $result = $this->db->{$this->scheduler->getJobQueue()}->updateOne(
+            [
+                '_id' => $job['_id'],
+                'status' => ['$in' => JobInterface::PENDING_JOBS],
+                'reschedule_claimed' => ['$ne' => true],
+                'orphan_reschedule_claimed' => ['$ne' => true],
+            ],
+            ['$set' => ['reschedule_claimed' => true]]
+        );
+
+        return 1 === $result->getModifiedCount();
+    }
+
+    /**
      * Process job.
      */
     protected function processJob(array $job): ObjectId
@@ -1288,7 +1310,10 @@ class Worker
              * process before addJob() has created the retry.
              */
             $newJob = null;
-            if (0 !== $job['options']['retry']) {
+            if (
+                0 !== $job['options']['retry']
+                && $this->claimReschedule($job)
+            ) {
                 if ($job['options']['retry'] > 0) {
                     --$job['options']['retry'];
                 }
@@ -1296,11 +1321,25 @@ class Worker
                 $job['options']['at'] =
                     time() + $job['options']['retry_interval'];
 
-                $newJob = $this->scheduler->addJob(
-                    $job['class'],
-                    $job['data'],
-                    $job['options']
-                );
+                try {
+                    $newJob = $this->scheduler->addJob(
+                        $job['class'],
+                        $job['data'],
+                        $job['options']
+                    );
+                } catch (\Throwable $scheduleException) {
+                    // Release the shared claim when inserting the replacement
+                    // failed, so the orphan-recovery path can retry scheduling.
+                    $this->db->{$this->scheduler->getJobQueue()}->updateOne(
+                        [
+                            '_id' => $job['_id'],
+                            'reschedule_claimed' => true,
+                        ],
+                        ['$unset' => ['reschedule_claimed' => '']]
+                    );
+
+                    throw $scheduleException;
+                }
             }
 
             $this->updateJob(

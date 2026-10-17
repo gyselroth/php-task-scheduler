@@ -279,6 +279,34 @@ class WorkerManagerTest extends TestCase
         $this->assertSame(1, $this->manager->count());
     }
 
+    public function testWorkerRetryClaimPreventsDuplicateOrphanReschedule()
+    {
+        $job = $this->scheduler->addJob(
+            \TaskScheduler\Testsuite\Mock\SuccessJobMock::class,
+            ['foo' => 'orphan'],
+            [Scheduler::OPTION_RETRY => 2]
+        );
+
+        // Simulate the worker having won the shared retry-scheduling claim
+        // before the orphan notification reaches the worker manager.
+        $collection = $this->mongodb->{$this->scheduler->getJobQueue()};
+        $collection->updateOne(
+            ['_id' => $job->getId()],
+            ['$set' => [
+                'status' => JobInterface::STATUS_FAILED,
+                'reschedule_claimed' => true,
+            ]]
+        );
+
+        $method = self::getMethod('handleOrphanedJob');
+        $method->invoke($this->manager, $job->toArray());
+
+        $this->assertCount(
+            0,
+            iterator_to_array($this->scheduler->getJobs())
+        );
+    }
+
     public function testMinChildrenGreaterThanMaxChildren()
     {
         $this->expectException(InvalidArgumentException::class);
