@@ -654,60 +654,10 @@ class Worker
             return false;
         }
 
-        // Do not execute a child job when its parent has already failed.
-        if (isset($job['data']['parent'])) {
-            try {
-                $parentJob = $this->scheduler
-                    ->getJob($job['data']['parent'])
-                    ->toArray();
-
-                if (
-                    in_array(
-                        (int) $parentJob['status'],
-                        JobInterface::FAILED_JOBS,
-                        true
-                    )
-                ) {
-                    $this->logger->debug(
-                        'parent job ['.$parentJob['_id'].'] not running anymore. do not queue child job ['.$job['_id'].']',
-                        [
-                            'category' => get_class($this),
-                            'pm' => $this->process,
-                        ]
-                    );
-
-                    $this->db
-                        ->{$this->scheduler->getJobQueue()}
-                        ->updateOne(
-                            [
-                                '_id' => $job['_id'],
-                                'status' => [
-                                    '$in' => JobInterface::PENDING_JOBS,
-                                ],
-                            ],
-                            [
-                                '$set' => [
-                                    'status' => JobInterface::STATUS_CANCELED,
-                                    'ended' => new UTCDateTime(),
-                                ],
-                            ]
-                        );
-
-                    return false;
-                }
-            } catch (\Throwable $e) {
-                $this->logger->error(
-                    'failed to check parent job for job ['.$job['_id'].']',
-                    [
-                        'category' => get_class($this),
-                        'pm' => $this->process,
-                        'exception' => $e,
-                    ]
-                );
-
-                return false;
-            }
-        }
+        // Child jobs are scheduled by the normal parent/child workflow.
+        // A parent's FAILED status (including an orphaned child failure) must
+        // not by itself cancel its remaining siblings. The child itself and the
+        // parent relationship are validated by the existing queue lifecycle.
 
         $this->logger->debug(
             'queue job ['.$job['_id'].'] in queue with status ['.$job['status'].']',
@@ -952,6 +902,15 @@ class Worker
      */
     protected function notifyJob(array $job, int $status): void
     {
+        // Child jobs never send notifications, even if they themselves have
+        // child jobs. Notifications are reserved for standalone jobs and parent
+        // jobs; a nested parent is still a child and must therefore be skipped.
+        if (isset($job['data']['parent'])
+            && $job['data']['parent'] instanceof ObjectId
+        ) {
+            return;
+        }
+
         if (null === $this->container) {
             return;
         }
