@@ -371,10 +371,10 @@ class Queue
 
                     $this->sendOrphanedJobEvent($orphanedProc);
                 } else {
+                    // Fail the parent for reporting, but leave sibling child jobs
+                    // untouched. Their execution is governed by the normal child
+                    // queue flow, not by an orphan-specific parent marker.
                     $this->failJobAndNotifyJobClass($orphanedProc);
-                    // Let the worker manager schedule a replacement for the
-                    // orphaned parent after its FAILED state has been persisted.
-                    $this->sendOrphanedJobEvent($orphanedProc);
                 }
 
                 continue;
