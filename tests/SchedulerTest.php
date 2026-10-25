@@ -240,13 +240,6 @@ class SchedulerTest extends TestCase
         $this->scheduler->updateJobProgress($job, -0.1);
     }
 
-    public function testUpdateJobProgressTooHigh()
-    {
-        $this->expectException(LogicException::class);
-        $job = $this->createMock(JobInterface::class);
-        $this->scheduler->updateJobProgress($job, 101);
-    }
-
     public function testUpdateJobProgress()
     {
         $process = $this->scheduler->addJob('test', ['foo' => 'bar']);

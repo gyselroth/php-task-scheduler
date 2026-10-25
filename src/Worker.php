@@ -654,10 +654,9 @@ class Worker
             return false;
         }
 
-        // Child jobs are scheduled by the normal parent/child workflow.
-        // A parent's FAILED status (including an orphaned child failure) must
-        // not by itself cancel its remaining siblings. The child itself and the
-        // parent relationship are validated by the existing queue lifecycle.
+        // A failed parent status must not block its remaining child jobs.
+        // Child failures (including orphaned children) are recorded on the parent,
+        // while sibling jobs continue through the normal queue lifecycle.
 
         $this->logger->debug(
             'queue job ['.$job['_id'].'] in queue with status ['.$job['status'].']',
@@ -902,12 +901,9 @@ class Worker
      */
     protected function notifyJob(array $job, int $status): void
     {
-        // Child jobs never send notifications, even if they themselves have
-        // child jobs. Notifications are reserved for standalone jobs and parent
-        // jobs; a nested parent is still a child and must therefore be skipped.
-        if (isset($job['data']['parent'])
-            && $job['data']['parent'] instanceof ObjectId
-        ) {
+        // Child jobs do not emit notifications. This applies to nested children
+        // as well; standalone jobs and parent jobs remain eligible.
+        if (isset($job['data']['parent'])) {
             return;
         }
 
@@ -1306,10 +1302,18 @@ class Worker
                 JobInterface::STATUS_FAILED
             );
 
-            $this->updateChildJobs(
-                $job,
-                JobInterface::STATUS_FAILED
-            );
+            /*
+             * A failed child must fail its parent, but it must not cancel
+             * the parent's other children. Those siblings are independent
+             * queue entries and must be allowed to finish normally.
+             * Other parent failures retain the existing cascade behaviour.
+             */
+            if (!$e instanceof ChildJobFailure) {
+                $this->updateChildJobs(
+                    $job,
+                    JobInterface::STATUS_FAILED
+                );
+            }
 
             $this->current_job = null;
 
@@ -1422,30 +1426,65 @@ class Worker
      */
     protected function checkChildJobs(ObjectId $jobId): void
     {
-        foreach ($this->scheduler->getChildProcs($jobId) as $proc) {
-            if (
-                in_array(
-                    $proc->getStatus(),
-                    JobInterface::FAILED_JOBS,
-                    true
-                )
-            ) {
-                $this->logger->info(
-                    'child job with id ['.$proc->getId().'] failed',
-                    [
-                        'category' => get_class($this),
-                        'pm' => $this->process,
-                    ]
-                );
+        /*
+         * Keep the parent in PROCESSING while siblings finish. Query MongoDB
+         * directly on every pass (rather than relying on Process instances)
+         * and refresh the parent's heartbeat while waiting. Without the
+         * heartbeat, orphan recovery can incorrectly classify this still-live
+         * parent as orphaned because it is waiting for its children.
+         */
+        $collection = $this->db->selectCollection(
+            $this->scheduler->getJobQueue()
+        );
+        $failedStatus = null;
 
-                if (
-                    JobInterface::STATUS_TIMEOUT === $proc->getStatus()
-                ) {
-                    throw new JobTimeout('child job timed out');
+        do {
+            $hasActiveChildren = false;
+            $failedStatus = null;
+
+            $children = $collection->find(
+                ['data.parent' => $jobId],
+                ['projection' => ['status' => 1]]
+            );
+
+            foreach ($children as $child) {
+                $status = (int) $child['status'];
+
+                if (in_array($status, JobInterface::PENDING_JOBS, true)) {
+                    $hasActiveChildren = true;
+                    continue;
                 }
 
-                throw new ChildJobFailure('child job failed or was canceled');
+                if (
+                    null === $failedStatus
+                    && in_array($status, JobInterface::FAILED_JOBS, true)
+                ) {
+                    $failedStatus = $status;
+                }
             }
+
+            if ($hasActiveChildren) {
+                // Keep the parent alive while it waits; this prevents the
+                // orphan scanner from racing with the child completion flow.
+                $collection->updateOne(
+                    [
+                        '_id' => $jobId,
+                        'status' => JobInterface::STATUS_PROCESSING,
+                        'worker' => $this->id,
+                    ],
+                    ['$set' => ['alive' => new \MongoDB\BSON\UTCDateTime()]]
+                );
+
+                usleep(100000);
+            }
+        } while ($hasActiveChildren);
+
+        if (null !== $failedStatus) {
+            if (JobInterface::STATUS_TIMEOUT === $failedStatus) {
+                throw new JobTimeout('child job timed out');
+            }
+
+            throw new ChildJobFailure('child job failed or was canceled');
         }
     }
 

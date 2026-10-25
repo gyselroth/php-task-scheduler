@@ -562,7 +562,18 @@ class Scheduler
         JobInterface $job,
         float $progress
     ): self {
-        if ($progress < 0 || $progress > 100) {
+        if ($progress > 100) {
+            $this->logger->debug(
+                'job progress was above 100 ['.$progress.'] check reason',
+                [
+                    'category' => get_class($this),
+                ]
+            );
+
+            $progress = 100;
+        }
+
+        if ($progress < 0) {
             throw new LogicException('progress may only be between 0 to 100');
         }
 
@@ -656,10 +667,6 @@ class Scheduler
             [
                 'status' => JobInterface::STATUS_PROCESSING,
                 'alive' => ['$lt' => $aliveTime],
-                '$or' => [
-                    ['data.parent' => ['$exists' => false]],
-                    ['data.parent' => null],
-                ],
             ],
             ['typeMap' => self::TYPE_MAP]
         );
