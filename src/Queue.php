@@ -324,6 +324,14 @@ class Queue
         );
 
         foreach ($this->scheduler->getOrphanedProcs($aliveUtcDatetime) as $orphanedProc) {
+            // A job that owns children is a parent in the job tree. Do not
+            // fail it from orphan recovery: its normal worker completion path
+            // checks the final child states and fails the parent if necessary.
+            // This keeps the parent's failure from interrupting its siblings.
+            $data = $orphanedProc->getData();
+            $isChildJob = is_array($data)
+                && isset($data['parent'])
+                && null !== $data['parent'];
             $hasChildProcs = false;
 
             foreach ($this->scheduler->getChildProcs($orphanedProc->getId()) as $childProc) {
@@ -332,81 +340,36 @@ class Queue
                 break;
             }
 
-            if ($hasChildProcs) {
-                $result = $this->db->{$this->scheduler->getJobQueue()}->updateMany(
-                    [
-                        'status' => JobInterface::STATUS_PROCESSING,
-                        'alive' => ['$lt' => $aliveUtcDatetime],
-                        'data.parent' => $orphanedProc->getId(),
-                    ],
-                    [
-                        '$set' => [
-                            'status' => JobInterface::STATUS_FAILED,
-                            'ended' => new UTCDateTime(),
-                        ],
-                    ]
-                );
-
-                $this->logger->warning(
-                    'found [{jobs}] orphaned child jobs, set state to failed',
+            if (!$isChildJob && $hasChildProcs) {
+                $this->logger->debug(
+                    'orphaned job [{job}] has children; leave parent status unchanged',
                     [
                         'category' => get_class($this),
-                        'jobs' => $result->getMatchedCount(),
+                        'job' => (string) $orphanedProc->getId(),
                     ]
                 );
-
-                if (0 === $result->getMatchedCount()) {
-                    $this->db->{$this->scheduler->getJobQueue()}->updateOne(
-                        [
-                            '_id' => $orphanedProc->getId(),
-                            'status' => JobInterface::STATUS_PROCESSING,
-                        ],
-                        [
-                            '$set' => [
-                                'status' => JobInterface::STATUS_DONE,
-                                'ended' => new UTCDateTime(),
-                            ],
-                        ]
-                    );
-
-                    $this->sendOrphanedJobEvent($orphanedProc);
-                } else {
-                    // Fail the parent for reporting, but leave sibling child jobs
-                    // untouched. Their execution is governed by the normal child
-                    // queue flow, not by an orphan-specific parent marker.
-                    $this->failJobAndNotifyJobClass($orphanedProc);
-                }
 
                 continue;
             }
 
-            $this->failJobAndNotifyJobClass($orphanedProc);
-            // A FAILED state alone does not create a retry job. Notify the
-            // manager so it can apply the job's retry/interval policy.
-            $this->sendOrphanedJobEvent($orphanedProc);
+            // Only the orphaned leaf job is failed here. Do not emit the
+            // orphan-reschedule event: that event creates a replacement job
+            // (often POSTPONED), while the parent should observe this FAILED
+            // child during its normal checkChildJobs() completion path.
+            $result = $this->failJobAndNotifyJobClass($orphanedProc);
+
+            if (1 === $result->getModifiedCount()) {
+                $this->logger->warning(
+                    'orphaned leaf job [{job}] marked as failed',
+                    [
+                        'category' => get_class($this),
+                        'job' => (string) $orphanedProc->getId(),
+                    ]
+                );
+            }
         }
 
         return $this;
-    }
-
-    protected function sendOrphanedJobEvent(Process $job): void
-    {
-        if (null === $this->queue) {
-            return;
-        }
-
-        if (!@msg_send(
-            $this->queue,
-            WorkerManager::TYPE_WORKER_ORPHANED_JOB,
-            $job->toArray(),
-            true,
-            true
-        )) {
-            $this->logger->error(
-                'failed to send orphaned-job notification to worker manager',
-                ['category' => get_class($this), 'job' => (string) $job->getId()]
-            );
-        }
     }
 
     protected function failJobAndNotifyJobClass(Process $job): UpdateResult
