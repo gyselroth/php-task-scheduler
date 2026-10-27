@@ -1008,6 +1008,26 @@ class Worker
     }
 
     /**
+     * Claim retry scheduling for a parent that timed out while waiting for
+     * its children. This uses a timeout-specific claim: the orphan-recovery
+     * path may have left the generic reschedule claim behind, which must not
+     * suppress the retry for a completed child-timeout failure.
+     */
+    protected function claimTimeoutRetry(array $job): bool
+    {
+        $result = $this->db->{$this->scheduler->getJobQueue()}->updateOne(
+            [
+                '_id' => $job['_id'],
+                'status' => JobInterface::STATUS_PROCESSING,
+                'timeout_retry_claimed' => ['$ne' => true],
+            ],
+            ['$set' => ['timeout_retry_claimed' => true]]
+        );
+
+        return 1 === $result->getModifiedCount();
+    }
+
+    /**
      * Process job.
      */
     protected function processJob(array $job): ObjectId
@@ -1107,10 +1127,65 @@ class Worker
 
             /*
              * checkChildJobs() throws JobTimeout only after all children have
-             * reached terminal states and at least one child timed out. At
-             * this point only the parent itself becomes TIMEOUT; children and
-             * siblings already have their own final statuses.
+             * reached terminal states and at least one child timed out. A
+             * parent timeout is still a failed attempt and must use the same
+             * retry policy as other execution failures. Schedule the retry
+             * before publishing TIMEOUT because the manager may terminate the
+             * worker as soon as it observes that terminal status.
              */
+            $retryConfigured = 0 !== (int) ($job['options']['retry'] ?? 0);
+            $retryClaimed = $retryConfigured && $this->claimTimeoutRetry($job);
+
+            if ($retryClaimed) {
+                if ($job['options']['retry'] > 0) {
+                    --$job['options']['retry'];
+                }
+
+                $job['options']['at'] =
+                    time() + $job['options']['retry_interval'];
+
+                try {
+                    $this->scheduler->addJob(
+                        $job['class'],
+                        $job['data'],
+                        $job['options']
+                    );
+                } catch (\Throwable $scheduleException) {
+                    $this->db->{$this->scheduler->getJobQueue()}->updateOne(
+                        [
+                            '_id' => $job['_id'],
+                            'reschedule_claimed' => true,
+                        ],
+                        ['$unset' => ['reschedule_claimed' => '']]
+                    );
+
+                    $this->logger->error(
+                        'failed to schedule retry for timed out job ['.$job['_id'].']',
+                        [
+                            'category' => get_class($this),
+                            'pm' => $this->process,
+                            'exception' => $scheduleException,
+                        ]
+                    );
+                }
+            }
+
+            if ($retryConfigured && !$retryClaimed) {
+                $this->logger->warning(
+                    'retry for timed out job ['.$job['_id'].'] was not scheduled because the timeout retry claim could not be acquired',
+                    [
+                        'category' => get_class($this),
+                        'pm' => $this->process,
+                        'retry' => $job['options']['retry'] ?? 0,
+                    ]
+                );
+            } elseif (!$retryConfigured) {
+                $this->logger->debug(
+                    'no retry configured for timed out job ['.$job['_id'].']',
+                    ['category' => get_class($this), 'pm' => $this->process]
+                );
+            }
+
             $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
             $this->current_job = null;
 
