@@ -135,53 +135,42 @@ class Worker
             ]
         );
 
+        $data = $job['data'] ?? [];
+        $isChildJob = is_array($data)
+            && array_key_exists('parent', $data)
+            && null !== $data['parent'];
+
+        /*
+         * Only a root parent (a job without a parent of its own) ignores its
+         * own timeout when it owns children. A child must still time out on
+         * its own deadline even when it also has children of its own; its
+         * parent will observe that terminal status after the sibling jobs
+         * finish.
+         */
+        if (!$isChildJob && $this->hasChildJobs($job['_id'])) {
+            pcntl_alarm(0);
+
+            $this->logger->debug(
+                'root parent job ['.$job['_id'].'] has child jobs; ignore its own timeout',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]
+            );
+
+            return null;
+        }
+
+        // Child timeouts only affect that child. In particular, do not retry
+        // the root job and do not propagate TIMEOUT to the parent or siblings.
         $newJob = null;
-        $isChildJob = isset($job['data']['parent'])
-            && $job['data']['parent'] instanceof ObjectId;
-
-        if ($isChildJob) {
-            /*
-             * A child timeout fails the entire parent tree. Retrying only the
-             * child would leave it attached to a failed parent and could race
-             * with siblings that are still being dispatched. If the root job
-             * has retries remaining, schedule a new root occurrence instead.
-             */
-            $rootJob = $this->getTimeoutRootJob($job);
-            $rootJobId = (string) $rootJob['_id'];
-
-            if ($rootJobId !== (string) $job['_id']) {
-                $rootJob['options'] = $this->normalizeJobOptions(
-                    $rootJob['options'] ?? []
-                );
-
-                if (0 !== $rootJob['options']['retry']) {
-                    if ($rootJob['options']['retry'] > 0) {
-                        --$rootJob['options']['retry'];
-                    }
-
-                    // Leave a short buffer for the timeout-tree transaction to
-                    // commit before a zero-delay retry can begin executing.
-                    $rootJob['options']['at'] = time() + max(
-                        1,
-                        (int) $rootJob['options']['retry_interval']
-                    );
-
-                    $newJob = $this->scheduler->addJob(
-                        $rootJob['class'],
-                        $rootJob['data'],
-                        $rootJob['options']
-                    );
-                }
-            }
-        } elseif (0 !== $job['options']['retry']) {
-            // Create the replacement before publishing the timeout state.
-            // The WorkerManager terminates workers after observing a timeout
-            // change, so the replacement must already be persisted.
+        if (!$isChildJob && 0 !== $job['options']['retry']) {
+            // Standalone jobs retain their existing retry behaviour.
             if ($job['options']['retry'] > 0) {
                 --$job['options']['retry'];
             }
-            $job['options']['at'] = time() + $job['options']['retry_interval'];
 
+            $job['options']['at'] = time() + $job['options']['retry_interval'];
             $newJob = $this->scheduler->addJob(
                 $job['class'],
                 $job['data'],
@@ -189,16 +178,22 @@ class Worker
             );
         }
 
-        /*
-         * Update the timed-out job, its ancestors, and all descendants in one
-         * transaction. Updating the job first and its children afterwards is
-         * racy: the WorkerManager can kill this worker as soon as it sees the
-         * first timeout event, leaving other jobs stuck in PROCESSING.
-         */
-        $this->timeoutJobTree($job);
+        $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
         $this->killProcess();
 
         return null !== $newJob ? $newJob->getId() : null;
+    }
+
+    /**
+     * Determine whether a job owns at least one child job.
+     */
+    protected function hasChildJobs(ObjectId $jobId): bool
+    {
+        foreach ($this->scheduler->getChildProcs($jobId) as $childJob) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -408,179 +403,6 @@ class Worker
         $this->exit();
 
         return $newJob->getId();
-    }
-
-    /**
-     * Find the highest reachable parent for a timed-out job.
-     */
-    protected function getTimeoutRootJob(array $job): array
-    {
-        $root = $job;
-        $visited = [(string) $job['_id'] => true];
-
-        while (
-            isset($root['data'])
-            && is_array($root['data'])
-            && isset($root['data']['parent'])
-            && $root['data']['parent'] instanceof ObjectId
-        ) {
-            try {
-                $parent = $this->scheduler
-                    ->getJob($root['data']['parent'])
-                    ->toArray();
-            } catch (\Throwable $e) {
-                break;
-            }
-
-            if (!isset($parent['_id'])) {
-                break;
-            }
-
-            $parentKey = (string) $parent['_id'];
-            if (isset($visited[$parentKey])) {
-                break;
-            }
-
-            $visited[$parentKey] = true;
-            $root = $parent;
-        }
-
-        return $root;
-    }
-
-    /**
-     * Recursively collect all descendants of a job for timeout propagation.
-     */
-    protected function collectTimeoutDescendants(
-        ObjectId $parentId,
-        array &$jobs,
-        array &$visited
-    ): void {
-        foreach ($this->scheduler->getChildProcs($parentId) as $childProcess) {
-            $child = $childProcess->toArray();
-            if (!isset($child['_id']) || !($child['_id'] instanceof ObjectId)) {
-                continue;
-            }
-
-            $childKey = (string) $child['_id'];
-            if (isset($visited[$childKey])) {
-                continue;
-            }
-
-            $visited[$childKey] = true;
-            $jobs[$childKey] = $child;
-            $this->collectTimeoutDescendants($child['_id'], $jobs, $visited);
-        }
-    }
-
-    /**
-     * Mark a timed-out job's entire hierarchy as timed out atomically.
-     */
-    protected function timeoutJobTree(array $job): void
-    {
-        $root = $this->getTimeoutRootJob($job);
-        $jobs = [(string) $root['_id'] => $root];
-        $visited = [(string) $root['_id'] => true];
-        $this->collectTimeoutDescendants($root['_id'], $jobs, $visited);
-
-        $pendingJobs = [];
-        foreach ($jobs as $candidate) {
-            if (
-                isset($candidate['_id'], $candidate['status'])
-                && in_array(
-                    (int) $candidate['status'],
-                    JobInterface::PENDING_JOBS,
-                    true
-                )
-            ) {
-                $pendingJobs[] = $candidate;
-            }
-        }
-
-        if (0 === count($pendingJobs)) {
-            return;
-        }
-
-        $set = [
-            'status' => JobInterface::STATUS_TIMEOUT,
-            'ended' => new UTCDateTime(),
-        ];
-        $collection = $this->db->{$this->scheduler->getJobQueue()};
-        $session = $this->sessionHandler->getSession();
-        $changedJobs = [];
-
-        try {
-            $session->startTransaction(
-                $this->sessionHandler->getOptions()
-            );
-
-            foreach ($pendingJobs as $candidate) {
-                $result = $collection->updateOne(
-                    [
-                        '_id' => $candidate['_id'],
-                        'status' => ['$in' => JobInterface::PENDING_JOBS],
-                    ],
-                    ['$set' => $set],
-                    ['session' => $session]
-                );
-
-                if ($result->getModifiedCount() > 0) {
-                    $changedJobs[] = $candidate;
-                }
-            }
-
-            $session->commitTransaction();
-        } catch (\Throwable $e) {
-            try {
-                $session->abortTransaction();
-            } catch (\Throwable $ignored) {
-            }
-
-            $this->logger->error(
-                'failed to propagate timeout through job tree rooted at ['.$root['_id'].']',
-                [
-                    'category' => get_class($this),
-                    'pm' => $this->process,
-                    'exception' => $e,
-                ]
-            );
-
-            /*
-             * Best-effort fallback for deployments/mock databases where the
-             * transaction fails. This still updates each pending status before
-             * the worker is terminated.
-             */
-            foreach ($pendingJobs as $candidate) {
-                try {
-                    $result = $collection->updateOne(
-                        [
-                            '_id' => $candidate['_id'],
-                            'status' => ['$in' => JobInterface::PENDING_JOBS],
-                        ],
-                        ['$set' => $set]
-                    );
-
-                    if ($result->getModifiedCount() > 0) {
-                        $changedJobs[] = $candidate;
-                    }
-                } catch (\Throwable $fallbackException) {
-                    $this->logger->error(
-                        'failed to set timeout status for job ['.$candidate['_id'].']',
-                        [
-                            'category' => get_class($this),
-                            'pm' => $this->process,
-                            'exception' => $fallbackException,
-                        ]
-                    );
-                }
-            }
-        }
-
-        // Run user notification callbacks only after every database status has
-        // been persisted, so callbacks cannot interrupt the propagation midway.
-        foreach ($changedJobs as $changedJob) {
-            $this->notifyJob($changedJob, JobInterface::STATUS_TIMEOUT);
-        }
     }
 
     /**
@@ -1229,8 +1051,52 @@ class Worker
 
         $this->current_job = $job;
 
-        if ($job['options']['timeout'] > 0) {
-            pcntl_alarm($job['options']['timeout']);
+        $timeout = (int) ($job['options']['timeout'] ?? 0);
+
+        /*
+         * Some callers create child jobs with the scheduler-level timeout
+         * disabled (options.timeout = 0), while retaining the configured
+         * timeout in the payload (data.options.timeout). In that case the
+         * child would never receive SIGALRM, so Worker::timeout() could not
+         * mark it as timed out. Keep the scheduler option authoritative when
+         * it is positive; only use the payload timeout as a fallback for
+         * child jobs whose scheduler-level timeout is disabled.
+         */
+        if (
+            $timeout <= 0
+            && isset($job['data']['parent'])
+            && null !== $job['data']['parent']
+        ) {
+            $data = $job['data'];
+            if ($data instanceof \Traversable) {
+                $data = iterator_to_array($data);
+            } elseif (is_object($data)) {
+                $data = get_object_vars($data);
+            }
+
+            if (is_array($data) && isset($data['options'])) {
+                $dataOptions = $data['options'];
+                if ($dataOptions instanceof \Traversable) {
+                    $dataOptions = iterator_to_array($dataOptions);
+                } elseif (is_object($dataOptions)) {
+                    $dataOptions = get_object_vars($dataOptions);
+                }
+
+                if (is_array($dataOptions)) {
+                    $timeout = (int) ($dataOptions['timeout'] ?? 0);
+                }
+            }
+        }
+
+        if ($timeout > 0) {
+            $this->logger->debug(
+                'arm timeout ['.$timeout.'s] for job ['.$job['_id'].']',
+                [
+                    'category' => get_class($this),
+                    'pm' => $this->process,
+                ]
+            );
+            pcntl_alarm($timeout);
         }
 
         try {
@@ -1239,10 +1105,13 @@ class Worker
         } catch (JobTimeout $e) {
             pcntl_alarm(0);
 
-            // A child timeout can surface while the parent is waiting for its
-            // children. Ensure the parent and all remaining descendants become
-            // terminal before this worker returns to the manager.
-            $this->timeoutJobTree($job);
+            /*
+             * checkChildJobs() throws JobTimeout only after all children have
+             * reached terminal states and at least one child timed out. At
+             * this point only the parent itself becomes TIMEOUT; children and
+             * siblings already have their own final statuses.
+             */
+            $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
             $this->current_job = null;
 
             return $job['_id'];

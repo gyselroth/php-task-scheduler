@@ -376,7 +376,7 @@ class WorkerTest extends TestCase
         );
     }
 
-    public function testChildTimeoutMarksChildParentAndRemainingChildrenAsTimeout(): void
+    public function testChildTimeoutOnlyMarksChildAsTimeout(): void
     {
         $parent = $this->scheduler->addJob(
             SuccessJobMock::class,
@@ -423,12 +423,47 @@ class WorkerTest extends TestCase
             $this->scheduler->getJob($child['_id'])->getStatus()
         );
         $this->assertSame(
-            JobInterface::STATUS_TIMEOUT,
+            JobInterface::STATUS_PROCESSING,
             $this->scheduler->getJob($parent['_id'])->getStatus()
         );
         $this->assertSame(
-            JobInterface::STATUS_TIMEOUT,
+            JobInterface::STATUS_WAITING,
             $this->scheduler->getJob($sibling['_id'])->getStatus()
+        );
+    }
+
+    public function testParentWithChildrenIgnoresItsOwnTimeout(): void
+    {
+        $parent = $this->scheduler->addJob(
+            SuccessJobMock::class,
+            ['foo' => 'parent'],
+            [Scheduler::OPTION_RETRY => 0]
+        )->toArray();
+
+        $child = $this->scheduler->addJob(
+            SuccessJobMock::class,
+            ['foo' => 'child', 'parent' => $parent['_id']],
+            [Scheduler::OPTION_RETRY => 0]
+        )->toArray();
+
+        $collection = $this->mongodb->{$this->scheduler->getJobQueue()};
+        $collection->updateOne(
+            ['_id' => $parent['_id']],
+            ['$set' => ['status' => JobInterface::STATUS_PROCESSING]]
+        );
+
+        $current = self::getProperty('current_job');
+        $parent['status'] = JobInterface::STATUS_PROCESSING;
+        $current->setValue($this->worker, $parent);
+
+        $this->assertNull($this->worker->timeout());
+        $this->assertSame(
+            JobInterface::STATUS_PROCESSING,
+            $this->scheduler->getJob($parent['_id'])->getStatus()
+        );
+        $this->assertSame(
+            JobInterface::STATUS_WAITING,
+            $this->scheduler->getJob($child['_id'])->getStatus()
         );
     }
 
