@@ -662,6 +662,17 @@ class Worker
             ],
         ];
 
+        /*
+         * The WorkerManager consumes terminal status changes and may SIGKILL
+         * this worker immediately. Therefore send the notification before
+         * publishing the terminal status to MongoDB. notifyJob() records
+         * notification_sent, so a subsequent status update/recovery will not
+         * send it a second time.
+         */
+        if ($status >= JobInterface::STATUS_DONE) {
+            $this->notifyJob($job, $status);
+        }
+
         $session = $this->sessionHandler->getSession();
         $session->startTransaction(
             $this->sessionHandler->getOptions()
@@ -706,14 +717,6 @@ class Worker
 
             return false;
         }
-
-        /*
-         * Notifications happen AFTER the database transaction.
-         *
-         * An external notification cannot be rolled back together with
-         * MongoDB, so it must not execute inside the transaction.
-         */
-        $this->notifyJob($job, $status);
 
         return true;
     }
