@@ -1030,6 +1030,47 @@ class Worker
     /**
      * Process job.
      */
+    /**
+     * A retry is a new attempt. Allow its parent to emit a fresh terminal
+     * notification when the retried child fails or times out again.
+     */
+    protected function resetParentNotificationForRetry(array $job): void
+    {
+        $parentId = $job['data']['parent'] ?? null;
+        if (null === $parentId) {
+            return;
+        }
+
+        $this->db->{$this->scheduler->getJobQueue()}->updateOne(
+            ['_id' => $parentId],
+            ['$unset' => ['notification_sent' => '']]
+        );
+    }
+
+    /**
+     * A parent notification belongs to one execution attempt, not to the
+     * lifetime of a recurring/retried job. Clear any stale marker immediately
+     * before starting a new attempt (after the postponed check).
+     */
+    protected function resetNotificationSentForJobStart(array $job): void
+    {
+        $result = $this->db->{$this->scheduler->getJobQueue()}->updateOne(
+            ['_id' => $job['_id']],
+            ['$unset' => ['notification_sent' => '']]
+        );
+
+        unset($job['notification_sent']);
+
+        $this->logger->debug(
+            'reset notification_sent before starting job ['.$job['_id'].']',
+            [
+                'category' => get_class($this),
+                'pm' => $this->process,
+                'modified' => $result->getModifiedCount(),
+            ]
+        );
+    }
+
     protected function processJob(array $job): ObjectId
     {
         $job['options'] = $this->normalizeJobOptions($job['options']);
@@ -1058,6 +1099,12 @@ class Worker
 
             return $job['_id'];
         }
+
+        // Clear stale notification state for this new execution attempt.
+        // In particular, retry parents must not inherit notification_sent
+        // from a previous failed/timeout attempt.
+        $this->resetNotificationSentForJobStart($job);
+        unset($job['notification_sent']);
 
         $this->logger->debug(
             'execute job ['.$job['_id'].'] ['.$job['class'].'] on worker ['.$this->id.']',
@@ -1145,6 +1192,7 @@ class Worker
                     time() + $job['options']['retry_interval'];
 
                 try {
+                    $this->resetParentNotificationForRetry($job);
                     $this->scheduler->addJob(
                         $job['class'],
                         $job['data'],
@@ -1231,6 +1279,7 @@ class Worker
                     time() + $job['options']['retry_interval'];
 
                 try {
+                    $this->resetParentNotificationForRetry($job);
                     $newJob = $this->scheduler->addJob(
                         $job['class'],
                         $job['data'],
