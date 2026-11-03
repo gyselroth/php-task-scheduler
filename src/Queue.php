@@ -14,6 +14,7 @@ namespace TaskScheduler;
 
 use League\Event\Emitter;
 use MongoDB\BSON\UTCDateTime;
+use MongoDB\BSON\ObjectId;
 use MongoDB\Database;
 use MongoDB\UpdateResult;
 use Psr\Container\ContainerInterface;
