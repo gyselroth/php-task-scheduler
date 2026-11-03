@@ -662,17 +662,6 @@ class Worker
             ],
         ];
 
-        /*
-         * The WorkerManager consumes terminal status changes and may SIGKILL
-         * this worker immediately. Therefore send the notification before
-         * publishing the terminal status to MongoDB. notifyJob() records
-         * notification_sent, so a subsequent status update/recovery will not
-         * send it a second time.
-         */
-        if ($status >= JobInterface::STATUS_DONE) {
-            $this->notifyJob($job, $status);
-        }
-
         $session = $this->sessionHandler->getSession();
         $session->startTransaction(
             $this->sessionHandler->getOptions()
@@ -717,6 +706,14 @@ class Worker
 
             return false;
         }
+
+        /*
+         * Notifications happen AFTER the database transaction.
+         *
+         * An external notification cannot be rolled back together with
+         * MongoDB, so it must not execute inside the transaction.
+         */
+        $this->notifyJob($job, $status);
 
         return true;
     }
@@ -1189,6 +1186,16 @@ class Worker
                 );
             }
 
+            /*
+             * Child timeout aggregation reaches this catch only after
+             * checkChildJobs() has confirmed that all children are terminal.
+             * Send the parent notification before publishing TIMEOUT: the
+             * WorkerManager may terminate this worker as soon as it observes
+             * the terminal status change. notifyJob() itself skips ordinary
+             * child jobs and honors notification_sent.
+             */
+            $this->notifyJob($job, JobInterface::STATUS_TIMEOUT);
+
             $this->updateJob($job, JobInterface::STATUS_TIMEOUT);
             $this->current_job = null;
 
@@ -1242,6 +1249,23 @@ class Worker
 
                     throw $scheduleException;
                 }
+            }
+
+            /*
+             * ChildJobFailure is thrown by the parent after all children have
+             * finished. Publish the parent's notification before changing its
+             * status: WorkerManager reacts to the terminal status change and
+             * may terminate this worker before the normal post-update
+             * notification hook gets a chance to run.
+             *
+             * notifyJob() is idempotent via notification_sent, so the normal
+             * updateJob() hook below can remain in place.
+             */
+            if ($e instanceof ChildJobFailure) {
+                $this->notifyJob(
+                    $job,
+                    JobInterface::STATUS_FAILED
+                );
             }
 
             $this->updateJob(

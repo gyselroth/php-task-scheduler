@@ -323,6 +323,8 @@ class Queue
             (time() - $this->orphaned_timeout) * 1000
         );
 
+        $orphanedParentIds = [];
+
         foreach ($this->scheduler->getOrphanedProcs($aliveUtcDatetime) as $orphanedProc) {
             // A job that owns children is a parent in the job tree. Do not
             // fail it from orphan recovery: its normal worker completion path
@@ -341,8 +343,9 @@ class Queue
             }
 
             if (!$isChildJob && $hasChildProcs) {
+                $orphanedParentIds[(string) $orphanedProc->getId()] = $orphanedProc->getId();
                 $this->logger->debug(
-                    'orphaned job [{job}] has children; leave parent status unchanged',
+                    'orphaned parent job [{job}] deferred until child jobs are handled',
                     [
                         'category' => get_class($this),
                         'job' => (string) $orphanedProc->getId(),
@@ -366,6 +369,50 @@ class Queue
                         'job' => (string) $orphanedProc->getId(),
                     ]
                 );
+            }
+        }
+
+        // Reconcile orphaned parents after processing orphaned children. If all
+        // children are terminal and at least one was canceled, the parent must
+        // not remain PROCESSING forever: propagate CANCELED to the parent.
+        $collection = $this->db->{$this->scheduler->getJobQueue()};
+        foreach ($orphanedParentIds as $parentId) {
+            $children = $this->scheduler->getChildProcs($parentId);
+            $hasCanceledChild = false;
+            $hasPendingChild = false;
+
+            foreach ($children as $childProc) {
+                $childStatus = $childProc->getStatus();
+                if (JobInterface::STATUS_CANCELED === $childStatus) {
+                    $hasCanceledChild = true;
+                }
+                if (in_array($childStatus, JobInterface::PENDING_JOBS, true)) {
+                    $hasPendingChild = true;
+                    break;
+                }
+            }
+
+            if (!$hasPendingChild && $hasCanceledChild) {
+                $result = $collection->updateOne(
+                    [
+                        '_id' => $parentId,
+                        'status' => JobInterface::STATUS_PROCESSING,
+                    ],
+                    ['$set' => [
+                        'status' => JobInterface::STATUS_CANCELED,
+                        'ended' => new UTCDateTime(),
+                    ]]
+                );
+
+                if (1 === $result->getModifiedCount()) {
+                    $this->logger->warning(
+                        'orphaned parent job [{job}] marked as canceled because a child was canceled',
+                        [
+                            'category' => get_class($this),
+                            'job' => (string) $parentId,
+                        ]
+                    );
+                }
             }
         }
 
