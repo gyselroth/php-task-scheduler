@@ -379,17 +379,43 @@ class Queue
         foreach ($orphanedParentIds as $parentId) {
             $children = $this->scheduler->getChildProcs($parentId);
             $hasCanceledChild = false;
+            $hasFailedChild = false;
             $hasPendingChild = false;
 
             foreach ($children as $childProc) {
                 $childStatus = $childProc->getStatus();
+
                 if (JobInterface::STATUS_CANCELED === $childStatus) {
                     $hasCanceledChild = true;
                 }
+
+                if (JobInterface::STATUS_FAILED === $childStatus) {
+                    $hasFailedChild = true;
+                }
+
                 if (in_array($childStatus, JobInterface::PENDING_JOBS, true)) {
                     $hasPendingChild = true;
                     break;
                 }
+            }
+
+            // Fail the parent only after all children are terminal. Use the
+            // regular helper to preserve the parent notification handling.
+            if (!$hasPendingChild && $hasFailedChild) {
+                $parentProc = $this->scheduler->getJob($parentId);
+                $result = $this->failJobAndNotifyJobClass($parentProc);
+
+                if (1 === $result->getModifiedCount()) {
+                    $this->logger->warning(
+                        'orphaned parent job [{job}] marked as failed because a child failed',
+                        [
+                            'category' => get_class($this),
+                            'job' => (string) $parentId,
+                        ]
+                    );
+                }
+
+                continue;
             }
 
             if (!$hasPendingChild && $hasCanceledChild) {
