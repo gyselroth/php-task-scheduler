@@ -355,10 +355,19 @@ class Queue
                 continue;
             }
 
+            // Remember the direct parent of an orphaned child as well. The
+            // parent may not itself be present in the orphan cursor (for
+            // example, its heartbeat may have been refreshed more recently).
+            // We must still reconcile it after the child has been marked
+            // terminal, otherwise it can remain PROCESSING indefinitely.
+            if ($isChildJob && $data['parent'] instanceof ObjectId) {
+                $orphanedParentIds[(string) $data['parent']] = $data['parent'];
+            }
+
             // Only the orphaned leaf job is failed here. Do not emit the
             // orphan-reschedule event: that event creates a replacement job
             // (often POSTPONED), while the parent should observe this FAILED
-            // child during its normal checkChildJobs() completion path.
+            // child during orphan reconciliation below.
             $result = $this->failJobAndNotifyJobClass($orphanedProc);
 
             if (1 === $result->getModifiedCount()) {
@@ -377,13 +386,19 @@ class Queue
         // not remain PROCESSING forever: propagate CANCELED to the parent.
         $collection = $this->db->{$this->scheduler->getJobQueue()};
         foreach ($orphanedParentIds as $parentId) {
-            $children = $this->scheduler->getChildProcs($parentId);
+            // Read child statuses directly from MongoDB after orphan updates
+            // have completed. This guarantees reconciliation sees the latest
+            // FAILED status rather than an earlier Process snapshot.
+            $children = $collection->find(
+                ['data.parent' => $parentId],
+                ['projection' => ['status' => 1]]
+            );
             $hasCanceledChild = false;
             $hasFailedChild = false;
             $hasPendingChild = false;
 
             foreach ($children as $childProc) {
-                $childStatus = $childProc->getStatus();
+                $childStatus = (int) $childProc['status'];
 
                 if (JobInterface::STATUS_CANCELED === $childStatus) {
                     $hasCanceledChild = true;
