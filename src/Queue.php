@@ -6,15 +6,15 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      gyselroth™  (http://www.gyselroth.com)
- * @copyright   Copryright (c) 2017-2022 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2026 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
 namespace TaskScheduler;
 
 use League\Event\Emitter;
-use MongoDB\BSON\UTCDateTime;
 use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use MongoDB\UpdateResult;
 use Psr\Container\ContainerInterface;
@@ -411,6 +411,7 @@ class Queue
 
                 if (in_array($childStatus, JobInterface::PENDING_JOBS, true)) {
                     $hasPendingChild = true;
+
                     break;
                 }
             }

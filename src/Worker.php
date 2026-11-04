@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TaskScheduler
  *
  * @author      gyselroth™  (http://www.gyselroth.com)
- * @copyright   Copryright (c) 2017-2022 gyselroth GmbH (https://gyselroth.com)
+ * @copyright   Copryright (c) 2017-2026 gyselroth GmbH (https://gyselroth.com)
  * @license     MIT https://opensource.org/licenses/MIT
  */
 
@@ -182,18 +182,6 @@ class Worker
         $this->killProcess();
 
         return null !== $newJob ? $newJob->getId() : null;
-    }
-
-    /**
-     * Determine whether a job owns at least one child job.
-     */
-    protected function hasChildJobs(ObjectId $jobId): bool
-    {
-        foreach ($this->scheduler->getChildProcs($jobId) as $childJob) {
-            return true;
-        }
-
-        return false;
     }
 
     /**
@@ -403,6 +391,18 @@ class Worker
         $this->exit();
 
         return $newJob->getId();
+    }
+
+    /**
+     * Determine whether a job owns at least one child job.
+     */
+    protected function hasChildJobs(ObjectId $jobId): bool
+    {
+        foreach ($this->scheduler->getChildProcs($jobId) as $childJob) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -1030,6 +1030,7 @@ class Worker
     /**
      * Process job.
      */
+
     /**
      * A retry is a new attempt. Allow its parent to emit a fresh terminal
      * notification when the retried child fails or times out again.
@@ -1472,6 +1473,7 @@ class Worker
 
                 if (in_array($status, JobInterface::PENDING_JOBS, true)) {
                     $hasActiveChildren = true;
+
                     continue;
                 }
 
