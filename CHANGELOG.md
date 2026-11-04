@@ -1,3 +1,10 @@
+## 4.1.0
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Wed Nov 04 11:00:00 CET 2026
+
+### Bugfix
+* General bug fixing and refactoring 
+
 ## 4.0.17
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Fri Sep 20 11:30:00 CET 2024
