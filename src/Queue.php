@@ -13,7 +13,6 @@ declare(strict_types=1);
 namespace TaskScheduler;
 
 use League\Event\Emitter;
-use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Database;
 use MongoDB\UpdateResult;
@@ -356,19 +355,10 @@ class Queue
                 continue;
             }
 
-            // Remember the direct parent of an orphaned child as well. The
-            // parent may not itself be present in the orphan cursor (for
-            // example, its heartbeat may have been refreshed more recently).
-            // We must still reconcile it after the child has been marked
-            // terminal, otherwise it can remain PROCESSING indefinitely.
-            if ($isChildJob && $data['parent'] instanceof ObjectId) {
-                $orphanedParentIds[(string) $data['parent']] = $data['parent'];
-            }
-
             // Only the orphaned leaf job is failed here. Do not emit the
             // orphan-reschedule event: that event creates a replacement job
             // (often POSTPONED), while the parent should observe this FAILED
-            // child during orphan reconciliation below.
+            // child during its normal checkChildJobs() completion path.
             $result = $this->failJobAndNotifyJobClass($orphanedProc);
 
             if (1 === $result->getModifiedCount()) {
@@ -387,19 +377,13 @@ class Queue
         // not remain PROCESSING forever: propagate CANCELED to the parent.
         $collection = $this->db->{$this->scheduler->getJobQueue()};
         foreach ($orphanedParentIds as $parentId) {
-            // Read child statuses directly from MongoDB after orphan updates
-            // have completed. This guarantees reconciliation sees the latest
-            // FAILED status rather than an earlier Process snapshot.
-            $children = $collection->find(
-                ['data.parent' => $parentId],
-                ['projection' => ['status' => 1]]
-            );
+            $children = $this->scheduler->getChildProcs($parentId);
             $hasCanceledChild = false;
             $hasFailedChild = false;
             $hasPendingChild = false;
 
             foreach ($children as $childProc) {
-                $childStatus = (int) $childProc['status'];
+                $childStatus = $childProc->getStatus();
 
                 if (JobInterface::STATUS_CANCELED === $childStatus) {
                     $hasCanceledChild = true;
@@ -465,8 +449,66 @@ class Queue
     protected function failJobAndNotifyJobClass(Process $job): UpdateResult
     {
         $jobId = $job->getId();
+        $collection = $this->db->{$this->scheduler->getJobQueue()};
 
-        $result = $this->db->{$this->scheduler->getJobQueue()}->updateOne(
+        /*
+         * Orphan recovery fails jobs directly instead of going through the
+         * Worker retry path. Preserve the normal retry policy here as well:
+         * create the replacement before publishing FAILED, so the parent /
+         * worker manager cannot observe the terminal state before the retry
+         * has been inserted. A negative retry value means unlimited retries.
+         */
+        $options = $job->getOptions();
+        $retry = isset($options[Scheduler::OPTION_RETRY])
+            ? (int) $options[Scheduler::OPTION_RETRY]
+            : 0;
+
+        if (0 !== $retry) {
+            $claim = $collection->updateOne(
+                [
+                    '_id' => $jobId,
+                    'status' => ['$in' => [
+                        JobInterface::STATUS_PROCESSING,
+                        JobInterface::STATUS_WAITING,
+                    ]],
+                    'reschedule_claimed' => ['$ne' => true],
+                ],
+                ['$set' => ['reschedule_claimed' => true]]
+            );
+
+            if (1 === $claim->getModifiedCount()) {
+                if ($retry > 0) {
+                    $options[Scheduler::OPTION_RETRY] = $retry - 1;
+                }
+                $retryInterval = isset($options[Scheduler::OPTION_RETRY_INTERVAL])
+                    ? max(0, (int) $options[Scheduler::OPTION_RETRY_INTERVAL])
+                    : 0;
+                $options[Scheduler::OPTION_AT] = time() + $retryInterval;
+
+                try {
+                    $this->scheduler->addJob(
+                        $job->getClass(),
+                        $job->getData(),
+                        $options
+                    );
+                } catch (\Throwable $e) {
+                    $collection->updateOne(
+                        ['_id' => $jobId, 'reschedule_claimed' => true],
+                        ['$unset' => ['reschedule_claimed' => '']]
+                    );
+                    $this->logger->error(
+                        'failed to schedule retry for orphaned job [{job}]',
+                        [
+                            'category' => get_class($this),
+                            'job' => (string) $jobId,
+                            'exception' => $e,
+                        ]
+                    );
+                }
+            }
+        }
+
+        $result = $collection->updateOne(
             [
                 '_id' => $jobId,
                 'status' => [
