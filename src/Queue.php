@@ -464,6 +464,12 @@ class Queue
             : 0;
 
         if (0 !== $retry) {
+            // A worker can die after claiming the retry but before inserting
+            // it. In that case the boolean claim would permanently suppress
+            // retries. Treat claims older than five minutes as abandoned and
+            // allow one worker to take them over. Keep fresh claims exclusive
+            // so concurrent orphan scans cannot create duplicate retries.
+            $claimStaleBefore = new UTCDateTime((time() - 300) * 1000);
             $claim = $collection->updateOne(
                 [
                     '_id' => $jobId,
@@ -471,9 +477,16 @@ class Queue
                         JobInterface::STATUS_PROCESSING,
                         JobInterface::STATUS_WAITING,
                     ]],
-                    'reschedule_claimed' => ['$ne' => true],
+                    '$or' => [
+                        ['reschedule_claimed' => ['$ne' => true]],
+                        ['reschedule_claimed_at' => ['$lt' => $claimStaleBefore]],
+                        ['reschedule_claimed_at' => ['$exists' => false]],
+                    ],
                 ],
-                ['$set' => ['reschedule_claimed' => true]]
+                ['$set' => [
+                    'reschedule_claimed' => true,
+                    'reschedule_claimed_at' => new UTCDateTime(),
+                ]]
             );
 
             if (1 === $claim->getModifiedCount()) {
@@ -494,7 +507,10 @@ class Queue
                 } catch (\Throwable $e) {
                     $collection->updateOne(
                         ['_id' => $jobId, 'reschedule_claimed' => true],
-                        ['$unset' => ['reschedule_claimed' => '']]
+                        ['$unset' => [
+                            'reschedule_claimed' => '',
+                            'reschedule_claimed_at' => '',
+                        ]]
                     );
                     $this->logger->error(
                         'failed to schedule retry for orphaned job [{job}]',
