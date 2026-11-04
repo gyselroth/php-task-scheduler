@@ -1,3 +1,10 @@
+## 4.1.1
+**Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
+**Date**: Wed Nov 04 17:15:00 CET 2026
+
+### Bugfix
+* Plan retry job when orphaned job found
+
 ## 4.1.0
 **Maintainer**: Sandro Aebischer <aebischer@gyselroth.com>\
 **Date**: Wed Nov 04 11:00:00 CET 2026
